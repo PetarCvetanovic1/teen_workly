@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
 import '../app_colors.dart';
 import 'jobs_screen.dart';
 import '../widgets/app_drawer.dart';
@@ -31,86 +32,156 @@ class HomeScreen extends StatelessWidget {
         decoration: BoxDecoration(
           gradient: isDark
               ? null
-                : LinearGradient(
+              : LinearGradient(
                   begin: Alignment.topCenter,
                   end: Alignment.bottomCenter,
                   colors: [
-                    AppColors.indigo500.withValues(alpha: 0.12),
+                    AppColors.indigo500.withValues(alpha: 0.08),
                     Theme.of(context).scaffoldBackgroundColor,
                   ],
-                  stops: const [0.0, 0.35],
+                  stops: const [0.0, 0.4],
                 ),
         ),
         child: SafeArea(
           child: SingleChildScrollView(
             child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
+              crossAxisAlignment: CrossAxisAlignment.center,
               children: [
-                const SizedBox(height: 24),
-                // Hero
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 28),
-                  child: Text(
-                    'Local jobs for teens.',
-                    style: theme.textTheme.headlineMedium?.copyWith(
-                      fontWeight: FontWeight.w700,
-                      letterSpacing: -0.5,
-                      height: 1.2,
+                const SizedBox(height: 48),
+                // Live badge
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: isDark
+                        ? AppColors.slate900.withValues(alpha: 0.5)
+                        : Colors.white.withValues(alpha: 0.6),
+                    borderRadius: BorderRadius.circular(100),
+                    border: Border.all(
+                      color: isDark
+                          ? const Color(0xFF334155)
+                          : Colors.white.withValues(alpha: 0.6),
                     ),
-                    textAlign: TextAlign.center,
                   ),
-                ),
-                const SizedBox(height: 16),
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 28),
-                  child: Text(
-                    'Find mowing, tutoring, dog walking, and more in your area. Apply in one click.',
-                    style: theme.textTheme.bodyLarge?.copyWith(
-                      color: theme.colorScheme.onSurface.withValues(alpha: 0.75),
-                      height: 1.5,
-                    ),
-                    textAlign: TextAlign.center,
-                  ),
-                ),
-                const SizedBox(height: 36),
-                // CTAs
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 24),
                   child: Row(
+                    mainAxisSize: MainAxisSize.min,
                     children: [
-                      Expanded(
-                        child: FilledButton(
-                          onPressed: () => Navigator.of(context).push(
-                            MaterialPageRoute(
-                              builder: (_) => const JobsScreen(),
-                            ),
-                          ),
-                          style: FilledButton.styleFrom(
-                            backgroundColor: AppColors.indigo600,
-                            foregroundColor: Colors.white,
-                          ),
-                          child: const Text('Find a Job'),
+                      Container(
+                        width: 8,
+                        height: 8,
+                        decoration: const BoxDecoration(
+                          color: AppColors.indigo500,
+                          shape: BoxShape.circle,
                         ),
                       ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: OutlinedButton(
-                          onPressed: () {},
-                          child: const Text('Post a Job'),
+                      const SizedBox(width: 8),
+                      Text(
+                        'LIVE IN YOUR CITY',
+                        style: GoogleFonts.plusJakartaSans(
+                          fontSize: 10,
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: 2,
+                          color: isDark
+                              ? AppColors.indigo400
+                              : const Color(0xFF4338CA),
                         ),
                       ),
                     ],
                   ),
                 ),
-                const SizedBox(height: 64),
+                const SizedBox(height: 28),
+                // Hero heading
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 24),
+                  child: Text(
+                    'Work Hard.',
+                    style: GoogleFonts.plusJakartaSans(
+                      fontSize: 42,
+                      fontWeight: FontWeight.w800,
+                      height: 1.1,
+                      letterSpacing: -1,
+                      color: isDark ? Colors.white : AppColors.slate900,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                ),
+                // Gradient text
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 24),
+                  child: ShaderMask(
+                    blendMode: BlendMode.srcIn,
+                    shaderCallback: (bounds) => const LinearGradient(
+                      colors: [
+                        AppColors.indigo600,
+                        Color(0xFF7C3AED),
+                        Color(0xFFEC4899),
+                      ],
+                    ).createShader(bounds),
+                    child: Text(
+                      'Level Up.',
+                      style: GoogleFonts.plusJakartaSans(
+                        fontSize: 42,
+                        fontWeight: FontWeight.w800,
+                        height: 1.1,
+                        letterSpacing: -1,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 20),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 32),
+                  child: Text(
+                    'The safe, fun, and fast way for teens to find local gigs. Gain skills, build your network, and earn cash.',
+                    style: GoogleFonts.plusJakartaSans(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w500,
+                      height: 1.6,
+                      color: isDark
+                          ? const Color(0xFF94A3B8)
+                          : const Color(0xFF64748B),
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                ),
+                const SizedBox(height: 32),
+                // CTA buttons - auto-width, centered
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 24),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      _HeroButton(
+                        label: 'Find a Gig',
+                        onTap: () => Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder: (_) => const JobsScreen(),
+                          ),
+                        ),
+                        filled: true,
+                        isDark: isDark,
+                      ),
+                      const SizedBox(width: 14),
+                      _HeroButton(
+                        label: 'Hire Talent',
+                        onTap: () {},
+                        filled: false,
+                        isDark: isDark,
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 72),
                 // How it works
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 24),
                   child: Text(
                     'How it works',
                     style: theme.textTheme.titleLarge?.copyWith(
-                      fontWeight: FontWeight.w700,
+                      fontWeight: FontWeight.w800,
                     ),
+                    textAlign: TextAlign.center,
                   ),
                 ),
                 const SizedBox(height: 6),
@@ -119,30 +190,51 @@ class HomeScreen extends StatelessWidget {
                   child: Text(
                     'Start earning in three simple steps',
                     style: theme.textTheme.bodyMedium?.copyWith(
-                      color: theme.colorScheme.onSurface.withValues(alpha: 0.7),
+                      color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
                     ),
+                    textAlign: TextAlign.center,
                   ),
                 ),
-                const SizedBox(height: 20),
-                _StepCard(
-                  number: 1,
-                  title: 'Create Profile',
-                  subtitle: 'Sign up in seconds',
-                  icon: Icons.person_add_rounded,
+                const SizedBox(height: 24),
+                // Three steps in a row
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(
+                        child: _StepTile(
+                          number: 1,
+                          title: 'Create Profile',
+                          subtitle: 'Sign up in seconds',
+                          icon: Icons.person_add_rounded,
+                          isDark: isDark,
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: _StepTile(
+                          number: 2,
+                          title: 'Browse Gigs',
+                          subtitle: 'Find local opportunities',
+                          icon: Icons.search_rounded,
+                          isDark: isDark,
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: _StepTile(
+                          number: 3,
+                          title: 'Get Paid',
+                          subtitle: 'Earn money your way',
+                          icon: Icons.account_balance_wallet_rounded,
+                          isDark: isDark,
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
-                _StepCard(
-                  number: 2,
-                  title: 'Browse Gigs',
-                  subtitle: 'Find local opportunities',
-                  icon: Icons.search_rounded,
-                ),
-                _StepCard(
-                  number: 3,
-                  title: 'Get Paid',
-                  subtitle: 'Earn money your way',
-                  icon: Icons.account_balance_wallet_rounded,
-                ),
-                const SizedBox(height: 56),
+                const SizedBox(height: 64),
                 // Latest jobs
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 24),
@@ -150,23 +242,26 @@ class HomeScreen extends StatelessWidget {
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     crossAxisAlignment: CrossAxisAlignment.end,
                     children: [
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'Latest jobs',
-                            style: theme.textTheme.titleLarge?.copyWith(
-                              fontWeight: FontWeight.w700,
+                      Flexible(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Latest jobs',
+                              style: theme.textTheme.titleLarge?.copyWith(
+                                fontWeight: FontWeight.w800,
+                              ),
                             ),
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            'Lawn mowing, dog walking, tutoring, and more.',
-                            style: theme.textTheme.bodyMedium?.copyWith(
-                              color: theme.colorScheme.onSurface.withValues(alpha: 0.7),
+                            const SizedBox(height: 4),
+                            Text(
+                              'Lawn mowing, dog walking, tutoring, and more.',
+                              style: theme.textTheme.bodyMedium?.copyWith(
+                                color: theme.colorScheme.onSurface
+                                    .withValues(alpha: 0.6),
+                              ),
                             ),
-                          ),
-                        ],
+                          ],
+                        ),
                       ),
                       TextButton.icon(
                         onPressed: () => Navigator.of(context).push(
@@ -174,15 +269,15 @@ class HomeScreen extends StatelessWidget {
                             builder: (_) => const JobsScreen(),
                           ),
                         ),
-                        icon: Icon(
+                        icon: const Icon(
                           Icons.arrow_forward_rounded,
                           size: 18,
                           color: AppColors.indigo600,
                         ),
-                        label: Text(
+                        label: const Text(
                           'See All',
                           style: TextStyle(
-                            fontWeight: FontWeight.w600,
+                            fontWeight: FontWeight.w700,
                             color: AppColors.indigo600,
                           ),
                         ),
@@ -191,13 +286,84 @@ class HomeScreen extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(height: 16),
-                // Empty state when no jobs
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 24),
-                  child: const _LatestJobsEmpty(),
+                const Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 24),
+                  child: _LatestJobsEmpty(),
                 ),
                 const SizedBox(height: 48),
               ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// Website-style buttons: auto-width, large padding, rounded-2xl
+class _HeroButton extends StatelessWidget {
+  final String label;
+  final VoidCallback onTap;
+  final bool filled;
+  final bool isDark;
+
+  const _HeroButton({
+    required this.label,
+    required this.onTap,
+    required this.filled,
+    required this.isDark,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    if (filled) {
+      return Material(
+        color: isDark ? Colors.white : AppColors.slate900,
+        borderRadius: BorderRadius.circular(16),
+        elevation: 4,
+        shadowColor: Colors.black.withValues(alpha: 0.15),
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(16),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 18),
+            child: Text(
+              label,
+              style: GoogleFonts.plusJakartaSans(
+                fontSize: 16,
+                fontWeight: FontWeight.w800,
+                color: isDark ? AppColors.slate900 : Colors.white,
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
+    return Container(
+      decoration: BoxDecoration(
+        color: isDark
+            ? AppColors.slate900.withValues(alpha: 0.3)
+            : Colors.white.withValues(alpha: 0.3),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: isDark
+              ? const Color(0xFF334155)
+              : Colors.white.withValues(alpha: 0.5),
+          width: 2,
+        ),
+      ),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(16),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 18),
+          child: Text(
+            label,
+            style: GoogleFonts.plusJakartaSans(
+              fontSize: 16,
+              fontWeight: FontWeight.w800,
+              color: isDark ? Colors.white : AppColors.slate900,
             ),
           ),
         ),
@@ -230,7 +396,6 @@ class _LatestJobsEmpty extends StatelessWidget {
               ],
       ),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Icon(
             Icons.work_outline_rounded,
@@ -254,14 +419,11 @@ class _LatestJobsEmpty extends StatelessWidget {
             textAlign: TextAlign.center,
           ),
           const SizedBox(height: 20),
-          FilledButton.icon(
-            onPressed: () {},
-            icon: const Icon(Icons.add_rounded, size: 20),
-            label: const Text('Post a Job'),
-            style: FilledButton.styleFrom(
-              backgroundColor: AppColors.indigo600,
-              foregroundColor: Colors.white,
-            ),
+          _HeroButton(
+            label: 'Post a Job',
+            onTap: () {},
+            filled: true,
+            isDark: isDark,
           ),
         ],
       ),
@@ -269,101 +431,74 @@ class _LatestJobsEmpty extends StatelessWidget {
   }
 }
 
-class _StepCard extends StatelessWidget {
+// Compact vertical tile for the 3-step row
+class _StepTile extends StatelessWidget {
   final int number;
   final String title;
   final String subtitle;
   final IconData icon;
+  final bool isDark;
 
-  const _StepCard({
+  const _StepTile({
     required this.number,
     required this.title,
     required this.subtitle,
     required this.icon,
+    required this.isDark,
   });
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final isDark = theme.brightness == Brightness.dark;
 
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 6),
-      child: Container(
-        decoration: BoxDecoration(
-          color: isDark ? const Color(0xFF1E293B) : Colors.white,
-          borderRadius: BorderRadius.circular(20),
-          boxShadow: isDark
-              ? null
-              : [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.04),
-                    blurRadius: 20,
-                    offset: const Offset(0, 4),
-                  ),
-                ],
-        ),
-        child: Padding(
-          padding: const EdgeInsets.all(20),
-          child: Row(
-            children: [
-              Container(
-                width: 48,
-                height: 48,
-                decoration: BoxDecoration(
-                  color: AppColors.indigo600.withValues(alpha: 0.12),
-                  borderRadius: BorderRadius.circular(14),
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 20),
+      decoration: BoxDecoration(
+        color: isDark ? const Color(0xFF1E293B) : Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: isDark
+            ? null
+            : [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.04),
+                  blurRadius: 20,
+                  offset: const Offset(0, 4),
                 ),
-                child: Center(
-                  child: Icon(
-                    icon,
-                    color: AppColors.indigo600,
-                    size: 24,
-                  ),
-                ),
-              ),
-              const SizedBox(width: 16),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      title,
-                      style: theme.textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      subtitle,
-                      style: theme.textTheme.bodyMedium?.copyWith(
-                        color: theme.colorScheme.onSurface.withValues(alpha: 0.7),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              Container(
-                width: 28,
-                height: 28,
-                decoration: BoxDecoration(
-                  color: AppColors.indigo600.withValues(alpha: 0.15),
-                  shape: BoxShape.circle,
-                ),
-                child: Center(
-                  child: Text(
-                    '$number',
-                    style: const TextStyle(
-                      fontWeight: FontWeight.w700,
-                      fontSize: 12,
-                      color: AppColors.indigo600,
-                    ),
-                  ),
-                ),
-              ),
-            ],
+              ],
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 44,
+            height: 44,
+            decoration: BoxDecoration(
+              color: AppColors.indigo600.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(14),
+            ),
+            child: Center(
+              child: Icon(icon, color: AppColors.indigo600, size: 22),
+            ),
           ),
-        ),
+          const SizedBox(height: 12),
+          Text(
+            title,
+            style: theme.textTheme.titleSmall?.copyWith(
+              fontWeight: FontWeight.w700,
+              fontSize: 13,
+            ),
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 4),
+          Text(
+            subtitle,
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
+              fontSize: 11,
+            ),
+            textAlign: TextAlign.center,
+          ),
+        ],
       ),
     );
   }
