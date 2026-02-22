@@ -296,19 +296,35 @@ class _ReportSheetState extends State<_ReportSheet> {
   }
 
   void _submit() {
+    final state = context.read<AppState>();
+
+    if (state.hasAlreadyReported(widget.targetId)) {
+      Navigator.pop(context);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text('You\'ve already reported this.'),
+          behavior: SnackBarBehavior.floating,
+          backgroundColor: const Color(0xFFEA580C),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        ),
+      );
+      return;
+    }
+
     final reason = _selectedReason == 'Other'
         ? _otherCtrl.text.trim().isNotEmpty
             ? _otherCtrl.text.trim()
             : 'Other'
         : _selectedReason!;
 
-    context.read<AppState>().reportContent(
-          targetType: widget.targetType,
-          targetId: widget.targetId,
-          reason: reason,
-          block: _alsoBlock,
-          userId: widget.userId,
-        );
+    state.reportContent(
+      targetType: widget.targetType,
+      targetId: widget.targetId,
+      reason: reason,
+      block: _alsoBlock,
+      userId: widget.userId,
+    );
 
     Navigator.pop(context);
     ScaffoldMessenger.of(context).showSnackBar(

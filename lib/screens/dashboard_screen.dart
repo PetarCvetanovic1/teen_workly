@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../utils/smooth_route.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import '../app_colors.dart';
@@ -39,7 +40,7 @@ class DashboardScreen extends StatelessWidget {
               alignment: Alignment.centerLeft,
               child: LogoTitle(
                 onTap: () => Navigator.of(context).pushAndRemoveUntil(
-                  MaterialPageRoute(builder: (_) => const HomeScreen()),
+                  SmoothPageRoute(builder: (_) => const HomeScreen()),
                   (_) => false,
                 ),
               ),
@@ -229,6 +230,167 @@ class DashboardScreen extends StatelessWidget {
                     ),
                   ],
                 ),
+                const SizedBox(height: 16),
+                Row(
+                  children: [
+                    Expanded(
+                      child: _LimitIndicator(
+                        label: 'Jobs Posted',
+                        current: state.myActivePostedJobs,
+                        max: state.maxPostableJobs,
+                        color: AppColors.indigo600,
+                        isDark: isDark,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: _LimitIndicator(
+                        label: 'Active Work',
+                        current: state.myActiveHiredJobs,
+                        max: 3,
+                        color: const Color(0xFF059669),
+                        isDark: isDark,
+                      ),
+                    ),
+                  ],
+                ),
+                if (state.amReportSuspended) ...[
+                  const SizedBox(height: 16),
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFDC2626).withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(
+                        color: const Color(0xFFDC2626).withValues(alpha: 0.3),
+                      ),
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.gavel_rounded,
+                            color: Color(0xFFDC2626), size: 28),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Account Suspended — Community Reports',
+                                style: GoogleFonts.plusJakartaSans(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w800,
+                                  color: const Color(0xFFDC2626),
+                                ),
+                              ),
+                              const SizedBox(height: 4),
+                              Builder(builder: (context) {
+                                final left = state.reportSuspensionTimeLeft(
+                                    state.currentUserId);
+                                final days = (left.inHours / 24).ceil();
+                                final count = state.uniqueReportCountForUser(
+                                    state.currentUserId);
+                                return Text(
+                                  'You\'ve been reported by $count '
+                                  'user${count == 1 ? '' : 's'}. '
+                                  'Suspension ends in ${days > 0 ? "$days day${days == 1 ? "" : "s"}" : "a few hours"}. '
+                                  'Reports reset monthly.',
+                                  style: GoogleFonts.plusJakartaSans(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w500,
+                                    color: const Color(0xFF94A3B8),
+                                  ),
+                                );
+                              }),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+                if (state.isPostingSuspended) ...[
+                  const SizedBox(height: 16),
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFDC2626).withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(
+                        color: const Color(0xFFDC2626).withValues(alpha: 0.3),
+                      ),
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.block_rounded,
+                            color: Color(0xFFDC2626), size: 28),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Posting Suspended',
+                                style: GoogleFonts.plusJakartaSans(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w800,
+                                  color: const Color(0xFFDC2626),
+                                ),
+                              ),
+                              const SizedBox(height: 4),
+                              Builder(builder: (context) {
+                                final hours =
+                                    state.suspensionTimeLeft.inHours;
+                                final days = (hours / 24).ceil();
+                                return Text(
+                                  'You deleted too many jobs with applicants. '
+                                  'Posting resumes in ${days > 0 ? "$days day${days == 1 ? "" : "s"}" : "a few hours"}.',
+                                  style: GoogleFonts.plusJakartaSans(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w500,
+                                    color: const Color(0xFF94A3B8),
+                                  ),
+                                );
+                              }),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ] else if (state.deleteStrikeCount > 0) ...[
+                  const SizedBox(height: 16),
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFEA580C).withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(
+                        color: const Color(0xFFEA580C).withValues(alpha: 0.3),
+                      ),
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.warning_amber_rounded,
+                            color: Color(0xFFEA580C), size: 24),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Text(
+                            '${state.deleteStrikeCount}/3 deletion strikes this week. '
+                            '${state.strikesRemaining} left before posting suspension.',
+                            style: GoogleFonts.plusJakartaSans(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              color: const Color(0xFFEA580C),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
                 const SizedBox(height: 32),
                 // Current jobs
                 if (current.isNotEmpty) ...[
@@ -300,12 +462,11 @@ class DashboardScreen extends StatelessWidget {
                         actionColor: const Color(0xFFDC2626),
                         actionIcon: Icons.delete_outline_rounded,
                         onAction: j.status == JobStatus.open
-                            ? () => _confirmDelete(
+                            ? () => _confirmJobDelete(
                                   context,
+                                  state: state,
+                                  job: j,
                                   isDark: isDark,
-                                  title: 'Delete Job',
-                                  message: 'Are you sure you want to delete "${j.title}"? This can\'t be undone.',
-                                  onConfirm: () => state.deleteJob(j.id),
                                 )
                             : null,
                       )),
@@ -408,7 +569,7 @@ class DashboardScreen extends StatelessWidget {
                       time: conv.lastMessageTime,
                       isDark: isDark,
                       onTap: () => Navigator.of(context).push(
-                        MaterialPageRoute(
+                        SmoothPageRoute(
                           builder: (_) =>
                               ChatScreen(conversationId: conv.id),
                         ),
@@ -477,6 +638,187 @@ void _confirmDelete(
           ),
           child: Text(
             title.contains('Withdraw') ? 'Withdraw' : 'Delete',
+            style: GoogleFonts.plusJakartaSans(
+              fontWeight: FontWeight.w800,
+              color: Colors.white,
+            ),
+          ),
+        ),
+      ],
+    ),
+  );
+}
+
+void _confirmJobDelete(
+  BuildContext context, {
+  required AppState state,
+  required Job job,
+  required bool isDark,
+}) {
+  final hasApplicants = state.jobHasApplicants(job.id);
+  final strikes = state.deleteStrikeCount;
+  final remaining = state.strikesRemaining;
+
+  String message;
+  if (hasApplicants) {
+    if (remaining <= 1) {
+      message =
+          'This job has applicants who are counting on it!\n\n'
+          '⚠️ WARNING: This is your last chance. Deleting this job '
+          'will suspend you from posting jobs for 3 days.';
+    } else {
+      message =
+          'This job already has people who applied. Deleting jobs '
+          'with applicants counts as a strike.\n\n'
+          'You have $remaining strike${remaining == 1 ? '' : 's'} left '
+          'this week before you get suspended from posting for 3 days.';
+    }
+  } else {
+    message = 'Are you sure you want to delete "${job.title}"? '
+        'This can\'t be undone.';
+  }
+
+  showDialog(
+    context: context,
+    builder: (ctx) => AlertDialog(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      backgroundColor: isDark ? const Color(0xFF1E293B) : Colors.white,
+      title: Row(
+        children: [
+          if (hasApplicants)
+            const Padding(
+              padding: EdgeInsets.only(right: 8),
+              child: Icon(Icons.warning_amber_rounded,
+                  color: Color(0xFFEA580C), size: 24),
+            ),
+          Text(
+            hasApplicants ? 'Delete Job (Strike ${strikes + 1}/3)' : 'Delete Job',
+            style: GoogleFonts.plusJakartaSans(
+              fontWeight: FontWeight.w800,
+              fontSize: 17,
+              color: isDark ? Colors.white : AppColors.slate900,
+            ),
+          ),
+        ],
+      ),
+      content: Text(
+        message,
+        style: GoogleFonts.plusJakartaSans(
+          fontSize: 14,
+          fontWeight: FontWeight.w500,
+          height: 1.5,
+          color: const Color(0xFF94A3B8),
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(ctx),
+          child: Text(
+            'Keep it',
+            style: GoogleFonts.plusJakartaSans(
+              fontWeight: FontWeight.w600,
+              color: const Color(0xFF94A3B8),
+            ),
+          ),
+        ),
+        FilledButton(
+          onPressed: () {
+            Navigator.pop(ctx);
+            final result = state.deleteJobWithStrike(job.id);
+
+            if (result == null) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: const Text('Job deleted.'),
+                  behavior: SnackBarBehavior.floating,
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12)),
+                ),
+              );
+            } else if (result == 'suspended') {
+              _showSuspensionDialog(context, isDark: isDark);
+            } else if (result.startsWith('strike:')) {
+              final left = int.tryParse(result.split(':')[1]) ?? 0;
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text(
+                    left == 1
+                        ? '⚠️ Strike recorded! 1 more and you\'ll be suspended from posting for 3 days.'
+                        : '⚠️ Strike recorded! $left strikes left before suspension.',
+                  ),
+                  behavior: SnackBarBehavior.floating,
+                  backgroundColor: const Color(0xFFEA580C),
+                  duration: const Duration(seconds: 5),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12)),
+                ),
+              );
+            }
+          },
+          style: FilledButton.styleFrom(
+            backgroundColor: const Color(0xFFDC2626),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+          ),
+          child: Text(
+            'Delete anyway',
+            style: GoogleFonts.plusJakartaSans(
+              fontWeight: FontWeight.w800,
+              color: Colors.white,
+            ),
+          ),
+        ),
+      ],
+    ),
+  );
+}
+
+void _showSuspensionDialog(BuildContext context, {required bool isDark}) {
+  showDialog(
+    context: context,
+    barrierDismissible: false,
+    builder: (ctx) => AlertDialog(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      backgroundColor: isDark ? const Color(0xFF1E293B) : Colors.white,
+      title: Row(
+        children: [
+          const Icon(Icons.block_rounded, color: Color(0xFFDC2626), size: 28),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              'Posting Suspended',
+              style: GoogleFonts.plusJakartaSans(
+                fontWeight: FontWeight.w800,
+                color: const Color(0xFFDC2626),
+              ),
+            ),
+          ),
+        ],
+      ),
+      content: Text(
+        'You\'ve deleted 3 jobs that had applicants this week. '
+        'Other teens were counting on those opportunities.\n\n'
+        'You are now suspended from posting new jobs for 3 days. '
+        'Your strikes reset every week.',
+        style: GoogleFonts.plusJakartaSans(
+          fontSize: 14,
+          fontWeight: FontWeight.w500,
+          height: 1.5,
+          color: const Color(0xFF94A3B8),
+        ),
+      ),
+      actions: [
+        FilledButton(
+          onPressed: () => Navigator.pop(ctx),
+          style: FilledButton.styleFrom(
+            backgroundColor: const Color(0xFFDC2626),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+          ),
+          child: Text(
+            'I understand',
             style: GoogleFonts.plusJakartaSans(
               fontWeight: FontWeight.w800,
               color: Colors.white,
@@ -632,7 +974,7 @@ class _JobCard extends StatelessWidget {
         shadowColor: Colors.black.withValues(alpha: 0.06),
         child: InkWell(
           onTap: () => Navigator.of(context).push(
-            MaterialPageRoute(builder: (_) => JobDetailScreen(job: job)),
+            SmoothPageRoute(builder: (_) => JobDetailScreen(job: job)),
           ),
           borderRadius: BorderRadius.circular(18),
           child: Padding(
@@ -1015,5 +1357,87 @@ class _ConvoCard extends StatelessWidget {
     if (diff.inMinutes < 60) return '${diff.inMinutes}m';
     if (diff.inHours < 24) return '${diff.inHours}h';
     return '${diff.inDays}d';
+  }
+}
+
+class _LimitIndicator extends StatelessWidget {
+  final String label;
+  final int current;
+  final int max;
+  final Color color;
+  final bool isDark;
+
+  const _LimitIndicator({
+    required this.label,
+    required this.current,
+    required this.max,
+    required this.color,
+    required this.isDark,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final ratio = max > 0 ? (current / max).clamp(0.0, 1.0) : 0.0;
+    final atLimit = current >= max;
+
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: isDark
+            ? const Color(0xFF1E293B).withValues(alpha: 0.5)
+            : Colors.white.withValues(alpha: 0.5),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+          color: atLimit
+              ? const Color(0xFFEA580C).withValues(alpha: 0.4)
+              : isDark
+                  ? const Color(0xFF334155)
+                  : AppColors.slate200,
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  label,
+                  style: GoogleFonts.plusJakartaSans(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                    color: const Color(0xFF94A3B8),
+                  ),
+                ),
+              ),
+              Text(
+                '$current / $max',
+                style: GoogleFonts.plusJakartaSans(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w800,
+                  color: atLimit
+                      ? const Color(0xFFEA580C)
+                      : isDark
+                          ? Colors.white
+                          : AppColors.slate900,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(4),
+            child: LinearProgressIndicator(
+              value: ratio,
+              minHeight: 6,
+              backgroundColor: isDark
+                  ? const Color(0xFF334155)
+                  : AppColors.slate200,
+              color: atLimit ? const Color(0xFFEA580C) : color,
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }

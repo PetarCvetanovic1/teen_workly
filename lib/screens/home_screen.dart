@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../utils/smooth_route.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import '../app_colors.dart';
@@ -170,7 +171,7 @@ class HomeScreen extends StatelessWidget {
                       _HeroButton(
                         label: 'Find a Gig',
                         onTap: () => Navigator.of(context).push(
-                          MaterialPageRoute(
+                          SmoothPageRoute(
                             builder: (_) => const JobsScreen(),
                           ),
                         ),
@@ -181,7 +182,7 @@ class HomeScreen extends StatelessWidget {
                       _HeroButton(
                         label: 'Hire Talent',
                         onTap: () => Navigator.of(context).push(
-                          MaterialPageRoute(
+                          SmoothPageRoute(
                             builder: (_) => const PostJobScreen(),
                           ),
                         ),
@@ -284,7 +285,7 @@ class HomeScreen extends StatelessWidget {
                       ),
                       TextButton.icon(
                         onPressed: () => Navigator.of(context).push(
-                          MaterialPageRoute(
+                          SmoothPageRoute(
                             builder: (_) => const JobsScreen(),
                           ),
                         ),
@@ -471,7 +472,7 @@ class _LatestJobsEmpty extends StatelessWidget {
               _HeroButton(
                 label: 'Post a Job',
                 onTap: () => Navigator.of(context).push(
-                  MaterialPageRoute(builder: (_) => const PostJobScreen()),
+                  SmoothPageRoute(builder: (_) => const PostJobScreen()),
                 ),
                 filled: true,
                 isDark: isDark,
@@ -479,7 +480,7 @@ class _LatestJobsEmpty extends StatelessWidget {
               _HeroButton(
                 label: 'Post a Service',
                 onTap: () => Navigator.of(context).push(
-                  MaterialPageRoute(
+                  SmoothPageRoute(
                       builder: (_) => const PostServiceScreen()),
                 ),
                 filled: false,
@@ -580,7 +581,7 @@ class _LatestJobCard extends StatelessWidget {
       shadowColor: Colors.black.withValues(alpha: 0.06),
       child: InkWell(
         onTap: () => Navigator.of(context).push(
-          MaterialPageRoute(builder: (_) => JobDetailScreen(job: job)),
+          SmoothPageRoute(builder: (_) => JobDetailScreen(job: job)),
         ),
         borderRadius: BorderRadius.circular(18),
         child: Padding(
@@ -648,7 +649,7 @@ class _LatestServiceCard extends StatelessWidget {
       shadowColor: Colors.black.withValues(alpha: 0.06),
       child: InkWell(
         onTap: () => Navigator.of(context).push(
-          MaterialPageRoute(
+          SmoothPageRoute(
               builder: (_) => ServiceDetailScreen(service: service)),
         ),
         borderRadius: BorderRadius.circular(18),

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../utils/smooth_route.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import '../app_colors.dart';
@@ -213,6 +214,27 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
                         name: job.applicantNames[i],
                         isDark: isDark,
                         onHire: () {
+                          final applicantActiveJobs = state.jobs
+                              .where((j) =>
+                                  j.hiredId == job.applicantIds[i] &&
+                                  (j.status == JobStatus.inProgress ||
+                                      j.status ==
+                                          JobStatus.pendingCompletion))
+                              .length;
+                          if (applicantActiveJobs >= 3) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text(
+                                    '${job.applicantNames[i]} already has 3 active jobs and can\'t take on more right now.'),
+                                behavior: SnackBarBehavior.floating,
+                                backgroundColor: const Color(0xFFEA580C),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                              ),
+                            );
+                            return;
+                          }
                           state.hireApplicant(
                             job.id,
                             job.applicantIds[i],
@@ -236,7 +258,7 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
                             contextLabel: 'Job: ${job.title}',
                           );
                           Navigator.of(context).push(
-                            MaterialPageRoute(
+                            SmoothPageRoute(
                               builder: (_) =>
                                   ChatScreen(conversationId: conv.id),
                             ),
@@ -269,7 +291,7 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
                           contextLabel: 'Job: ${job.title}',
                         );
                         Navigator.of(context).push(
-                          MaterialPageRoute(
+                          SmoothPageRoute(
                             builder: (_) =>
                                 ChatScreen(conversationId: conv.id),
                           ),
@@ -339,7 +361,7 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
                               contextLabel: 'Job: ${job.title}',
                             );
                             Navigator.of(context).push(
-                              MaterialPageRoute(
+                              SmoothPageRoute(
                                 builder: (_) =>
                                     ChatScreen(conversationId: conv.id),
                               ),
@@ -452,7 +474,7 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
                               contextLabel: 'Job: ${job.title}',
                             );
                             Navigator.of(context).push(
-                              MaterialPageRoute(
+                              SmoothPageRoute(
                                 builder: (_) =>
                                     ChatScreen(conversationId: conv.id),
                               ),

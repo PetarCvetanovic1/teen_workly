@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../utils/smooth_route.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import '../app_colors.dart';
@@ -268,7 +269,7 @@ class ServiceDetailScreen extends StatelessWidget {
                             'Service: ${service.skills.join(", ")}',
                       );
                       Navigator.of(context).push(
-                        MaterialPageRoute(
+                        SmoothPageRoute(
                           builder: (_) =>
                               ChatScreen(conversationId: conv.id),
                         ),

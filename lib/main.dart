@@ -5,6 +5,48 @@ import 'app_colors.dart';
 import 'state/app_state.dart';
 import 'screens/home_screen.dart';
 
+class _SmoothPageTransitionsBuilder extends PageTransitionsBuilder {
+  const _SmoothPageTransitionsBuilder();
+
+  @override
+  Widget buildTransitions<T>(
+    PageRoute<T> route,
+    BuildContext context,
+    Animation<double> animation,
+    Animation<double> secondaryAnimation,
+    Widget child,
+  ) {
+    return FadeTransition(
+      opacity: CurvedAnimation(
+        parent: animation,
+        curve: const Interval(0.0, 0.6, curve: Curves.easeOut),
+      ),
+      child: SlideTransition(
+        position: Tween<Offset>(
+          begin: const Offset(0.06, 0),
+          end: Offset.zero,
+        ).animate(CurvedAnimation(
+          parent: animation,
+          curve: Curves.easeOutCubic,
+        )),
+        child: child,
+      ),
+    );
+  }
+}
+
+const _smoothTransitions = PageTransitionsTheme(
+  builders: {
+    TargetPlatform.android: _SmoothPageTransitionsBuilder(),
+    TargetPlatform.iOS: _SmoothPageTransitionsBuilder(),
+    TargetPlatform.windows: _SmoothPageTransitionsBuilder(),
+    TargetPlatform.macOS: _SmoothPageTransitionsBuilder(),
+    TargetPlatform.linux: _SmoothPageTransitionsBuilder(),
+    TargetPlatform.fuchsia: _SmoothPageTransitionsBuilder(),
+  },
+);
+
+
 void main() {
   runApp(const TeenWorklyApp());
 }
@@ -21,6 +63,7 @@ class TeenWorklyApp extends StatelessWidget {
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
         useMaterial3: true,
+        pageTransitionsTheme: _smoothTransitions,
         colorScheme: ColorScheme.fromSeed(
           seedColor: AppColors.indigo600,
           primary: AppColors.indigo600,
@@ -98,6 +141,7 @@ class TeenWorklyApp extends StatelessWidget {
       ),
       darkTheme: ThemeData(
         useMaterial3: true,
+        pageTransitionsTheme: _smoothTransitions,
         colorScheme: ColorScheme.fromSeed(
           seedColor: AppColors.indigo500,
           primary: AppColors.indigo400,

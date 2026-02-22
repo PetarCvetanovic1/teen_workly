@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../utils/smooth_route.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import '../app_colors.dart';
@@ -8,6 +9,7 @@ import '../widgets/logo_title.dart';
 import '../widgets/app_bar_nav.dart';
 import '../widgets/auth_button.dart';
 import '../widgets/content_wrap.dart';
+import '../services/moderation.dart';
 import 'home_screen.dart';
 
 const _allSkills = [
@@ -111,7 +113,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   alignment: Alignment.centerLeft,
                   child: LogoTitle(
                     onTap: () => Navigator.of(context).pushAndRemoveUntil(
-                      MaterialPageRoute(builder: (_) => const HomeScreen()),
+                      SmoothPageRoute(builder: (_) => const HomeScreen()),
                       (_) => false,
                     ),
                   ),
@@ -563,6 +565,37 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   void _saveProfile() {
+    final nameCheck = ModerationService.validateName(_nameCtrl.text.trim());
+    if (!nameCheck.approved) {
+      _showValidationError(nameCheck.reason!);
+      return;
+    }
+
+    final locCheck = ModerationService.validateLocation(_locationCtrl.text.trim());
+    if (!locCheck.approved) {
+      _showValidationError(locCheck.reason!);
+      return;
+    }
+
+    final ageCheck = ModerationService.validateAge(_ageCtrl.text.trim());
+    if (!ageCheck.approved) {
+      _showValidationError(ageCheck.reason!);
+      return;
+    }
+
+    final bioCheck = ModerationService.validateBio(_bioCtrl.text.trim());
+    if (!bioCheck.approved) {
+      _showValidationError(bioCheck.reason!);
+      return;
+    }
+
+    final schoolCheck = ModerationService.validateProfileField(
+        'school', _schoolCtrl.text.trim());
+    if (!schoolCheck.approved) {
+      _showValidationError(schoolCheck.reason!);
+      return;
+    }
+
     context.read<AppState>().updateProfile(
           name: _nameCtrl.text.trim(),
           location: _locationCtrl.text.trim(),
@@ -577,6 +610,17 @@ class _ProfileScreenState extends State<ProfileScreen> {
       SnackBar(
         content: const Text('Profile updated!'),
         behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      ),
+    );
+  }
+
+  void _showValidationError(String reason) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(reason),
+        behavior: SnackBarBehavior.floating,
+        backgroundColor: const Color(0xFFDC2626),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       ),
     );
@@ -697,8 +741,43 @@ class _ProfileScreenState extends State<ProfileScreen> {
                               : () async {
                                   setSheetState(
                                       () => _aiGenerating = true);
+
+                                  final validation =
+                                      await ModerationService
+                                          .validateAiBuilderInputs(
+                                    skills: skillCtrl.text.trim(),
+                                    likes: likeCtrl.text.trim(),
+                                    personality:
+                                        personalityCtrl.text.trim(),
+                                    goal: goalCtrl.text.trim(),
+                                  );
+
+                                  if (!validation.approved) {
+                                    setSheetState(
+                                        () => _aiGenerating = false);
+                                    if (!ctx.mounted) return;
+                                    ScaffoldMessenger.of(ctx)
+                                        .showSnackBar(
+                                      SnackBar(
+                                        content: Text(
+                                            validation.reason ??
+                                                'Invalid input'),
+                                        behavior:
+                                            SnackBarBehavior.floating,
+                                        backgroundColor:
+                                            const Color(0xFFDC2626),
+                                        shape: RoundedRectangleBorder(
+                                            borderRadius:
+                                                BorderRadius.circular(
+                                                    12)),
+                                      ),
+                                    );
+                                    return;
+                                  }
+
                                   await Future.delayed(
-                                      const Duration(milliseconds: 1500));
+                                      const Duration(
+                                          milliseconds: 1500));
                                   final result = _generateAiProfile(
                                     skills: skillCtrl.text.trim(),
                                     likes: likeCtrl.text.trim(),

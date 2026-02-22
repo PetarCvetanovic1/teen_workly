@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../utils/smooth_route.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import '../app_colors.dart';
@@ -37,7 +38,7 @@ class ConversationsScreen extends StatelessWidget {
               alignment: Alignment.centerLeft,
               child: LogoTitle(
                 onTap: () => Navigator.of(context).pushAndRemoveUntil(
-                  MaterialPageRoute(builder: (_) => const HomeScreen()),
+                  SmoothPageRoute(builder: (_) => const HomeScreen()),
                   (_) => false,
                 ),
               ),
@@ -95,7 +96,7 @@ class ConversationsScreen extends StatelessWidget {
                             time: conv.lastMessageTime,
                             isDark: isDark,
                             onTap: () => Navigator.of(context).push(
-                              MaterialPageRoute(
+                              SmoothPageRoute(
                                 builder: (_) =>
                                     ChatScreen(conversationId: conv.id),
                               ),

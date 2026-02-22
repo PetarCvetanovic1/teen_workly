@@ -65,6 +65,16 @@ class AppState extends ChangeNotifier {
   final List<Review> _reviews = [];
   final Set<String> _blockedUserIds = {};
 
+  final List<DateTime> _deleteStrikes = [];
+  DateTime? _postingSuspendedUntil;
+
+  String _userLocationText = '';
+  String get userLocationText => _userLocationText;
+  void setUserLocation(String location) {
+    _userLocationText = location;
+    notifyListeners();
+  }
+
   List<Report> get reports => List.unmodifiable(_reports);
   List<Review> get reviews => List.unmodifiable(_reviews);
   Set<String> get blockedUserIds => Set.unmodifiable(_blockedUserIds);
@@ -137,6 +147,103 @@ class AppState extends ChangeNotifier {
 
   bool hasReviewedJob(String jobId) =>
       _reviews.any((r) => r.jobId == jobId && r.reviewerId == currentUserId);
+
+  // --- Limits ---
+
+  int get myActiveHiredJobs => _jobs
+      .where((j) =>
+          j.hiredId == currentUserId &&
+          (j.status == JobStatus.inProgress ||
+              j.status == JobStatus.pendingCompletion))
+      .length;
+
+  bool get canWorkMoreJobs => myActiveHiredJobs < 3;
+
+  int get myCompletedPostedJobCount => _jobs
+      .where(
+          (j) => j.posterId == currentUserId && j.status == JobStatus.completed)
+      .length;
+
+  bool get isTrustedPoster => myCompletedPostedJobCount >= 5;
+
+  int get myActivePostedJobs => _jobs
+      .where((j) =>
+          j.posterId == currentUserId &&
+          j.status != JobStatus.completed)
+      .length;
+
+  int get maxPostableJobs => isTrustedPoster ? 5 : 3;
+
+  bool get canPostMoreJobs =>
+      !isPostingSuspended &&
+      !amReportSuspended &&
+      myActivePostedJobs < maxPostableJobs;
+
+  // --- Deletion strike / suspension system ---
+
+  static const _strikeWindow = Duration(days: 7);
+  static const _suspensionDuration = Duration(days: 3);
+  static const _maxStrikesBeforeBan = 3;
+
+  List<DateTime> get _recentStrikes {
+    final cutoff = DateTime.now().subtract(_strikeWindow);
+    _deleteStrikes.removeWhere((d) => d.isBefore(cutoff));
+    return _deleteStrikes;
+  }
+
+  int get deleteStrikeCount => _recentStrikes.length;
+
+  int get strikesRemaining => _maxStrikesBeforeBan - deleteStrikeCount;
+
+  bool get isPostingSuspended =>
+      _postingSuspendedUntil != null &&
+      DateTime.now().isBefore(_postingSuspendedUntil!);
+
+  DateTime? get postingSuspendedUntil => _postingSuspendedUntil;
+
+  Duration get suspensionTimeLeft => isPostingSuspended
+      ? _postingSuspendedUntil!.difference(DateTime.now())
+      : Duration.zero;
+
+  bool jobHasApplicants(String jobId) {
+    final job = _jobs.cast<Job?>().firstWhere(
+          (j) => j!.id == jobId,
+          orElse: () => null,
+        );
+    return job != null && job.applicantIds.isNotEmpty;
+  }
+
+  /// Returns a warning message if applicable, or null.
+  /// If 3rd strike → suspends the user.
+  String? deleteJobWithStrike(String jobId) {
+    final job = _jobs.cast<Job?>().firstWhere(
+          (j) => j!.id == jobId,
+          orElse: () => null,
+        );
+    if (job == null) return null;
+
+    final hadApplicants = job.applicantIds.isNotEmpty;
+    _jobs.removeWhere((j) => j.id == jobId);
+
+    if (!hadApplicants) {
+      notifyListeners();
+      return null;
+    }
+
+    _deleteStrikes.add(DateTime.now());
+
+    String? warning;
+    if (_recentStrikes.length >= _maxStrikesBeforeBan) {
+      _postingSuspendedUntil = DateTime.now().add(_suspensionDuration);
+      warning = 'suspended';
+    } else {
+      final left = _maxStrikesBeforeBan - _recentStrikes.length;
+      warning = 'strike:$left';
+    }
+
+    notifyListeners();
+    return warning;
+  }
 
   List<Service> get myServices =>
       _services.where((s) => s.providerId == currentUserId).toList();
@@ -247,6 +354,39 @@ class AppState extends ChangeNotifier {
 
   // --- Report / Block ---
 
+  // Map of userId → suspension expiry
+  final Map<String, DateTime> _reportSuspensions = {};
+
+  static const _reportWindow = Duration(days: 30);
+
+  bool hasAlreadyReported(String targetId) {
+    return _reports.any(
+        (r) => r.targetId == targetId && r.reporterId == currentUserId);
+  }
+
+  int uniqueReportCountForUser(String userId) {
+    final cutoff = DateTime.now().subtract(_reportWindow);
+    final recent = _reports.where((r) =>
+        r.reportedUserId == userId && r.createdAt.isAfter(cutoff));
+    final uniqueReporters = recent.map((r) => r.reporterId).toSet();
+    return uniqueReporters.length;
+  }
+
+  bool isUserReportSuspended(String userId) {
+    final expiry = _reportSuspensions[userId];
+    return expiry != null && DateTime.now().isBefore(expiry);
+  }
+
+  DateTime? reportSuspensionEnd(String userId) => _reportSuspensions[userId];
+
+  Duration reportSuspensionTimeLeft(String userId) {
+    final expiry = _reportSuspensions[userId];
+    if (expiry == null || DateTime.now().isAfter(expiry)) return Duration.zero;
+    return expiry.difference(DateTime.now());
+  }
+
+  bool get amReportSuspended => isUserReportSuspended(currentUserId);
+
   void reportContent({
     required String targetType,
     required String targetId,
@@ -256,8 +396,10 @@ class AppState extends ChangeNotifier {
   }) {
     _reports.add(Report(
       id: DateTime.now().microsecondsSinceEpoch.toString(),
+      reporterId: currentUserId,
       targetType: targetType,
       targetId: targetId,
+      reportedUserId: userId,
       reason: reason,
       blocked: block,
       createdAt: DateTime.now(),
@@ -265,7 +407,28 @@ class AppState extends ChangeNotifier {
     if (block && userId != null) {
       _blockedUserIds.add(userId);
     }
+
+    if (userId != null) {
+      _evaluateReportSuspension(userId);
+    }
+
     notifyListeners();
+  }
+
+  void _evaluateReportSuspension(String userId) {
+    final count = uniqueReportCountForUser(userId);
+    Duration? duration;
+    if (count >= 20) {
+      duration = const Duration(days: 7);
+    } else if (count >= 10) {
+      duration = const Duration(days: 3);
+    } else if (count >= 5) {
+      duration = const Duration(days: 1);
+    }
+
+    if (duration != null) {
+      _reportSuspensions[userId] = DateTime.now().add(duration);
+    }
   }
 
   bool isBlocked(String userId) => _blockedUserIds.contains(userId);
@@ -326,6 +489,8 @@ class AppState extends ChangeNotifier {
             'I have a big backyard and love taking dogs on long walks!',
         providerId: 'user_emma',
         createdAt: DateTime.now().subtract(const Duration(hours: 5)),
+        minPrice: 12,
+        maxPrice: 18,
       ),
       Service(
         id: 'svc_2',
@@ -339,6 +504,8 @@ class AppState extends ChangeNotifier {
             'Can also help with phone/computer setup and troubleshooting.',
         providerId: 'user_marcus',
         createdAt: DateTime.now().subtract(const Duration(hours: 12)),
+        minPrice: 15,
+        maxPrice: 25,
       ),
       Service(
         id: 'svc_3',
@@ -352,6 +519,8 @@ class AppState extends ChangeNotifier {
             'cleaning, and can run errands around town. Very reliable.',
         providerId: 'user_ava',
         createdAt: DateTime.now().subtract(const Duration(days: 1)),
+        minPrice: 10,
+        maxPrice: 20,
       ),
     ]);
 
@@ -367,6 +536,7 @@ class AppState extends ChangeNotifier {
         posterId: 'user_sarah',
         posterName: 'Sarah Miller',
         createdAt: DateTime.now().subtract(const Duration(hours: 3)),
+        payment: 30,
       ),
       Job(
         id: 'job_2',
@@ -379,6 +549,7 @@ class AppState extends ChangeNotifier {
         posterId: 'user_david',
         posterName: 'David Park',
         createdAt: DateTime.now().subtract(const Duration(hours: 8)),
+        payment: 20,
       ),
       Job(
         id: 'job_3',
@@ -391,6 +562,7 @@ class AppState extends ChangeNotifier {
         posterId: 'user_linda',
         posterName: 'Linda Garcia',
         createdAt: DateTime.now().subtract(const Duration(days: 1)),
+        payment: 60,
       ),
     ]);
   }

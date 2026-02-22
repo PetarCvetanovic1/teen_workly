@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
+import '../utils/smooth_route.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import '../app_colors.dart';
 import '../models/models.dart';
 import '../state/app_state.dart';
+import '../services/moderation.dart';
 import '../widgets/app_drawer.dart';
 import '../widgets/logo_title.dart';
 import '../widgets/app_bar_nav.dart';
@@ -41,10 +43,31 @@ class _PostServiceScreenState extends State<PostServiceScreen> {
   final _bioCtrl = TextEditingController();
   final _locationCtrl = TextEditingController();
   final _otherSkillCtrl = TextEditingController();
+  final _minPriceCtrl = TextEditingController();
+  final _maxPriceCtrl = TextEditingController();
   final Set<String> _selectedSkills = {};
   final Set<String> _selectedDays = {};
   TimeOfDay _startTime = const TimeOfDay(hour: 9, minute: 0);
   TimeOfDay _endTime = const TimeOfDay(hour: 17, minute: 0);
+  bool _prefilled = false;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (!_prefilled) {
+      final state = context.read<AppState>();
+      final loc = state.userLocationText.isNotEmpty
+          ? state.userLocationText
+          : state.profile?.location ?? '';
+      if (loc.isNotEmpty && _locationCtrl.text.isEmpty) {
+        _locationCtrl.text = loc;
+      }
+      if (state.isLoggedIn && _nameCtrl.text.isEmpty) {
+        _nameCtrl.text = state.currentUserName;
+      }
+      _prefilled = true;
+    }
+  }
 
   @override
   void dispose() {
@@ -52,6 +75,8 @@ class _PostServiceScreenState extends State<PostServiceScreen> {
     _bioCtrl.dispose();
     _locationCtrl.dispose();
     _otherSkillCtrl.dispose();
+    _minPriceCtrl.dispose();
+    _maxPriceCtrl.dispose();
     super.dispose();
   }
 
@@ -78,7 +103,7 @@ class _PostServiceScreenState extends State<PostServiceScreen> {
               alignment: Alignment.centerLeft,
               child: LogoTitle(
                 onTap: () => Navigator.of(context).pushAndRemoveUntil(
-                  MaterialPageRoute(builder: (_) => const HomeScreen()),
+                  SmoothPageRoute(builder: (_) => const HomeScreen()),
                   (_) => false,
                 ),
               ),
@@ -250,6 +275,147 @@ class _PostServiceScreenState extends State<PostServiceScreen> {
                         ],
                       ),
                       const SizedBox(height: 24),
+                      _label('YOUR PRICE RANGE (\$/HR)'),
+                      const SizedBox(height: 8),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: TextFormField(
+                              controller: _minPriceCtrl,
+                              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                              style: GoogleFonts.plusJakartaSans(
+                                fontWeight: FontWeight.w600,
+                                fontSize: 16,
+                                color: isDark ? Colors.white : AppColors.slate900,
+                              ),
+                              decoration: InputDecoration(
+                                hintText: 'Min',
+                                prefixText: '\$ ',
+                                prefixStyle: GoogleFonts.plusJakartaSans(
+                                  fontWeight: FontWeight.w800,
+                                  fontSize: 16,
+                                  color: const Color(0xFF059669),
+                                ),
+                                hintStyle: GoogleFonts.plusJakartaSans(
+                                  fontWeight: FontWeight.w500,
+                                  color: const Color(0xFF94A3B8),
+                                ),
+                                filled: true,
+                                fillColor: isDark
+                                    ? const Color(0xFF0F172A).withValues(alpha: 0.5)
+                                    : Colors.white.withValues(alpha: 0.5),
+                                border: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(16),
+                                  borderSide: BorderSide(
+                                    color: isDark ? const Color(0xFF334155) : AppColors.slate100,
+                                  ),
+                                ),
+                                enabledBorder: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(16),
+                                  borderSide: BorderSide(
+                                    color: isDark ? const Color(0xFF334155) : AppColors.slate100,
+                                  ),
+                                ),
+                                focusedBorder: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(16),
+                                  borderSide: BorderSide(
+                                    color: const Color(0xFF059669).withValues(alpha: 0.5),
+                                    width: 2,
+                                  ),
+                                ),
+                                contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+                              ),
+                              validator: (v) {
+                                if (v == null || v.trim().isEmpty) return 'Required';
+                                final n = double.tryParse(v.trim());
+                                if (n == null) return 'Number';
+                                if (n < 5) return 'Min \$5';
+                                if (n > 75) return 'Max \$75/hr';
+                                return null;
+                              },
+                            ),
+                          ),
+                          Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 12),
+                            child: Text(
+                              '–',
+                              style: GoogleFonts.plusJakartaSans(
+                                fontSize: 22,
+                                fontWeight: FontWeight.w800,
+                                color: const Color(0xFF94A3B8),
+                              ),
+                            ),
+                          ),
+                          Expanded(
+                            child: TextFormField(
+                              controller: _maxPriceCtrl,
+                              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                              style: GoogleFonts.plusJakartaSans(
+                                fontWeight: FontWeight.w600,
+                                fontSize: 16,
+                                color: isDark ? Colors.white : AppColors.slate900,
+                              ),
+                              decoration: InputDecoration(
+                                hintText: 'Max',
+                                prefixText: '\$ ',
+                                prefixStyle: GoogleFonts.plusJakartaSans(
+                                  fontWeight: FontWeight.w800,
+                                  fontSize: 16,
+                                  color: const Color(0xFF059669),
+                                ),
+                                hintStyle: GoogleFonts.plusJakartaSans(
+                                  fontWeight: FontWeight.w500,
+                                  color: const Color(0xFF94A3B8),
+                                ),
+                                filled: true,
+                                fillColor: isDark
+                                    ? const Color(0xFF0F172A).withValues(alpha: 0.5)
+                                    : Colors.white.withValues(alpha: 0.5),
+                                border: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(16),
+                                  borderSide: BorderSide(
+                                    color: isDark ? const Color(0xFF334155) : AppColors.slate100,
+                                  ),
+                                ),
+                                enabledBorder: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(16),
+                                  borderSide: BorderSide(
+                                    color: isDark ? const Color(0xFF334155) : AppColors.slate100,
+                                  ),
+                                ),
+                                focusedBorder: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(16),
+                                  borderSide: BorderSide(
+                                    color: const Color(0xFF059669).withValues(alpha: 0.5),
+                                    width: 2,
+                                  ),
+                                ),
+                                contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+                              ),
+                              validator: (v) {
+                                if (v == null || v.trim().isEmpty) return 'Required';
+                                final n = double.tryParse(v.trim());
+                                if (n == null) return 'Number';
+                                if (n < 5) return 'Min \$5';
+                                if (n > 75) return 'Max \$75/hr';
+                                final minVal = double.tryParse(_minPriceCtrl.text.trim()) ?? 0;
+                                if (n < minVal) return 'Must be ≥ min';
+                                return null;
+                              },
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        'Hourly rate range — max and min must be different, realistic numbers',
+                        style: GoogleFonts.plusJakartaSans(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w500,
+                          color: const Color(0xFF94A3B8),
+                        ),
+                      ),
+                      const SizedBox(height: 24),
                       _label('ABOUT YOU'),
                       const SizedBox(height: 8),
                       _field(
@@ -266,21 +432,48 @@ class _PostServiceScreenState extends State<PostServiceScreen> {
                         elevation: 4,
                         shadowColor: Colors.black.withValues(alpha: 0.15),
                         child: InkWell(
-                          onTap: _submit,
+                          onTap: _submitting ? null : _submit,
                           borderRadius: BorderRadius.circular(16),
                           child: Padding(
                             padding: const EdgeInsets.symmetric(vertical: 18),
-                            child: Text(
-                              'Publish Your Service',
-                              textAlign: TextAlign.center,
-                              style: GoogleFonts.plusJakartaSans(
-                                fontSize: 16,
-                                fontWeight: FontWeight.w800,
-                                color: isDark
-                                    ? AppColors.slate900
-                                    : Colors.white,
-                              ),
-                            ),
+                            child: _submitting
+                                ? Row(
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    children: [
+                                      SizedBox(
+                                        width: 18,
+                                        height: 18,
+                                        child: CircularProgressIndicator(
+                                          strokeWidth: 2.5,
+                                          color: isDark
+                                              ? AppColors.slate900
+                                              : Colors.white,
+                                        ),
+                                      ),
+                                      const SizedBox(width: 12),
+                                      Text(
+                                        'Checking content...',
+                                        style: GoogleFonts.plusJakartaSans(
+                                          fontSize: 16,
+                                          fontWeight: FontWeight.w800,
+                                          color: isDark
+                                              ? AppColors.slate900
+                                              : Colors.white,
+                                        ),
+                                      ),
+                                    ],
+                                  )
+                                : Text(
+                                    'Publish Your Service',
+                                    textAlign: TextAlign.center,
+                                    style: GoogleFonts.plusJakartaSans(
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.w800,
+                                      color: isDark
+                                          ? AppColors.slate900
+                                          : Colors.white,
+                                    ),
+                                  ),
                           ),
                         ),
                       ),
@@ -466,34 +659,154 @@ class _PostServiceScreenState extends State<PostServiceScreen> {
     );
   }
 
-  void _submit() {
-    if (_formKey.currentState?.validate() ?? false) {
-      final state = context.read<AppState>();
-      final service = Service(
-        id: DateTime.now().microsecondsSinceEpoch.toString(),
-        providerName: _nameCtrl.text.trim(),
-        location: _locationCtrl.text.trim(),
-        skills: Set.from(_selectedSkills),
-        otherSkill: _selectedSkills.contains('Other')
-            ? _otherSkillCtrl.text.trim()
-            : null,
-        availableDays: Set.from(_selectedDays),
-        startTime: _startTime,
-        endTime: _endTime,
-        bio: _bioCtrl.text.trim(),
-        providerId: state.currentUserId,
-        createdAt: DateTime.now(),
-      );
-      state.addService(service);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: const Text('Service posted! Check your Dashboard.'),
-          behavior: SnackBarBehavior.floating,
+  bool _submitting = false;
+
+  void _submit() async {
+    if (_submitting) return;
+    if (!(_formKey.currentState?.validate() ?? false)) return;
+
+    final appState = context.read<AppState>();
+    if (appState.amReportSuspended) {
+      final left = appState.reportSuspensionTimeLeft(appState.currentUserId);
+      final days = (left.inHours / 24).ceil();
+      if (!mounted) return;
+      showDialog(
+        context: context,
+        builder: (ctx) => AlertDialog(
           shape:
-              RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          title: const Row(
+            children: [
+              Icon(Icons.block_rounded, color: Color(0xFFDC2626)),
+              SizedBox(width: 8),
+              Text('Account Suspended'),
+            ],
+          ),
+          content: Text(
+            'Your account has been suspended due to multiple reports. '
+            'Suspension ends in ${days > 0 ? "$days day${days == 1 ? "" : "s"}" : "a few hours"}.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('OK'),
+            ),
+          ],
         ),
       );
-      Navigator.of(context).pop();
+      return;
     }
+
+    setState(() => _submitting = true);
+
+    final result = await ModerationService.moderateService(
+      providerName: _nameCtrl.text.trim(),
+      bio: _bioCtrl.text.trim(),
+      skills: Set.from(_selectedSkills),
+      otherSkill: _selectedSkills.contains('Other')
+          ? _otherSkillCtrl.text.trim()
+          : null,
+    );
+
+    if (!mounted) return;
+    setState(() => _submitting = false);
+
+    if (!result.approved) {
+      _showModerationWarning(result.reason!);
+      return;
+    }
+
+    final state = context.read<AppState>();
+    final service = Service(
+      id: DateTime.now().microsecondsSinceEpoch.toString(),
+      providerName: _nameCtrl.text.trim(),
+      location: _locationCtrl.text.trim(),
+      skills: Set.from(_selectedSkills),
+      otherSkill: _selectedSkills.contains('Other')
+          ? _otherSkillCtrl.text.trim()
+          : null,
+      availableDays: Set.from(_selectedDays),
+      startTime: _startTime,
+      endTime: _endTime,
+      bio: _bioCtrl.text.trim(),
+      providerId: state.currentUserId,
+      createdAt: DateTime.now(),
+      minPrice: double.tryParse(_minPriceCtrl.text.trim()) ?? 0,
+      maxPrice: double.tryParse(_maxPriceCtrl.text.trim()) ?? 0,
+    );
+    state.addService(service);
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: const Text('Service posted! Check your Dashboard.'),
+        behavior: SnackBarBehavior.floating,
+        shape:
+            RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      ),
+    );
+    Navigator.of(context).pop();
+  }
+
+  void _showModerationWarning(String reason) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        backgroundColor: isDark ? const Color(0xFF1E293B) : Colors.white,
+        title: Row(
+          children: [
+            Container(
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(
+                color: const Color(0xFFDC2626).withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: const Icon(Icons.shield_rounded,
+                  color: Color(0xFFDC2626), size: 22),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                'Post Blocked',
+                style: GoogleFonts.plusJakartaSans(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w800,
+                  color: isDark ? Colors.white : AppColors.slate900,
+                ),
+              ),
+            ),
+          ],
+        ),
+        content: Text(
+          reason,
+          style: GoogleFonts.plusJakartaSans(
+            fontSize: 14,
+            fontWeight: FontWeight.w500,
+            height: 1.5,
+            color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
+          ),
+        ),
+        actions: [
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx),
+            style: FilledButton.styleFrom(
+              backgroundColor: const Color(0xFFDC2626),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+            ),
+            child: Text(
+              'Got it, I\'ll fix it',
+              style: GoogleFonts.plusJakartaSans(
+                fontWeight: FontWeight.w700,
+                color: Colors.white,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }

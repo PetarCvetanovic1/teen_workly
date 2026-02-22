@@ -3,6 +3,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import '../app_colors.dart';
 import '../state/app_state.dart';
+import '../services/moderation.dart';
 import '../widgets/content_wrap.dart';
 
 class ChatScreen extends StatefulWidget {
@@ -24,9 +25,27 @@ class _ChatScreenState extends State<ChatScreen> {
     super.dispose();
   }
 
-  void _send() {
+  void _send() async {
     final text = _msgCtrl.text.trim();
     if (text.isEmpty) return;
+
+    final result = await ModerationService.moderateMessage(text);
+    if (!mounted) return;
+
+    if (!result.approved) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(result.reason ?? 'Message blocked.'),
+          behavior: SnackBarBehavior.floating,
+          backgroundColor: const Color(0xFFDC2626),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
+        ),
+      );
+      return;
+    }
+
     context.read<AppState>().sendMessage(widget.conversationId, text);
     _msgCtrl.clear();
     Future.delayed(const Duration(milliseconds: 100), () {

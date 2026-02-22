@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../utils/smooth_route.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../app_colors.dart';
 import '../screens/jobs_screen.dart';
@@ -35,7 +36,7 @@ class AppBarNav extends StatelessWidget {
             icon: Icons.add_rounded,
             color: AppColors.indigo600,
             onTap: () => Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => const PostJobScreen()),
+              SmoothPageRoute(builder: (_) => const PostJobScreen()),
             ),
             isDark: isDark,
           ),
@@ -45,7 +46,7 @@ class AppBarNav extends StatelessWidget {
             icon: Icons.handyman_rounded,
             color: const Color(0xFF059669),
             onTap: () => Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => const PostServiceScreen()),
+              SmoothPageRoute(builder: (_) => const PostServiceScreen()),
             ),
             isDark: isDark,
           ),
@@ -55,7 +56,7 @@ class AppBarNav extends StatelessWidget {
             icon: Icons.search_rounded,
             color: const Color(0xFF7C3AED),
             onTap: () => Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => const JobsScreen()),
+              SmoothPageRoute(builder: (_) => const JobsScreen()),
             ),
             isDark: isDark,
           ),
@@ -65,7 +66,7 @@ class AppBarNav extends StatelessWidget {
             icon: Icons.dashboard_rounded,
             color: const Color(0xFFEA580C),
             onTap: () => Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => const DashboardScreen()),
+              SmoothPageRoute(builder: (_) => const DashboardScreen()),
             ),
             isDark: isDark,
           ),

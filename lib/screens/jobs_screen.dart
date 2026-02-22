@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../utils/smooth_route.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
@@ -81,6 +82,7 @@ class _JobsScreenState extends State<JobsScreen> {
           setState(() {
             _userLocation = const LatLng(43.4643, -80.5204);
           });
+          context.read<AppState>().setUserLocation(text);
         },
       ),
     );
@@ -108,6 +110,14 @@ class _JobsScreenState extends State<JobsScreen> {
         _userLocation = LatLng(pos.latitude, pos.longitude);
         _locationLoading = false;
       });
+      if (mounted) {
+        final state = context.read<AppState>();
+        if (state.userLocationText.isEmpty) {
+          final profileLoc = state.profile?.location ?? '';
+          state.setUserLocation(
+              profileLoc.isNotEmpty ? profileLoc : 'My Location');
+        }
+      }
     } catch (_) {
       setState(() => _locationLoading = false);
       if (mounted) {
@@ -197,7 +207,7 @@ class _JobsScreenState extends State<JobsScreen> {
                       child: LogoTitle(
                         onTap: () {
                           Navigator.of(context).pushAndRemoveUntil(
-                            MaterialPageRoute(
+                            SmoothPageRoute(
                                 builder: (_) => const HomeScreen()),
                             (_) => false,
                           );
@@ -911,7 +921,7 @@ class _ServiceListTile extends StatelessWidget {
         shadowColor: Colors.black.withValues(alpha: 0.06),
         child: InkWell(
           onTap: () => Navigator.of(context).push(
-            MaterialPageRoute(
+            SmoothPageRoute(
               builder: (_) => ServiceDetailScreen(service: service),
             ),
           ),
@@ -981,6 +991,26 @@ class _ServiceListTile extends StatelessWidget {
                               color: const Color(0xFF94A3B8),
                             ),
                           ),
+                          if (service.priceRangeLabel.isNotEmpty) ...[
+                            const SizedBox(width: 8),
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 8, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFF059669)
+                                    .withValues(alpha: 0.1),
+                                borderRadius: BorderRadius.circular(6),
+                              ),
+                              child: Text(
+                                service.priceRangeLabel,
+                                style: GoogleFonts.plusJakartaSans(
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w700,
+                                  color: const Color(0xFF059669),
+                                ),
+                              ),
+                            ),
+                          ],
                         ],
                       ),
                     ],
@@ -1015,7 +1045,7 @@ class _JobListTile extends StatelessWidget {
         shadowColor: Colors.black.withValues(alpha: 0.06),
         child: InkWell(
           onTap: () => Navigator.of(context).push(
-            MaterialPageRoute(
+            SmoothPageRoute(
               builder: (_) => JobDetailScreen(job: job),
             ),
           ),
@@ -1079,6 +1109,26 @@ class _JobListTile extends StatelessWidget {
                               ),
                             ),
                           ),
+                          if (job.payment > 0) ...[
+                            const SizedBox(width: 6),
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 8, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFF059669)
+                                    .withValues(alpha: 0.1),
+                                borderRadius: BorderRadius.circular(6),
+                              ),
+                              child: Text(
+                                '\$${job.payment.toStringAsFixed(0)}',
+                                style: GoogleFonts.plusJakartaSans(
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w700,
+                                  color: const Color(0xFF059669),
+                                ),
+                              ),
+                            ),
+                          ],
                         ],
                       ),
                     ],
@@ -1144,7 +1194,7 @@ class _EmptyState extends StatelessWidget {
             const SizedBox(height: 28),
             FilledButton.icon(
               onPressed: () => Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => const PostJobScreen()),
+                SmoothPageRoute(builder: (_) => const PostJobScreen()),
               ),
               icon: const Icon(Icons.add_rounded, size: 20),
               label: const Text('Post a Job'),

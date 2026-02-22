@@ -85,6 +85,8 @@ class Service {
   final String bio;
   final String providerId;
   final DateTime createdAt;
+  final double minPrice;
+  final double maxPrice;
 
   const Service({
     required this.id,
@@ -98,7 +100,15 @@ class Service {
     required this.bio,
     required this.providerId,
     required this.createdAt,
+    this.minPrice = 0,
+    this.maxPrice = 0,
   });
+
+  String get priceRangeLabel {
+    if (minPrice <= 0 && maxPrice <= 0) return '';
+    if (minPrice == maxPrice) return '\$${minPrice.toStringAsFixed(0)}/hr';
+    return '\$${minPrice.toStringAsFixed(0)} – \$${maxPrice.toStringAsFixed(0)}/hr';
+  }
 }
 
 class ChatMessage {
@@ -119,16 +129,20 @@ class ChatMessage {
 
 class Report {
   final String id;
+  final String reporterId;
   final String targetType;
   final String targetId;
+  final String? reportedUserId;
   final String reason;
   final bool blocked;
   final DateTime createdAt;
 
   const Report({
     required this.id,
+    required this.reporterId,
     required this.targetType,
     required this.targetId,
+    this.reportedUserId,
     required this.reason,
     required this.blocked,
     required this.createdAt,

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../utils/smooth_route.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import '../app_colors.dart';
@@ -11,6 +12,7 @@ import '../screens/dashboard_screen.dart';
 import '../screens/conversations_screen.dart';
 import '../screens/login_screen.dart';
 import '../screens/profile_screen.dart';
+import '../screens/contact_screen.dart';
 
 class AppDrawer extends StatelessWidget {
   const AppDrawer({super.key});
@@ -106,7 +108,7 @@ class AppDrawer extends StatelessWidget {
                   onTap: () {
                     Navigator.pop(context);
                     Navigator.of(context).pushAndRemoveUntil(
-                      MaterialPageRoute(builder: (_) => const HomeScreen()),
+                      SmoothPageRoute(builder: (_) => const HomeScreen()),
                       (_) => false,
                     );
                   },
@@ -117,7 +119,7 @@ class AppDrawer extends StatelessWidget {
                   onTap: () {
                     Navigator.pop(context);
                     Navigator.of(context).push(
-                      MaterialPageRoute(builder: (_) => const PostJobScreen()),
+                      SmoothPageRoute(builder: (_) => const PostJobScreen()),
                     );
                   },
                 ),
@@ -127,7 +129,7 @@ class AppDrawer extends StatelessWidget {
                   onTap: () {
                     Navigator.pop(context);
                     Navigator.of(context).push(
-                      MaterialPageRoute(
+                      SmoothPageRoute(
                           builder: (_) => const PostServiceScreen()),
                     );
                   },
@@ -138,7 +140,7 @@ class AppDrawer extends StatelessWidget {
                   onTap: () {
                     Navigator.pop(context);
                     Navigator.of(context).push(
-                      MaterialPageRoute(
+                      SmoothPageRoute(
                         builder: (_) => const JobsScreen(),
                       ),
                     );
@@ -150,7 +152,7 @@ class AppDrawer extends StatelessWidget {
                   onTap: () {
                     Navigator.pop(context);
                     Navigator.of(context).push(
-                      MaterialPageRoute(
+                      SmoothPageRoute(
                           builder: (_) => const DashboardScreen()),
                     );
                   },
@@ -161,24 +163,63 @@ class AppDrawer extends StatelessWidget {
                   onTap: () {
                     Navigator.pop(context);
                     Navigator.of(context).push(
-                      MaterialPageRoute(
+                      SmoothPageRoute(
                           builder: (_) => const ConversationsScreen()),
                     );
                   },
                 ),
-                const Divider(height: 24),
-                if (loggedIn) ...[
+                if (loggedIn)
                   _DrawerTile(
                     icon: Icons.person_rounded,
                     label: 'My Profile',
                     onTap: () {
                       Navigator.pop(context);
                       Navigator.of(context).push(
-                        MaterialPageRoute(
+                        SmoothPageRoute(
                             builder: (_) => const ProfileScreen()),
                       );
                     },
                   ),
+                const Divider(height: 24),
+                _DrawerTile(
+                  icon: Icons.mail_outline_rounded,
+                  label: 'Contact Us',
+                  onTap: () {
+                    Navigator.pop(context);
+                    Navigator.of(context).push(
+                      SmoothPageRoute(
+                          builder: (_) => const ContactScreen()),
+                    );
+                  },
+                ),
+                if (!loggedIn) ...[
+                  const Divider(height: 24),
+                  _DrawerTile(
+                    icon: Icons.login_rounded,
+                    label: 'Log in',
+                    onTap: () {
+                      Navigator.pop(context);
+                      Navigator.of(context).push(
+                        SmoothPageRoute(
+                            builder: (_) => const LoginScreen()),
+                      );
+                    },
+                  ),
+                  _DrawerTile(
+                    icon: Icons.person_add_rounded,
+                    label: 'Join now',
+                    onTap: () {
+                      Navigator.pop(context);
+                      Navigator.of(context).push(
+                        SmoothPageRoute(
+                            builder: (_) => const SignUpScreen()),
+                      );
+                    },
+                  ),
+                ],
+                if (loggedIn) ...[
+                  const Spacer(),
+                  const Divider(height: 1),
                   _DrawerTile(
                     icon: Icons.logout_rounded,
                     label: 'Log out',
@@ -196,29 +237,7 @@ class AppDrawer extends StatelessWidget {
                       );
                     },
                   ),
-                ] else ...[
-                  _DrawerTile(
-                    icon: Icons.login_rounded,
-                    label: 'Log in',
-                    onTap: () {
-                      Navigator.pop(context);
-                      Navigator.of(context).push(
-                        MaterialPageRoute(
-                            builder: (_) => const LoginScreen()),
-                      );
-                    },
-                  ),
-                  _DrawerTile(
-                    icon: Icons.person_add_rounded,
-                    label: 'Join now',
-                    onTap: () {
-                      Navigator.pop(context);
-                      Navigator.of(context).push(
-                        MaterialPageRoute(
-                            builder: (_) => const SignUpScreen()),
-                      );
-                    },
-                  ),
+                  const SizedBox(height: 8),
                 ],
               ],
             ),
