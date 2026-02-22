@@ -29,17 +29,14 @@ class LogoTitle extends StatelessWidget {
       ),
     );
 
-    if (onTap == null) return Align(alignment: Alignment.centerLeft, child: logo);
+    if (onTap == null) return logo;
 
-    return Align(
-      alignment: Alignment.centerLeft,
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(8),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
-          child: logo,
-        ),
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(8),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
+        child: logo,
       ),
     );
   }

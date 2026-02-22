@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:provider/provider.dart';
 import 'app_colors.dart';
+import 'state/app_state.dart';
 import 'screens/home_screen.dart';
 
 void main() {
@@ -12,7 +14,9 @@ class TeenWorklyApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
+    return ChangeNotifierProvider(
+      create: (_) => AppState()..seedDemoData(),
+      child: MaterialApp(
       title: 'TeenWorkly',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
@@ -122,8 +126,9 @@ class TeenWorklyApp extends StatelessWidget {
           ),
         ),
       ),
-      themeMode: ThemeMode.system,
-      home: const HomeScreen(),
+        themeMode: ThemeMode.system,
+        home: const HomeScreen(),
+      ),
     );
   }
 }

@@ -1,9 +1,17 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:provider/provider.dart';
 import '../app_colors.dart';
+import '../state/app_state.dart';
 import 'jobs_screen.dart';
+import 'post_job_screen.dart';
+import 'post_service_screen.dart';
+import 'job_detail_screen.dart';
+import 'service_detail_screen.dart';
 import '../widgets/app_drawer.dart';
 import '../widgets/logo_title.dart';
+import '../widgets/app_bar_nav.dart';
+import '../widgets/auth_button.dart';
 
 class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key});
@@ -25,7 +33,14 @@ class HomeScreen extends StatelessWidget {
             onPressed: () => Scaffold.of(ctx).openDrawer(),
           ),
         ),
-        title: const LogoTitle(),
+        title: Stack(
+          alignment: Alignment.center,
+          children: const [
+            Align(alignment: Alignment.centerLeft, child: LogoTitle()),
+            Center(child: AppBarNav()),
+          ],
+        ),
+        actions: const [AuthButton()],
       ),
       drawer: const AppDrawer(),
       body: Container(
@@ -165,7 +180,11 @@ class HomeScreen extends StatelessWidget {
                       const SizedBox(width: 14),
                       _HeroButton(
                         label: 'Hire Talent',
-                        onTap: () {},
+                        onTap: () => Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder: (_) => const PostJobScreen(),
+                          ),
+                        ),
                         filled: false,
                         isDark: isDark,
                       ),
@@ -286,9 +305,34 @@ class HomeScreen extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(height: 16),
-                const Padding(
-                  padding: EdgeInsets.symmetric(horizontal: 24),
-                  child: _LatestJobsEmpty(),
+                Consumer<AppState>(
+                  builder: (context, state, _) {
+                    final jobs = state.jobs;
+                    final services = state.services;
+                    if (jobs.isEmpty && services.isEmpty) {
+                      return Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 24),
+                        child: _LatestJobsEmpty(isDark: isDark),
+                      );
+                    }
+                    return Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 24),
+                      child: Column(
+                        children: [
+                          ...services.take(2).map((s) => Padding(
+                                padding: const EdgeInsets.only(bottom: 10),
+                                child: _LatestServiceCard(
+                                    service: s, isDark: isDark),
+                              )),
+                          ...jobs.take(3).map((j) => Padding(
+                                padding: const EdgeInsets.only(bottom: 10),
+                                child: _LatestJobCard(
+                                    job: j, isDark: isDark),
+                              )),
+                        ],
+                      ),
+                    );
+                  },
                 ),
                 const SizedBox(height: 48),
               ],
@@ -373,12 +417,12 @@ class _HeroButton extends StatelessWidget {
 }
 
 class _LatestJobsEmpty extends StatelessWidget {
-  const _LatestJobsEmpty();
+  final bool isDark;
+  const _LatestJobsEmpty({required this.isDark});
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final isDark = theme.brightness == Brightness.dark;
 
     return Container(
       padding: const EdgeInsets.all(24),
@@ -412,18 +456,36 @@ class _LatestJobsEmpty extends StatelessWidget {
           ),
           const SizedBox(height: 8),
           Text(
-            'Post a service or post a job to get started and be the first in your area.',
+            'Post a service to show off your skills, or post a job if you need help — be the first in your area!',
             style: theme.textTheme.bodyMedium?.copyWith(
               color: theme.colorScheme.onSurface.withValues(alpha: 0.7),
             ),
             textAlign: TextAlign.center,
           ),
           const SizedBox(height: 20),
-          _HeroButton(
-            label: 'Post a Job',
-            onTap: () {},
-            filled: true,
-            isDark: isDark,
+          Wrap(
+            spacing: 12,
+            runSpacing: 12,
+            alignment: WrapAlignment.center,
+            children: [
+              _HeroButton(
+                label: 'Post a Job',
+                onTap: () => Navigator.of(context).push(
+                  MaterialPageRoute(builder: (_) => const PostJobScreen()),
+                ),
+                filled: true,
+                isDark: isDark,
+              ),
+              _HeroButton(
+                label: 'Post a Service',
+                onTap: () => Navigator.of(context).push(
+                  MaterialPageRoute(
+                      builder: (_) => const PostServiceScreen()),
+                ),
+                filled: false,
+                isDark: isDark,
+              ),
+            ],
           ),
         ],
       ),
@@ -499,6 +561,158 @@ class _StepTile extends StatelessWidget {
             textAlign: TextAlign.center,
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _LatestJobCard extends StatelessWidget {
+  final dynamic job;
+  final bool isDark;
+  const _LatestJobCard({required this.job, required this.isDark});
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: isDark ? const Color(0xFF1E293B) : Colors.white,
+      borderRadius: BorderRadius.circular(18),
+      elevation: isDark ? 0 : 1,
+      shadowColor: Colors.black.withValues(alpha: 0.06),
+      child: InkWell(
+        onTap: () => Navigator.of(context).push(
+          MaterialPageRoute(builder: (_) => JobDetailScreen(job: job)),
+        ),
+        borderRadius: BorderRadius.circular(18),
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Row(
+            children: [
+              Container(
+                width: 44,
+                height: 44,
+                decoration: BoxDecoration(
+                  color: AppColors.indigo600.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: const Icon(Icons.work_outline_rounded,
+                    color: AppColors.indigo600, size: 22),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      job.title,
+                      style: GoogleFonts.plusJakartaSans(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w700,
+                        color: isDark ? Colors.white : AppColors.slate900,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      '${job.location} · ${job.type}',
+                      style: GoogleFonts.plusJakartaSans(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w500,
+                        color: const Color(0xFF94A3B8),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Icon(
+                Icons.chevron_right_rounded,
+                color: isDark ? const Color(0xFF334155) : AppColors.slate200,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _LatestServiceCard extends StatelessWidget {
+  final dynamic service;
+  final bool isDark;
+  const _LatestServiceCard({required this.service, required this.isDark});
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: isDark ? const Color(0xFF1E293B) : Colors.white,
+      borderRadius: BorderRadius.circular(18),
+      elevation: isDark ? 0 : 1,
+      shadowColor: Colors.black.withValues(alpha: 0.06),
+      child: InkWell(
+        onTap: () => Navigator.of(context).push(
+          MaterialPageRoute(
+              builder: (_) => ServiceDetailScreen(service: service)),
+        ),
+        borderRadius: BorderRadius.circular(18),
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Row(
+            children: [
+              Container(
+                width: 44,
+                height: 44,
+                decoration: BoxDecoration(
+                  gradient: const LinearGradient(
+                    colors: [Color(0xFF7C3AED), AppColors.indigo600],
+                  ),
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: Center(
+                  child: Text(
+                    (service.providerName as String)
+                        .split(' ')
+                        .map((w) => w.isEmpty ? '' : w[0])
+                        .take(2)
+                        .join()
+                        .toUpperCase(),
+                    style: GoogleFonts.plusJakartaSans(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w800,
+                      color: Colors.white,
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      service.providerName,
+                      style: GoogleFonts.plusJakartaSans(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w700,
+                        color: isDark ? Colors.white : AppColors.slate900,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      (service.skills as Set<String>).join(' · '),
+                      style: GoogleFonts.plusJakartaSans(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: const Color(0xFF7C3AED),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Icon(
+                Icons.chevron_right_rounded,
+                color: isDark ? const Color(0xFF334155) : AppColors.slate200,
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
