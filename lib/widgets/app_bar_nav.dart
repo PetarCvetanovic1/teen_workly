@@ -6,6 +6,7 @@ import '../screens/jobs_screen.dart';
 import '../screens/post_job_screen.dart';
 import '../screens/post_service_screen.dart';
 import '../screens/dashboard_screen.dart';
+import '../screens/huddle_screen.dart';
 
 /// Pill-shaped nav with "Post a Job", "Post a Service", "Find a Job", and "Dashboard" for the app bar.
 class AppBarNav extends StatelessWidget {
@@ -37,6 +38,16 @@ class AppBarNav extends StatelessWidget {
             color: AppColors.indigo600,
             onTap: () => Navigator.of(context).push(
               SmoothPageRoute(builder: (_) => const PostJobScreen()),
+            ),
+            isDark: isDark,
+          ),
+          const SizedBox(width: 4),
+          _NavChip(
+            label: 'The Huddle',
+            icon: Icons.groups_rounded,
+            color: const Color(0xFFF59E0B),
+            onTap: () => Navigator.of(context).push(
+              SmoothPageRoute(builder: (_) => const HuddleScreen()),
             ),
             isDark: isDark,
           ),

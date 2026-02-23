@@ -173,6 +173,76 @@ class Review {
   });
 }
 
+enum HuddleAgeGroup { under16, sixteenPlus }
+
+enum HuddleTag { needHelp, advice, collab, justChatting }
+
+extension HuddleTagExt on HuddleTag {
+  String get label {
+    switch (this) {
+      case HuddleTag.needHelp:
+        return 'Need Help';
+      case HuddleTag.advice:
+        return 'Advice';
+      case HuddleTag.collab:
+        return 'Collab';
+      case HuddleTag.justChatting:
+        return 'Just Chatting';
+    }
+  }
+
+  String get emoji {
+    switch (this) {
+      case HuddleTag.needHelp:
+        return '🆘';
+      case HuddleTag.advice:
+        return '💡';
+      case HuddleTag.collab:
+        return '🤝';
+      case HuddleTag.justChatting:
+        return '💬';
+    }
+  }
+}
+
+class HuddleReply {
+  final String id;
+  final String authorId;
+  final String authorName;
+  final String text;
+  final DateTime createdAt;
+
+  const HuddleReply({
+    required this.id,
+    required this.authorId,
+    required this.authorName,
+    required this.text,
+    required this.createdAt,
+  });
+}
+
+class HuddlePost {
+  final String id;
+  final String authorId;
+  final String authorName;
+  final String text;
+  final HuddleTag tag;
+  final HuddleAgeGroup ageGroup;
+  final DateTime createdAt;
+  final List<HuddleReply> replies;
+
+  HuddlePost({
+    required this.id,
+    required this.authorId,
+    required this.authorName,
+    required this.text,
+    required this.tag,
+    required this.ageGroup,
+    required this.createdAt,
+    List<HuddleReply>? replies,
+  }) : replies = replies ?? [];
+}
+
 class Conversation {
   final String id;
   final String otherUserId;

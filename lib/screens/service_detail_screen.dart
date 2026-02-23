@@ -261,17 +261,22 @@ class ServiceDetailScreen extends StatelessWidget {
                   elevation: 4,
                   shadowColor: Colors.black.withValues(alpha: 0.15),
                   child: InkWell(
-                    onTap: () {
-                      final conv = state.getOrCreateConversation(
+                    onTap: () async {
+                      final conv = await state.getOrCreateConversation(
                         otherUserId: service.providerId,
                         otherUserName: service.providerName,
                         contextLabel:
                             'Service: ${service.skills.join(", ")}',
                       );
+                      if (!context.mounted) return;
                       Navigator.of(context).push(
                         SmoothPageRoute(
                           builder: (_) =>
-                              ChatScreen(conversationId: conv.id),
+                              ChatScreen(
+                                conversationId: conv.id,
+                                otherUserName: conv.otherUserName,
+                                contextLabel: conv.contextLabel,
+                              ),
                         ),
                       );
                     },

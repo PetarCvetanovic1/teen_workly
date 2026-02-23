@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:firebase_core/firebase_core.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
+import 'firebase_options.dart';
 import 'app_colors.dart';
 import 'state/app_state.dart';
 import 'screens/home_screen.dart';
@@ -47,7 +49,11 @@ const _smoothTransitions = PageTransitionsTheme(
 );
 
 
-void main() {
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await Firebase.initializeApp(
+    options: DefaultFirebaseOptions.currentPlatform,
+  );
   runApp(const TeenWorklyApp());
 }
 
@@ -57,7 +63,7 @@ class TeenWorklyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return ChangeNotifierProvider(
-      create: (_) => AppState()..seedDemoData(),
+      create: (_) => AppState(),
       child: MaterialApp(
       title: 'TeenWorkly',
       debugShowCheckedModeBanner: false,

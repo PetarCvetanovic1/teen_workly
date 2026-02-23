@@ -2,13 +2,21 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import '../app_colors.dart';
+import '../models/models.dart';
 import '../state/app_state.dart';
 import '../services/moderation.dart';
 import '../widgets/content_wrap.dart';
 
 class ChatScreen extends StatefulWidget {
   final String conversationId;
-  const ChatScreen({super.key, required this.conversationId});
+  final String otherUserName;
+  final String? contextLabel;
+  const ChatScreen({
+    super.key,
+    required this.conversationId,
+    this.otherUserName = '',
+    this.contextLabel,
+  });
 
   @override
   State<ChatScreen> createState() => _ChatScreenState();
@@ -46,7 +54,7 @@ class _ChatScreenState extends State<ChatScreen> {
       return;
     }
 
-    context.read<AppState>().sendMessage(widget.conversationId, text);
+    await context.read<AppState>().sendMessage(widget.conversationId, text);
     _msgCtrl.clear();
     Future.delayed(const Duration(milliseconds: 100), () {
       if (_scrollCtrl.hasClients) {
@@ -63,121 +71,123 @@ class _ChatScreenState extends State<ChatScreen> {
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
-    return Consumer<AppState>(
-      builder: (context, state, _) {
-        final conv = state.conversations.firstWhere(
-          (c) => c.id == widget.conversationId,
-        );
+    final state = context.read<AppState>();
+    final initials = widget.otherUserName
+        .split(' ')
+        .map((w) => w.isEmpty ? '' : w[0])
+        .take(2)
+        .join()
+        .toUpperCase();
 
-        return Scaffold(
-          appBar: AppBar(
-            backgroundColor: isDark ? const Color(0xFF1E293B) : Colors.white,
-            elevation: 1,
-            shadowColor: Colors.black.withValues(alpha: 0.06),
-            leading: IconButton(
-              icon: const Icon(Icons.arrow_back_rounded),
-              onPressed: () => Navigator.of(context).pop(),
-            ),
-            title: Row(
-              children: [
-                Container(
-                  width: 36,
-                  height: 36,
-                  decoration: BoxDecoration(
-                    gradient: const LinearGradient(
-                      colors: [AppColors.indigo600, Color(0xFF7C3AED)],
-                    ),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Center(
-                    child: Text(
-                      conv.otherUserName
-                          .split(' ')
-                          .map((w) => w.isEmpty ? '' : w[0])
-                          .take(2)
-                          .join()
-                          .toUpperCase(),
-                      style: GoogleFonts.plusJakartaSans(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w800,
-                        color: Colors.white,
-                      ),
-                    ),
-                  ),
+    return Scaffold(
+      appBar: AppBar(
+        backgroundColor: isDark ? const Color(0xFF1E293B) : Colors.white,
+        elevation: 1,
+        shadowColor: Colors.black.withValues(alpha: 0.06),
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back_rounded),
+          onPressed: () => Navigator.of(context).pop(),
+        ),
+        title: Row(
+          children: [
+            Container(
+              width: 36,
+              height: 36,
+              decoration: BoxDecoration(
+                gradient: const LinearGradient(
+                  colors: [AppColors.indigo600, Color(0xFF7C3AED)],
                 ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        conv.otherUserName,
-                        style: GoogleFonts.plusJakartaSans(
-                          fontSize: 15,
-                          fontWeight: FontWeight.w700,
-                          color: isDark ? Colors.white : AppColors.slate900,
-                        ),
-                      ),
-                      if (conv.contextLabel != null)
-                        Text(
-                          conv.contextLabel!,
-                          style: GoogleFonts.plusJakartaSans(
-                            fontSize: 11,
-                            fontWeight: FontWeight.w600,
-                            color: AppColors.indigo600,
-                          ),
-                        ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
-          body: ContentWrap(
-            child: Column(
-              children: [
-                Expanded(
-                  child: conv.messages.isEmpty
-                      ? Center(
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(
-                              Icons.chat_bubble_outline_rounded,
-                              size: 48,
-                              color:
-                                  AppColors.indigo600.withValues(alpha: 0.3),
-                            ),
-                            const SizedBox(height: 12),
-                            Text(
-                              'Say hello!',
-                              style: GoogleFonts.plusJakartaSans(
-                                fontSize: 16,
-                                fontWeight: FontWeight.w600,
-                                color: const Color(0xFF94A3B8),
-                              ),
-                            ),
-                          ],
-                        ),
-                      )
-                    : ListView.builder(
-                        controller: _scrollCtrl,
-                        padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-                        itemCount: conv.messages.length,
-                        itemBuilder: (context, index) {
-                          final msg = conv.messages[index];
-                          final isMe =
-                              msg.senderId == state.currentUserId;
-                          return _ChatBubble(
-                            text: msg.text,
-                            senderName: msg.senderName,
-                            isMe: isMe,
-                            isDark: isDark,
-                            timestamp: msg.timestamp,
-                          );
-                        },
-                      ),
+                borderRadius: BorderRadius.circular(12),
               ),
+              child: Center(
+                child: Text(
+                  initials,
+                  style: GoogleFonts.plusJakartaSans(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w800,
+                    color: Colors.white,
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    widget.otherUserName,
+                    style: GoogleFonts.plusJakartaSans(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w700,
+                      color: isDark ? Colors.white : AppColors.slate900,
+                    ),
+                  ),
+                  if (widget.contextLabel != null)
+                    Text(
+                      widget.contextLabel!,
+                      style: GoogleFonts.plusJakartaSans(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                        color: AppColors.indigo600,
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+      body: ContentWrap(
+        child: Column(
+          children: [
+            Expanded(
+              child: StreamBuilder<List<ChatMessage>>(
+                stream: state.messagesStream(widget.conversationId),
+                builder: (context, snapshot) {
+                  final messages = snapshot.data ?? [];
+                  if (messages.isEmpty) {
+                    return Center(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            Icons.chat_bubble_outline_rounded,
+                            size: 48,
+                            color: AppColors.indigo600.withValues(alpha: 0.3),
+                          ),
+                          const SizedBox(height: 12),
+                          Text(
+                            'Say hello!',
+                            style: GoogleFonts.plusJakartaSans(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w600,
+                              color: const Color(0xFF94A3B8),
+                            ),
+                          ),
+                        ],
+                      ),
+                    );
+                  }
+                  return ListView.builder(
+                    controller: _scrollCtrl,
+                    padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+                    itemCount: messages.length,
+                    itemBuilder: (context, index) {
+                      final msg = messages[index];
+                      final isMe = msg.senderId == state.currentUserId;
+                      return _ChatBubble(
+                        text: msg.text,
+                        senderName: msg.senderName,
+                        isMe: isMe,
+                        isDark: isDark,
+                        timestamp: msg.timestamp,
+                      );
+                    },
+                  );
+                },
+              ),
+            ),
               // Input bar
               Container(
                 padding: EdgeInsets.only(
@@ -253,10 +263,8 @@ class _ChatScreenState extends State<ChatScreen> {
               ),
             ],
           ),
-          ),
-        );
-      },
-    );
+        ),
+      );
   }
 }
 

@@ -565,7 +565,7 @@ class _PostJobScreenState extends State<PostJobScreen> {
       createdAt: DateTime.now(),
       payment: double.tryParse(_payCtrl.text.trim()) ?? 0,
     );
-    state.addJob(job);
+    await state.addJob(job);
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(

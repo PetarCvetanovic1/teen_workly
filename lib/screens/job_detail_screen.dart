@@ -213,7 +213,7 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
                       return _ApplicantTile(
                         name: job.applicantNames[i],
                         isDark: isDark,
-                        onHire: () {
+                        onHire: () async {
                           final applicantActiveJobs = state.jobs
                               .where((j) =>
                                   j.hiredId == job.applicantIds[i] &&
@@ -235,11 +235,12 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
                             );
                             return;
                           }
-                          state.hireApplicant(
+                          await state.hireApplicant(
                             job.id,
                             job.applicantIds[i],
                             job.applicantNames[i],
                           );
+                          if (!context.mounted) return;
                           ScaffoldMessenger.of(context).showSnackBar(
                             SnackBar(
                               content: Text(
@@ -251,16 +252,20 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
                             ),
                           );
                         },
-                        onMessage: () {
-                          final conv = state.getOrCreateConversation(
+                        onMessage: () async {
+                          final conv = await state.getOrCreateConversation(
                             otherUserId: job.applicantIds[i],
                             otherUserName: job.applicantNames[i],
                             contextLabel: 'Job: ${job.title}',
                           );
+                          if (!context.mounted) return;
                           Navigator.of(context).push(
                             SmoothPageRoute(
-                              builder: (_) =>
-                                  ChatScreen(conversationId: conv.id),
+                              builder: (_) => ChatScreen(
+                                conversationId: conv.id,
+                                otherUserName: conv.otherUserName,
+                                contextLabel: conv.contextLabel,
+                              ),
                             ),
                           );
                         },
@@ -284,16 +289,21 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
                       icon: Icons.chat_rounded,
                       color: AppColors.indigo600,
                       isDark: isDark,
-                      onTap: () {
-                        final conv = state.getOrCreateConversation(
+                      onTap: () async {
+                        final conv = await state.getOrCreateConversation(
                           otherUserId: job.hiredId!,
                           otherUserName: job.hiredName!,
                           contextLabel: 'Job: ${job.title}',
                         );
+                        if (!context.mounted) return;
                         Navigator.of(context).push(
                           SmoothPageRoute(
                             builder: (_) =>
-                                ChatScreen(conversationId: conv.id),
+                                ChatScreen(
+                                  conversationId: conv.id,
+                                  otherUserName: conv.otherUserName,
+                                  contextLabel: conv.contextLabel,
+                                ),
                           ),
                         );
                       },
@@ -354,16 +364,20 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
                           icon: Icons.chat_rounded,
                           color: AppColors.indigo600,
                           isDark: isDark,
-                          onTap: () {
-                            final conv = state.getOrCreateConversation(
+                          onTap: () async {
+                            final conv = await state.getOrCreateConversation(
                               otherUserId: job.hiredId!,
                               otherUserName: job.hiredName!,
                               contextLabel: 'Job: ${job.title}',
                             );
+                            if (!context.mounted) return;
                             Navigator.of(context).push(
                               SmoothPageRoute(
-                                builder: (_) =>
-                                    ChatScreen(conversationId: conv.id),
+                                builder: (_) => ChatScreen(
+                                  conversationId: conv.id,
+                                  otherUserName: conv.otherUserName,
+                                  contextLabel: conv.contextLabel,
+                                ),
                               ),
                             );
                           },
@@ -400,8 +414,9 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
                       child: InkWell(
                         onTap: hasApplied
                             ? null
-                            : () {
-                                state.applyToJob(job.id);
+                            : () async {
+                                await state.applyToJob(job.id);
+                                if (!context.mounted) return;
                                 ScaffoldMessenger.of(context).showSnackBar(
                                   SnackBar(
                                     content: const Text(
@@ -467,16 +482,20 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
                           icon: Icons.chat_rounded,
                           color: AppColors.indigo600,
                           isDark: isDark,
-                          onTap: () {
-                            final conv = state.getOrCreateConversation(
+                          onTap: () async {
+                            final conv = await state.getOrCreateConversation(
                               otherUserId: job.posterId,
                               otherUserName: job.posterName,
                               contextLabel: 'Job: ${job.title}',
                             );
+                            if (!context.mounted) return;
                             Navigator.of(context).push(
                               SmoothPageRoute(
-                                builder: (_) =>
-                                    ChatScreen(conversationId: conv.id),
+                                builder: (_) => ChatScreen(
+                                  conversationId: conv.id,
+                                  otherUserName: conv.otherUserName,
+                                  contextLabel: conv.contextLabel,
+                                ),
                               ),
                             );
                           },
@@ -489,8 +508,9 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
                           icon: Icons.task_alt_rounded,
                           color: const Color(0xFF059669),
                           isDark: isDark,
-                          onTap: () {
-                            state.requestCompletion(job.id);
+                          onTap: () async {
+                            await state.requestCompletion(job.id);
+                            if (!context.mounted) return;
                             ScaffoldMessenger.of(context).showSnackBar(
                               SnackBar(
                                 content: const Text(
@@ -701,10 +721,11 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
               ),
             ),
             FilledButton(
-              onPressed: () {
+              onPressed: () async {
                 final amount =
                     double.tryParse(_paymentCtrl.text.trim()) ?? 0;
-                state.confirmCompletion(job.id, amount);
+                await state.confirmCompletion(job.id, amount);
+                if (!context.mounted) return;
                 Navigator.pop(ctx);
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(
@@ -874,8 +895,8 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
               FilledButton(
                 onPressed: selectedStars == 0
                     ? null
-                    : () {
-                        state.addReview(
+                    : () async {
+                        await state.addReview(
                           jobId: job.id,
                           workerId: job.hiredId!,
                           workerName: job.hiredName!,
@@ -884,6 +905,7 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
                               ? null
                               : commentCtrl.text.trim(),
                         );
+                        if (!context.mounted) return;
                         Navigator.pop(ctx);
                         ScaffoldMessenger.of(context).showSnackBar(
                           SnackBar(

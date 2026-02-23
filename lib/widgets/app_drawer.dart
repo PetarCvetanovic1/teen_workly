@@ -13,6 +13,7 @@ import '../screens/conversations_screen.dart';
 import '../screens/login_screen.dart';
 import '../screens/profile_screen.dart';
 import '../screens/contact_screen.dart';
+import '../screens/huddle_screen.dart';
 
 class AppDrawer extends StatelessWidget {
   const AppDrawer({super.key});
@@ -120,6 +121,16 @@ class AppDrawer extends StatelessWidget {
                     Navigator.pop(context);
                     Navigator.of(context).push(
                       SmoothPageRoute(builder: (_) => const PostJobScreen()),
+                    );
+                  },
+                ),
+                _DrawerTile(
+                  icon: Icons.groups_rounded,
+                  label: 'The Huddle',
+                  onTap: () {
+                    Navigator.pop(context);
+                    Navigator.of(context).push(
+                      SmoothPageRoute(builder: (_) => const HuddleScreen()),
                     );
                   },
                 ),

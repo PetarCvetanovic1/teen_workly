@@ -3,12 +3,14 @@ import '../utils/smooth_route.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import '../app_colors.dart';
+import '../models/models.dart';
 import '../state/app_state.dart';
 import 'jobs_screen.dart';
 import 'post_job_screen.dart';
 import 'post_service_screen.dart';
 import 'job_detail_screen.dart';
 import 'service_detail_screen.dart';
+import 'huddle_screen.dart';
 import '../widgets/app_drawer.dart';
 import '../widgets/logo_title.dart';
 import '../widgets/app_bar_nav.dart';
@@ -178,17 +180,19 @@ class HomeScreen extends StatelessWidget {
                         filled: true,
                         isDark: isDark,
                       ),
-                      const SizedBox(width: 14),
-                      _HeroButton(
-                        label: 'Hire Talent',
-                        onTap: () => Navigator.of(context).push(
-                          SmoothPageRoute(
-                            builder: (_) => const PostJobScreen(),
+                      if (context.watch<AppState>().canPostJobs) ...[
+                        const SizedBox(width: 14),
+                        _HeroButton(
+                          label: 'Hire Talent',
+                          onTap: () => Navigator.of(context).push(
+                            SmoothPageRoute(
+                              builder: (_) => const PostJobScreen(),
+                            ),
                           ),
+                          filled: false,
+                          isDark: isDark,
                         ),
-                        filled: false,
-                        isDark: isDark,
-                      ),
+                      ],
                     ],
                   ),
                 ),
@@ -306,10 +310,71 @@ class HomeScreen extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(height: 16),
+                Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 24),
+                    child: GestureDetector(
+                      onTap: () => Navigator.of(context).push(
+                        SmoothPageRoute(builder: (_) => const HuddleScreen()),
+                      ),
+                      child: Container(
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          gradient: const LinearGradient(
+                            colors: [Color(0xFFF59E0B), Color(0xFFF97316)],
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                          ),
+                          borderRadius: BorderRadius.circular(18),
+                          boxShadow: [
+                            BoxShadow(
+                              color: const Color(0xFFF59E0B).withValues(alpha: 0.3),
+                              blurRadius: 16,
+                              offset: const Offset(0, 6),
+                            ),
+                          ],
+                        ),
+                        child: Row(
+                          children: [
+                            const Icon(Icons.groups_rounded,
+                                color: Colors.white, size: 32),
+                            const SizedBox(width: 14),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    'The Huddle',
+                                    style: GoogleFonts.plusJakartaSans(
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.w800,
+                                      color: Colors.white,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    'Chat, ask for help & collab with other teens',
+                                    style: GoogleFonts.plusJakartaSans(
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w500,
+                                      color: Colors.white.withValues(alpha: 0.85),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            const Icon(Icons.arrow_forward_rounded,
+                                color: Colors.white),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                const SizedBox(height: 16),
                 Consumer<AppState>(
                   builder: (context, state, _) {
                     final jobs = state.jobs;
-                    final services = state.services;
+                    final canHire = state.canPostJobs;
+                    final services = canHire ? state.services : <Service>[];
                     if (jobs.isEmpty && services.isEmpty) {
                       return Padding(
                         padding: const EdgeInsets.symmetric(horizontal: 24),
@@ -457,7 +522,9 @@ class _LatestJobsEmpty extends StatelessWidget {
           ),
           const SizedBox(height: 8),
           Text(
-            'Post a service to show off your skills, or post a job if you need help — be the first in your area!',
+            context.watch<AppState>().canPostJobs
+                ? 'Post a service to show off your skills, or post a job if you need help — be the first in your area!'
+                : 'Post a service to show off your skills and be the first in your area!',
             style: theme.textTheme.bodyMedium?.copyWith(
               color: theme.colorScheme.onSurface.withValues(alpha: 0.7),
             ),
@@ -469,14 +536,15 @@ class _LatestJobsEmpty extends StatelessWidget {
             runSpacing: 12,
             alignment: WrapAlignment.center,
             children: [
-              _HeroButton(
-                label: 'Post a Job',
-                onTap: () => Navigator.of(context).push(
-                  SmoothPageRoute(builder: (_) => const PostJobScreen()),
+              if (context.watch<AppState>().canPostJobs)
+                _HeroButton(
+                  label: 'Post a Job',
+                  onTap: () => Navigator.of(context).push(
+                    SmoothPageRoute(builder: (_) => const PostJobScreen()),
+                  ),
+                  filled: true,
+                  isDark: isDark,
                 ),
-                filled: true,
-                isDark: isDark,
-              ),
               _HeroButton(
                 label: 'Post a Service',
                 onTap: () => Navigator.of(context).push(

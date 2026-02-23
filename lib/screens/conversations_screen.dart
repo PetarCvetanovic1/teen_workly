@@ -3,6 +3,7 @@ import '../utils/smooth_route.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import '../app_colors.dart';
+import '../models/models.dart';
 import '../state/app_state.dart';
 import '../widgets/app_drawer.dart';
 import '../widgets/logo_title.dart';
@@ -49,9 +50,10 @@ class ConversationsScreen extends StatelessWidget {
         actions: const [AuthButton()],
       ),
       drawer: const AppDrawer(),
-      body: Consumer<AppState>(
-        builder: (context, state, _) {
-          final convos = state.conversations;
+      body: StreamBuilder<List<Conversation>>(
+        stream: context.read<AppState>().conversationsStream,
+        builder: (context, snapshot) {
+          final convos = snapshot.data ?? [];
 
           return ContentWrap(
             child: Column(
@@ -98,7 +100,11 @@ class ConversationsScreen extends StatelessWidget {
                             onTap: () => Navigator.of(context).push(
                               SmoothPageRoute(
                                 builder: (_) =>
-                                    ChatScreen(conversationId: conv.id),
+                                    ChatScreen(
+                                      conversationId: conv.id,
+                                      otherUserName: conv.otherUserName,
+                                      contextLabel: conv.contextLabel,
+                                    ),
                               ),
                             ),
                           );

@@ -661,7 +661,7 @@ class _PostServiceScreenState extends State<PostServiceScreen> {
 
   bool _submitting = false;
 
-  void _submit() async {
+  Future<void> _submit() async {
     if (_submitting) return;
     if (!(_formKey.currentState?.validate() ?? false)) return;
 
@@ -734,7 +734,7 @@ class _PostServiceScreenState extends State<PostServiceScreen> {
       minPrice: double.tryParse(_minPriceCtrl.text.trim()) ?? 0,
       maxPrice: double.tryParse(_maxPriceCtrl.text.trim()) ?? 0,
     );
-    state.addService(service);
+    await state.addService(service);
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(

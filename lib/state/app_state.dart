@@ -1,70 +1,30 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import '../models/models.dart';
+import '../services/firestore_service.dart';
 
 class AppState extends ChangeNotifier {
-  static const _guestId = 'current_user';
+  final _auth = FirebaseAuth.instance;
 
   UserProfile? _profile;
   bool get isLoggedIn => _profile != null;
   UserProfile? get profile => _profile;
 
-  String get currentUserId => _profile?.id ?? _guestId;
+  String get currentUserId => _auth.currentUser?.uid ?? 'guest';
   String get currentUserName => _profile?.name ?? 'Guest';
 
-  void login(String email, String password) {
-    _profile = UserProfile(
-      id: 'user_${email.hashCode.abs()}',
-      name: email.split('@').first,
-      email: email,
-    );
-    notifyListeners();
-  }
+  List<Job> _jobs = [];
+  List<Service> _services = [];
+  List<Report> _reports = [];
+  List<Review> _reviews = [];
 
-  void signUp({
-    required String name,
-    required String email,
-    required String password,
-  }) {
-    _profile = UserProfile(
-      id: 'user_${email.hashCode.abs()}',
-      name: name,
-      email: email,
-    );
-    notifyListeners();
-  }
+  StreamSubscription? _jobsSub;
+  StreamSubscription? _servicesSub;
+  StreamSubscription? _reportsSub;
+  StreamSubscription? _reviewsSub;
 
-  void logout() {
-    _profile = null;
-    notifyListeners();
-  }
-
-  void updateProfile({
-    String? name,
-    String? location,
-    String? bio,
-    Set<String>? skills,
-    Set<String>? interests,
-    String? school,
-    int? age,
-  }) {
-    if (_profile == null) return;
-    if (name != null) _profile!.name = name;
-    if (location != null) _profile!.location = location;
-    if (bio != null) _profile!.bio = bio;
-    if (skills != null) _profile!.skills = skills;
-    if (interests != null) _profile!.interests = interests;
-    if (school != null) _profile!.school = school;
-    if (age != null) _profile!.age = age;
-    notifyListeners();
-  }
-
-  final List<Job> _jobs = [];
-  final List<Service> _services = [];
-  final List<Conversation> _conversations = [];
-  final List<Report> _reports = [];
-  final List<Review> _reviews = [];
   final Set<String> _blockedUserIds = {};
-
   final List<DateTime> _deleteStrikes = [];
   DateTime? _postingSuspendedUntil;
 
@@ -75,15 +35,140 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
-  List<Report> get reports => List.unmodifiable(_reports);
-  List<Review> get reviews => List.unmodifiable(_reviews);
+  bool get canPostJobs => true;
+
+  AppState() {
+    _auth.authStateChanges().listen(_onAuthChanged);
+  }
+
+  Future<void> _onAuthChanged(User? user) async {
+    if (user != null) {
+      _profile = await FirestoreService.getUser(user.uid);
+      _startListening();
+    } else {
+      _profile = null;
+      _stopListening();
+      _jobs = [];
+      _services = [];
+      _reports = [];
+      _reviews = [];
+    }
+    notifyListeners();
+  }
+
+  void _startListening() {
+    _jobsSub?.cancel();
+    _servicesSub?.cancel();
+    _reportsSub?.cancel();
+    _reviewsSub?.cancel();
+
+    _jobsSub = FirestoreService.jobsStream().listen((data) {
+      _jobs = data;
+      notifyListeners();
+    });
+    _servicesSub = FirestoreService.servicesStream().listen((data) {
+      _services = data;
+      notifyListeners();
+    });
+    _reportsSub = FirestoreService.reportsStream().listen((data) {
+      _reports = data;
+      _blockedUserIds.clear();
+      for (final r in _reports) {
+        if (r.blocked && r.reportedUserId != null && r.reporterId == currentUserId) {
+          _blockedUserIds.add(r.reportedUserId!);
+        }
+      }
+      notifyListeners();
+    });
+    _reviewsSub = FirestoreService.reviewsStream().listen((data) {
+      _reviews = data;
+      notifyListeners();
+    });
+  }
+
+  void _stopListening() {
+    _jobsSub?.cancel();
+    _servicesSub?.cancel();
+    _reportsSub?.cancel();
+    _reviewsSub?.cancel();
+  }
+
+  // ── Auth ──
+
+  Future<String?> signUp({
+    required String name,
+    required String email,
+    required String password,
+    int? age,
+  }) async {
+    try {
+      final cred = await _auth.createUserWithEmailAndPassword(
+        email: email,
+        password: password,
+      );
+      final uid = cred.user!.uid;
+      final profile = UserProfile(
+        id: uid,
+        name: name,
+        email: email,
+        age: age,
+      );
+      await FirestoreService.createOrUpdateUser(profile);
+      _profile = profile;
+      _startListening();
+      notifyListeners();
+      return null;
+    } on FirebaseAuthException catch (e) {
+      return e.message ?? 'Sign up failed';
+    }
+  }
+
+  Future<String?> login(String email, String password) async {
+    try {
+      await _auth.signInWithEmailAndPassword(
+        email: email,
+        password: password,
+      );
+      return null;
+    } on FirebaseAuthException catch (e) {
+      return e.message ?? 'Login failed';
+    }
+  }
+
+  Future<void> logout() async {
+    await _auth.signOut();
+  }
+
+  Future<void> updateProfile({
+    String? name,
+    String? location,
+    String? bio,
+    Set<String>? skills,
+    Set<String>? interests,
+    String? school,
+    int? age,
+  }) async {
+    if (_profile == null) return;
+    if (name != null) _profile!.name = name;
+    if (location != null) _profile!.location = location;
+    if (bio != null) _profile!.bio = bio;
+    if (skills != null) _profile!.skills = skills;
+    if (interests != null) _profile!.interests = interests;
+    if (school != null) _profile!.school = school;
+    if (age != null) _profile!.age = age;
+    await FirestoreService.createOrUpdateUser(_profile!);
+    notifyListeners();
+  }
+
+  // ── Data getters ──
+
+  List<Job> get jobs => _jobs;
+  List<Service> get services => _services;
+  List<Report> get reports => _reports;
+  List<Review> get reviews => _reviews;
   Set<String> get blockedUserIds => Set.unmodifiable(_blockedUserIds);
 
-  List<Job> get jobs => List.unmodifiable(_jobs);
-  List<Service> get services => List.unmodifiable(_services);
-  List<Conversation> get conversations => List.unmodifiable(_conversations);
-
-  // --- Stats ---
+  // ── Stats ──
 
   List<Job> get myPostedJobs =>
       _jobs.where((j) => j.posterId == currentUserId).toList();
@@ -148,7 +233,7 @@ class AppState extends ChangeNotifier {
   bool hasReviewedJob(String jobId) =>
       _reviews.any((r) => r.jobId == jobId && r.reviewerId == currentUserId);
 
-  // --- Limits ---
+  // ── Limits ──
 
   int get myActiveHiredJobs => _jobs
       .where((j) =>
@@ -179,7 +264,7 @@ class AppState extends ChangeNotifier {
       !amReportSuspended &&
       myActivePostedJobs < maxPostableJobs;
 
-  // --- Deletion strike / suspension system ---
+  // ── Deletion strike / suspension ──
 
   static const _strikeWindow = Duration(days: 7);
   static const _suspensionDuration = Duration(days: 3);
@@ -192,7 +277,6 @@ class AppState extends ChangeNotifier {
   }
 
   int get deleteStrikeCount => _recentStrikes.length;
-
   int get strikesRemaining => _maxStrikesBeforeBan - deleteStrikeCount;
 
   bool get isPostingSuspended =>
@@ -213,9 +297,7 @@ class AppState extends ChangeNotifier {
     return job != null && job.applicantIds.isNotEmpty;
   }
 
-  /// Returns a warning message if applicable, or null.
-  /// If 3rd strike → suspends the user.
-  String? deleteJobWithStrike(String jobId) {
+  Future<String?> deleteJobWithStrike(String jobId) async {
     final job = _jobs.cast<Job?>().firstWhere(
           (j) => j!.id == jobId,
           orElse: () => null,
@@ -223,18 +305,18 @@ class AppState extends ChangeNotifier {
     if (job == null) return null;
 
     final hadApplicants = job.applicantIds.isNotEmpty;
-    _jobs.removeWhere((j) => j.id == jobId);
+    await FirestoreService.deleteJob(jobId);
 
-    if (!hadApplicants) {
-      notifyListeners();
-      return null;
-    }
+    if (!hadApplicants) return null;
 
     _deleteStrikes.add(DateTime.now());
+    await FirestoreService.addDeleteStrike(currentUserId);
 
     String? warning;
     if (_recentStrikes.length >= _maxStrikesBeforeBan) {
       _postingSuspendedUntil = DateTime.now().add(_suspensionDuration);
+      await FirestoreService.setUserSuspension(
+          currentUserId, _postingSuspendedUntil);
       warning = 'suspended';
     } else {
       final left = _maxStrikesBeforeBan - _recentStrikes.length;
@@ -248,70 +330,78 @@ class AppState extends ChangeNotifier {
   List<Service> get myServices =>
       _services.where((s) => s.providerId == currentUserId).toList();
 
-  // --- Jobs ---
+  // ── Jobs ──
 
-  void addJob(Job job) {
-    _jobs.insert(0, job);
-    notifyListeners();
+  Future<void> addJob(Job job) async {
+    await FirestoreService.addJob(job);
   }
 
-  void applyToJob(String jobId) {
+  Future<void> applyToJob(String jobId) async {
     final job = _jobs.firstWhere((j) => j.id == jobId);
     if (!job.applicantIds.contains(currentUserId)) {
       job.applicantIds.add(currentUserId);
       job.applicantNames.add(currentUserName);
-      notifyListeners();
+      await FirestoreService.updateJob(job);
     }
   }
 
-  void hireApplicant(String jobId, String applicantId, String applicantName) {
+  Future<void> hireApplicant(
+      String jobId, String applicantId, String applicantName) async {
     final job = _jobs.firstWhere((j) => j.id == jobId);
     job.hiredId = applicantId;
     job.hiredName = applicantName;
     job.status = JobStatus.inProgress;
-    final conv = getOrCreateConversation(
+    await FirestoreService.updateJob(job);
+
+    final conv = await FirestoreService.getOrCreateConversation(
+      myId: currentUserId,
+      myName: currentUserName,
       otherUserId: applicantId,
       otherUserName: applicantName,
       contextLabel: 'Job: ${job.title}',
     );
-    conv.messages.add(ChatMessage(
-      id: DateTime.now().microsecondsSinceEpoch.toString(),
-      senderId: currentUserId,
-      senderName: currentUserName,
-      text: 'Hey $applicantName! You\'re hired for "${job.title}". Let\'s chat about the details!',
-      timestamp: DateTime.now(),
-    ));
+    await FirestoreService.sendMessage(
+      conversationId: conv.id,
+      message: ChatMessage(
+        id: DateTime.now().microsecondsSinceEpoch.toString(),
+        senderId: currentUserId,
+        senderName: currentUserName,
+        text:
+            'Hey $applicantName! You\'re hired for "${job.title}". Let\'s chat about the details!',
+        timestamp: DateTime.now(),
+      ),
+    );
     notifyListeners();
   }
 
-  void requestCompletion(String jobId) {
+  Future<void> requestCompletion(String jobId) async {
     final job = _jobs.firstWhere((j) => j.id == jobId);
     job.status = JobStatus.pendingCompletion;
-    notifyListeners();
+    await FirestoreService.updateJob(job);
   }
 
-  void confirmCompletion(String jobId, double payment) {
+  Future<void> confirmCompletion(String jobId, double payment) async {
     final job = _jobs.firstWhere((j) => j.id == jobId);
     job.status = JobStatus.completed;
     job.payment = payment;
-    notifyListeners();
+    await FirestoreService.updateJob(job);
   }
 
-  void completeJob(String jobId, double payment) {
+  Future<void> completeJob(String jobId, double payment) async {
     final job = _jobs.firstWhere((j) => j.id == jobId);
     job.status = JobStatus.completed;
     job.payment = payment;
-    notifyListeners();
+    await FirestoreService.updateJob(job);
   }
 
-  void addReview({
+  Future<void> addReview({
     required String jobId,
     required String workerId,
     required String workerName,
     required int stars,
     String? comment,
-  }) {
-    _reviews.add(Review(
+  }) async {
+    final review = Review(
       id: DateTime.now().microsecondsSinceEpoch.toString(),
       jobId: jobId,
       reviewerId: currentUserId,
@@ -321,42 +411,37 @@ class AppState extends ChangeNotifier {
       stars: stars,
       comment: comment,
       createdAt: DateTime.now(),
-    ));
-    notifyListeners();
+    );
+    await FirestoreService.addReview(review);
   }
 
-  void deleteJob(String jobId) {
-    _jobs.removeWhere((j) => j.id == jobId);
-    notifyListeners();
+  Future<void> deleteJob(String jobId) async {
+    await FirestoreService.deleteJob(jobId);
   }
 
-  void withdrawApplication(String jobId) {
+  Future<void> withdrawApplication(String jobId) async {
     final job = _jobs.firstWhere((j) => j.id == jobId);
     final idx = job.applicantIds.indexOf(currentUserId);
     if (idx != -1) {
       job.applicantIds.removeAt(idx);
       job.applicantNames.removeAt(idx);
-      notifyListeners();
+      await FirestoreService.updateJob(job);
     }
   }
 
-  // --- Services ---
+  // ── Services ──
 
-  void addService(Service service) {
-    _services.insert(0, service);
-    notifyListeners();
+  Future<void> addService(Service service) async {
+    await FirestoreService.addService(service);
   }
 
-  void deleteService(String serviceId) {
-    _services.removeWhere((s) => s.id == serviceId);
-    notifyListeners();
+  Future<void> deleteService(String serviceId) async {
+    await FirestoreService.deleteService(serviceId);
   }
 
-  // --- Report / Block ---
+  // ── Report / Block ──
 
-  // Map of userId → suspension expiry
   final Map<String, DateTime> _reportSuspensions = {};
-
   static const _reportWindow = Duration(days: 30);
 
   bool hasAlreadyReported(String targetId) {
@@ -387,14 +472,14 @@ class AppState extends ChangeNotifier {
 
   bool get amReportSuspended => isUserReportSuspended(currentUserId);
 
-  void reportContent({
+  Future<void> reportContent({
     required String targetType,
     required String targetId,
     required String reason,
     bool block = false,
     String? userId,
-  }) {
-    _reports.add(Report(
+  }) async {
+    final report = Report(
       id: DateTime.now().microsecondsSinceEpoch.toString(),
       reporterId: currentUserId,
       targetType: targetType,
@@ -403,15 +488,14 @@ class AppState extends ChangeNotifier {
       reason: reason,
       blocked: block,
       createdAt: DateTime.now(),
-    ));
+    );
+    await FirestoreService.addReport(report);
     if (block && userId != null) {
       _blockedUserIds.add(userId);
     }
-
     if (userId != null) {
       _evaluateReportSuspension(userId);
     }
-
     notifyListeners();
   }
 
@@ -425,7 +509,6 @@ class AppState extends ChangeNotifier {
     } else if (count >= 5) {
       duration = const Duration(days: 1);
     }
-
     if (duration != null) {
       _reportSuspensions[userId] = DateTime.now().add(duration);
     }
@@ -433,137 +516,87 @@ class AppState extends ChangeNotifier {
 
   bool isBlocked(String userId) => _blockedUserIds.contains(userId);
 
-  // --- Conversations ---
+  // ── Conversations ──
 
-  Conversation getOrCreateConversation({
+  Stream<List<Conversation>> get conversationsStream =>
+      FirestoreService.conversationsStream(currentUserId);
+
+  Stream<List<ChatMessage>> messagesStream(String conversationId) =>
+      FirestoreService.messagesStream(conversationId);
+
+  Future<Conversation> getOrCreateConversation({
     required String otherUserId,
     required String otherUserName,
     String? contextLabel,
-  }) {
-    final existing = _conversations.where((c) => c.otherUserId == otherUserId);
-    if (existing.isNotEmpty) return existing.first;
-
-    final conv = Conversation(
-      id: DateTime.now().microsecondsSinceEpoch.toString(),
+  }) async {
+    return FirestoreService.getOrCreateConversation(
+      myId: currentUserId,
+      myName: currentUserName,
       otherUserId: otherUserId,
       otherUserName: otherUserName,
       contextLabel: contextLabel,
     );
-    _conversations.insert(0, conv);
-    notifyListeners();
-    return conv;
   }
 
-  void sendMessage(String conversationId, String text) {
-    final conv = _conversations.firstWhere((c) => c.id == conversationId);
-    conv.messages.add(ChatMessage(
+  Future<void> sendMessage(String conversationId, String text) async {
+    final message = ChatMessage(
       id: DateTime.now().microsecondsSinceEpoch.toString(),
       senderId: currentUserId,
       senderName: currentUserName,
       text: text,
       timestamp: DateTime.now(),
-    ));
-
-    // Move conversation to top
-    _conversations.remove(conv);
-    _conversations.insert(0, conv);
-
-    notifyListeners();
+    );
+    await FirestoreService.sendMessage(
+      conversationId: conversationId,
+      message: message,
+    );
   }
 
-  // --- Seed demo data ---
+  // ── The Huddle ──
 
-  void seedDemoData() {
-    if (_jobs.isNotEmpty || _services.isNotEmpty) return;
+  HuddleAgeGroup get myAgeGroup =>
+      (_profile?.age ?? 18) < 16
+          ? HuddleAgeGroup.under16
+          : HuddleAgeGroup.sixteenPlus;
 
-    _services.addAll([
-      Service(
-        id: 'svc_1',
-        providerName: 'Emma Rodriguez',
-        location: 'Westdale, Hamilton',
-        skills: {'Dog Walking', 'Pet Sitting'},
-        availableDays: {'Mon', 'Wed', 'Fri', 'Sat'},
-        startTime: const TimeOfDay(hour: 15, minute: 0),
-        endTime: const TimeOfDay(hour: 20, minute: 0),
-        bio: 'Animal lover with 3 years of pet sitting experience. '
-            'I have a big backyard and love taking dogs on long walks!',
-        providerId: 'user_emma',
-        createdAt: DateTime.now().subtract(const Duration(hours: 5)),
-        minPrice: 12,
-        maxPrice: 18,
-      ),
-      Service(
-        id: 'svc_2',
-        providerName: 'Marcus Chen',
-        location: 'Waterloo, ON',
-        skills: {'Tutoring', 'Tech Help'},
-        availableDays: {'Tue', 'Thu', 'Sat', 'Sun'},
-        startTime: const TimeOfDay(hour: 10, minute: 0),
-        endTime: const TimeOfDay(hour: 18, minute: 0),
-        bio: 'Straight-A student specializing in math and computer science. '
-            'Can also help with phone/computer setup and troubleshooting.',
-        providerId: 'user_marcus',
-        createdAt: DateTime.now().subtract(const Duration(hours: 12)),
-        minPrice: 15,
-        maxPrice: 25,
-      ),
-      Service(
-        id: 'svc_3',
-        providerName: 'Ava Thompson',
-        location: 'Burlington, ON',
-        skills: {'Lawn Care', 'Cleaning', 'Errands'},
-        availableDays: {'Mon', 'Tue', 'Wed', 'Thu', 'Fri'},
-        startTime: const TimeOfDay(hour: 8, minute: 0),
-        endTime: const TimeOfDay(hour: 16, minute: 0),
-        bio: 'Hard worker who loves staying busy! I do lawn care, house '
-            'cleaning, and can run errands around town. Very reliable.',
-        providerId: 'user_ava',
-        createdAt: DateTime.now().subtract(const Duration(days: 1)),
-        minPrice: 10,
-        maxPrice: 20,
-      ),
-    ]);
+  Future<void> addHuddlePost({
+    required String text,
+    required HuddleTag tag,
+    required HuddleAgeGroup ageGroup,
+  }) async {
+    final post = HuddlePost(
+      id: 'huddle_${DateTime.now().millisecondsSinceEpoch}',
+      authorId: currentUserId,
+      authorName: currentUserName,
+      text: text,
+      tag: tag,
+      ageGroup: ageGroup,
+      createdAt: DateTime.now(),
+    );
+    await FirestoreService.addHuddlePost(post);
+  }
 
-    _jobs.addAll([
-      Job(
-        id: 'job_1',
-        title: 'Weekend Dog Walker Needed',
-        type: 'Part-time',
-        location: 'Westdale, Hamilton',
-        description: 'Looking for a responsible teen to walk my two golden '
-            'retrievers every Saturday and Sunday morning.',
-        services: {'Pet Care', 'Outdoor'},
-        posterId: 'user_sarah',
-        posterName: 'Sarah Miller',
-        createdAt: DateTime.now().subtract(const Duration(hours: 3)),
-        payment: 30,
-      ),
-      Job(
-        id: 'job_2',
-        title: 'Math Tutor for Grade 8',
-        type: 'Part-time',
-        location: 'Kitchener, ON',
-        description: 'My son needs help with algebra and geometry. '
-            'Looking for someone patient who can explain concepts clearly.',
-        services: {'Tutoring'},
-        posterId: 'user_david',
-        posterName: 'David Park',
-        createdAt: DateTime.now().subtract(const Duration(hours: 8)),
-        payment: 20,
-      ),
-      Job(
-        id: 'job_3',
-        title: 'Backyard Cleanup',
-        type: 'One-time',
-        location: 'Burlington, ON',
-        description: 'Need help cleaning up leaves and trimming hedges. '
-            'Should take about 3-4 hours. Paying \$60.',
-        services: {'Outdoor', 'Housework'},
-        posterId: 'user_linda',
-        posterName: 'Linda Garcia',
-        createdAt: DateTime.now().subtract(const Duration(days: 1)),
-        payment: 60,
-      ),
-    ]);
+  Future<void> addHuddleReply({
+    required String postId,
+    required String text,
+  }) async {
+    final reply = HuddleReply(
+      id: 'reply_${DateTime.now().millisecondsSinceEpoch}',
+      authorId: currentUserId,
+      authorName: currentUserName,
+      text: text,
+      createdAt: DateTime.now(),
+    );
+    await FirestoreService.addHuddleReply(postId, reply);
+  }
+
+  Future<void> deleteHuddlePost(String postId) async {
+    await FirestoreService.deleteHuddlePost(postId);
+  }
+
+  @override
+  void dispose() {
+    _stopListening();
+    super.dispose();
   }
 }

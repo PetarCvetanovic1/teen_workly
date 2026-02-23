@@ -295,10 +295,11 @@ class _ReportSheetState extends State<_ReportSheet> {
     );
   }
 
-  void _submit() {
+  Future<void> _submit() async {
     final state = context.read<AppState>();
 
     if (state.hasAlreadyReported(widget.targetId)) {
+      if (!mounted) return;
       Navigator.pop(context);
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -318,7 +319,7 @@ class _ReportSheetState extends State<_ReportSheet> {
             : 'Other'
         : _selectedReason!;
 
-    state.reportContent(
+    await state.reportContent(
       targetType: widget.targetType,
       targetId: widget.targetId,
       reason: reason,
@@ -326,6 +327,7 @@ class _ReportSheetState extends State<_ReportSheet> {
       userId: widget.userId,
     );
 
+    if (!mounted) return;
     Navigator.pop(context);
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(

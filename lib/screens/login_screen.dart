@@ -6,6 +6,7 @@ import '../app_colors.dart';
 import '../state/app_state.dart';
 import '../widgets/content_wrap.dart';
 import '../services/moderation.dart';
+import '../services/email_verification.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -316,19 +317,31 @@ class _LoginScreenState extends State<LoginScreen> {
     );
   }
 
-  void _submit() {
-    if (_formKey.currentState?.validate() ?? false) {
-      context.read<AppState>().login(_emailCtrl.text.trim(), _passCtrl.text);
-      Navigator.of(context).pop();
+  Future<void> _submit() async {
+    if (!(_formKey.currentState?.validate() ?? false)) return;
+
+    final error = await context
+        .read<AppState>()
+        .login(_emailCtrl.text.trim(), _passCtrl.text);
+
+    if (!mounted) return;
+
+    if (error != null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: const Text('Welcome back!'),
-          behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12)),
-        ),
+        SnackBar(content: Text(error), backgroundColor: Colors.red),
       );
+      return;
     }
+
+    Navigator.of(context).pop();
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: const Text('Welcome back!'),
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12)),
+      ),
+    );
   }
 }
 
@@ -346,6 +359,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
   final _nameCtrl = TextEditingController();
   final _emailCtrl = TextEditingController();
   final _passCtrl = TextEditingController();
+  final _ageCtrl = TextEditingController();
   bool _obscure = true;
 
   @override
@@ -353,6 +367,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
     _nameCtrl.dispose();
     _emailCtrl.dispose();
     _passCtrl.dispose();
+    _ageCtrl.dispose();
     super.dispose();
   }
 
@@ -516,6 +531,54 @@ class _SignUpScreenState extends State<SignUpScreen> {
                       ),
                       validator: _validatePassword,
                     ),
+                    const SizedBox(height: 20),
+                    _label('YOUR AGE'),
+                    const SizedBox(height: 8),
+                    _field(
+                      controller: _ageCtrl,
+                      hint: 'e.g. 15',
+                      isDark: isDark,
+                      keyboardType: TextInputType.number,
+                      icon: Icons.cake_outlined,
+                      onChanged: (_) => setState(() {}),
+                      validator: (v) {
+                        if (v == null || v.trim().isEmpty) return 'Required';
+                        final age = int.tryParse(v.trim());
+                        if (age == null) return 'Enter a number';
+                        if (age < 13) return 'You must be at least 13';
+                        if (age > 19) return 'TeenWorkly is for teens (13–19)';
+                        return null;
+                      },
+                    ),
+                    if (int.tryParse(_ageCtrl.text.trim()) != null &&
+                        int.parse(_ageCtrl.text.trim()) < 16) ...[
+                      const SizedBox(height: 8),
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: AppColors.indigo600.withValues(alpha: 0.08),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Row(
+                          children: [
+                            const Icon(Icons.info_outline_rounded,
+                                size: 16, color: AppColors.indigo600),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                'Under 16? You can find jobs and offer services, '
+                                'but posting jobs is available at 16+.',
+                                style: GoogleFonts.plusJakartaSans(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w600,
+                                  color: AppColors.indigo600,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
                     const SizedBox(height: 28),
                     Material(
                       color: isDark ? Colors.white : AppColors.slate900,
@@ -523,21 +586,48 @@ class _SignUpScreenState extends State<SignUpScreen> {
                       elevation: 4,
                       shadowColor: Colors.black.withValues(alpha: 0.15),
                       child: InkWell(
-                        onTap: _submit,
+                        onTap: _sendingCode ? null : _submit,
                         borderRadius: BorderRadius.circular(16),
                         child: Padding(
                           padding: const EdgeInsets.symmetric(vertical: 18),
-                          child: Text(
-                            'Create Account',
-                            textAlign: TextAlign.center,
-                            style: GoogleFonts.plusJakartaSans(
-                              fontSize: 16,
-                              fontWeight: FontWeight.w800,
-                              color: isDark
-                                  ? AppColors.slate900
-                                  : Colors.white,
-                            ),
-                          ),
+                          child: _sendingCode
+                              ? Row(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    SizedBox(
+                                      width: 18,
+                                      height: 18,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2.5,
+                                        color: isDark
+                                            ? AppColors.slate900
+                                            : Colors.white,
+                                      ),
+                                    ),
+                                    const SizedBox(width: 12),
+                                    Text(
+                                      'Sending verification code...',
+                                      style: GoogleFonts.plusJakartaSans(
+                                        fontSize: 16,
+                                        fontWeight: FontWeight.w800,
+                                        color: isDark
+                                            ? AppColors.slate900
+                                            : Colors.white,
+                                      ),
+                                    ),
+                                  ],
+                                )
+                              : Text(
+                                  'Create Account',
+                                  textAlign: TextAlign.center,
+                                  style: GoogleFonts.plusJakartaSans(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.w800,
+                                    color: isDark
+                                        ? AppColors.slate900
+                                        : Colors.white,
+                                  ),
+                                ),
                         ),
                       ),
                     ),
@@ -600,6 +690,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
     TextInputType? keyboardType,
     IconData? icon,
     String? Function(String?)? validator,
+    ValueChanged<String>? onChanged,
   }) {
     return TextFormField(
       controller: controller,
@@ -644,6 +735,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
             const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
       ),
       validator: validator ?? (v) => (v == null || v.isEmpty) ? 'Required' : null,
+      onChanged: onChanged,
     );
   }
 
@@ -701,108 +793,259 @@ class _SignUpScreenState extends State<SignUpScreen> {
     return null;
   }
 
-  static bool _nameEmailMatch(String name, String email) {
-    final local = email.split('@').first.toLowerCase().replaceAll(
-        RegExp(r'[^a-z]'), '');
-    final nameParts = name
-        .toLowerCase()
-        .split(RegExp(r'\s+'))
-        .where((p) => p.length >= 2)
-        .toList();
+  bool _sendingCode = false;
 
-    if (local.isEmpty || nameParts.isEmpty) return false;
-
-    for (final part in nameParts) {
-      if (local.contains(part)) return true;
-      if (part.length >= 3 && local.contains(part.substring(0, 3))) return true;
-    }
-
-    final initials = nameParts.map((p) => p[0]).join();
-    if (initials.length >= 2 && local.contains(initials)) return true;
-
-    final firstInitialLastName =
-        '${nameParts.first[0]}${nameParts.last}';
-    if (local.contains(firstInitialLastName)) return true;
-
-    final lastInitialFirstName =
-        '${nameParts.first}${nameParts.last[0]}';
-    if (local.contains(lastInitialFirstName)) return true;
-
-    return false;
-  }
-
-  void _submit() {
+  void _submit() async {
     if (!(_formKey.currentState?.validate() ?? false)) return;
 
-    final name = _nameCtrl.text.trim();
     final email = _emailCtrl.text.trim();
 
-    if (!_nameEmailMatch(name, email)) {
-      showDialog(
-        context: context,
-        builder: (ctx) {
-          final isDark = Theme.of(ctx).brightness == Brightness.dark;
-          return AlertDialog(
-            shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(20)),
-            backgroundColor:
-                isDark ? const Color(0xFF1E293B) : Colors.white,
-            title: Row(
-              children: [
-                const Icon(Icons.warning_amber_rounded,
-                    color: Color(0xFFEA580C), size: 24),
-                const SizedBox(width: 8),
-                Text(
-                  'Email Doesn\'t Match',
-                  style: GoogleFonts.plusJakartaSans(
-                    fontWeight: FontWeight.w800,
-                    color: isDark ? Colors.white : AppColors.slate900,
-                  ),
-                ),
-              ],
-            ),
-            content: Text(
-              'Your email doesn\'t seem to match your name. '
-              'Please use an email that\'s connected to you '
-              '(e.g. your name or initials in the email).\n\n'
-              'This helps keep TeenWorkly safe for everyone.',
-              style: GoogleFonts.plusJakartaSans(
-                fontSize: 14,
-                fontWeight: FontWeight.w500,
-                height: 1.5,
-                color: const Color(0xFF94A3B8),
-              ),
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(ctx),
-                child: Text(
-                  'Fix it',
-                  style: GoogleFonts.plusJakartaSans(
-                    fontWeight: FontWeight.w700,
-                    color: AppColors.indigo600,
-                  ),
-                ),
-              ),
-            ],
-          );
-        },
+    setState(() => _sendingCode = true);
+
+    final code = EmailVerificationService.generateCode();
+    final sent = await EmailVerificationService.sendVerificationEmail(
+      toEmail: email,
+      toName: _nameCtrl.text.trim(),
+      code: code,
+    );
+
+    if (!mounted) return;
+    setState(() => _sendingCode = false);
+
+    if (!sent) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text(
+              'Could not send verification email. Check your email and try again.'),
+          behavior: SnackBarBehavior.floating,
+          backgroundColor: const Color(0xFFDC2626),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        ),
       );
       return;
     }
 
-    context.read<AppState>().signUp(
-          name: name,
+    if (!mounted) return;
+    final verified = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => _VerificationDialog(
+        email: email,
+        expectedCode: code,
+        isDark: Theme.of(ctx).brightness == Brightness.dark,
+      ),
+    );
+
+    if (verified != true || !mounted) return;
+
+    final error = await context.read<AppState>().signUp(
+          name: _nameCtrl.text.trim(),
           email: email,
           password: _passCtrl.text,
+          age: int.tryParse(_ageCtrl.text.trim()),
         );
+
+    if (!mounted) return;
+
+    if (error != null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(error), backgroundColor: Colors.red),
+      );
+      return;
+    }
+
     Navigator.of(context).pop();
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: const Text('Welcome to TeenWorkly! Set up your profile.'),
+        content: const Text('Email verified! Welcome to TeenWorkly!'),
         behavior: SnackBarBehavior.floating,
         shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(12)),
+      ),
+    );
+  }
+}
+
+class _VerificationDialog extends StatefulWidget {
+  final String email;
+  final String expectedCode;
+  final bool isDark;
+
+  const _VerificationDialog({
+    required this.email,
+    required this.expectedCode,
+    required this.isDark,
+  });
+
+  @override
+  State<_VerificationDialog> createState() => _VerificationDialogState();
+}
+
+class _VerificationDialogState extends State<_VerificationDialog> {
+  final _codeCtrl = TextEditingController();
+  String? _error;
+  int _attempts = 0;
+
+  @override
+  void dispose() {
+    _codeCtrl.dispose();
+    super.dispose();
+  }
+
+  void _verify() {
+    final entered = _codeCtrl.text.trim();
+    if (entered.isEmpty) {
+      setState(() => _error = 'Enter the 6-digit code');
+      return;
+    }
+    if (entered == widget.expectedCode) {
+      Navigator.of(context).pop(true);
+    } else {
+      _attempts++;
+      if (_attempts >= 5) {
+        Navigator.of(context).pop(false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: const Text('Too many attempts. Please try again.'),
+            behavior: SnackBarBehavior.floating,
+            backgroundColor: const Color(0xFFDC2626),
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          ),
+        );
+      } else {
+        setState(() => _error = 'Wrong code. ${5 - _attempts} attempts left.');
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+      backgroundColor:
+          widget.isDark ? const Color(0xFF1E293B) : Colors.white,
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 60,
+            height: 60,
+            decoration: BoxDecoration(
+              gradient: const LinearGradient(
+                colors: [AppColors.indigo600, Color(0xFF7C3AED)],
+              ),
+              borderRadius: BorderRadius.circular(18),
+            ),
+            child:
+                const Icon(Icons.email_rounded, color: Colors.white, size: 28),
+          ),
+          const SizedBox(height: 18),
+          Text(
+            'Verify Your Email',
+            style: GoogleFonts.plusJakartaSans(
+              fontSize: 20,
+              fontWeight: FontWeight.w800,
+              color: widget.isDark ? Colors.white : AppColors.slate900,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'We sent a 6-digit code to',
+            textAlign: TextAlign.center,
+            style: GoogleFonts.plusJakartaSans(
+              fontSize: 13,
+              fontWeight: FontWeight.w500,
+              color: const Color(0xFF94A3B8),
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            widget.email,
+            textAlign: TextAlign.center,
+            style: GoogleFonts.plusJakartaSans(
+              fontSize: 13,
+              fontWeight: FontWeight.w700,
+              color: AppColors.indigo600,
+            ),
+          ),
+          const SizedBox(height: 20),
+          TextField(
+            controller: _codeCtrl,
+            keyboardType: TextInputType.number,
+            textAlign: TextAlign.center,
+            maxLength: 6,
+            style: GoogleFonts.plusJakartaSans(
+              fontSize: 28,
+              fontWeight: FontWeight.w800,
+              letterSpacing: 8,
+              color: widget.isDark ? Colors.white : AppColors.slate900,
+            ),
+            decoration: InputDecoration(
+              counterText: '',
+              hintText: '------',
+              hintStyle: GoogleFonts.plusJakartaSans(
+                fontSize: 28,
+                fontWeight: FontWeight.w800,
+                letterSpacing: 8,
+                color: const Color(0xFF94A3B8).withValues(alpha: 0.3),
+              ),
+              filled: true,
+              fillColor: widget.isDark
+                  ? const Color(0xFF0F172A).withValues(alpha: 0.5)
+                  : AppColors.slate100.withValues(alpha: 0.5),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(16),
+                borderSide: BorderSide.none,
+              ),
+              contentPadding:
+                  const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+              errorText: _error,
+              errorStyle: GoogleFonts.plusJakartaSans(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: const Color(0xFFDC2626),
+              ),
+            ),
+          ),
+          const SizedBox(height: 20),
+          SizedBox(
+            width: double.infinity,
+            child: Material(
+              color: widget.isDark ? Colors.white : AppColors.slate900,
+              borderRadius: BorderRadius.circular(14),
+              child: InkWell(
+                onTap: _verify,
+                borderRadius: BorderRadius.circular(14),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  child: Text(
+                    'Verify',
+                    textAlign: TextAlign.center,
+                    style: GoogleFonts.plusJakartaSans(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w800,
+                      color: widget.isDark ? AppColors.slate900 : Colors.white,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: 10),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: Text(
+              'Cancel',
+              style: GoogleFonts.plusJakartaSans(
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+                color: const Color(0xFF94A3B8),
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }

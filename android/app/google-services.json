@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "387879577336",
+    "project_id": "teenworkly",
+    "storage_bucket": "teenworkly.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:387879577336:android:6469fa24c8f34ec824bd0d",
+        "android_client_info": {
+          "package_name": "com.teenworkly.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyC_2FUwRo3tu-Yh4cuYW49Acngbm7XDYHE"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

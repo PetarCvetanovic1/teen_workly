@@ -233,16 +233,18 @@ class DashboardScreen extends StatelessWidget {
                 const SizedBox(height: 16),
                 Row(
                   children: [
-                    Expanded(
-                      child: _LimitIndicator(
-                        label: 'Jobs Posted',
-                        current: state.myActivePostedJobs,
-                        max: state.maxPostableJobs,
-                        color: AppColors.indigo600,
-                        isDark: isDark,
+                    if (state.canPostJobs) ...[
+                      Expanded(
+                        child: _LimitIndicator(
+                          label: 'Jobs Posted',
+                          current: state.myActivePostedJobs,
+                          max: state.maxPostableJobs,
+                          color: AppColors.indigo600,
+                          isDark: isDark,
+                        ),
                       ),
-                    ),
-                    const SizedBox(width: 12),
+                      const SizedBox(width: 12),
+                    ],
                     Expanded(
                       child: _LimitIndicator(
                         label: 'Active Work',
@@ -309,7 +311,7 @@ class DashboardScreen extends StatelessWidget {
                     ),
                   ),
                 ],
-                if (state.isPostingSuspended) ...[
+                if (state.canPostJobs && state.isPostingSuspended) ...[
                   const SizedBox(height: 16),
                   Container(
                     width: double.infinity,
@@ -359,7 +361,7 @@ class DashboardScreen extends StatelessWidget {
                       ],
                     ),
                   ),
-                ] else if (state.deleteStrikeCount > 0) ...[
+                ] else if (state.canPostJobs && state.deleteStrikeCount > 0) ...[
                   const SizedBox(height: 16),
                   Container(
                     width: double.infinity,
@@ -428,49 +430,51 @@ class DashboardScreen extends StatelessWidget {
                       )),
                   const SizedBox(height: 24),
                 ],
-                // Posted jobs
-                _SectionHeader(
-                  title: 'Your Posted Jobs',
-                  count: posted.length,
-                  isDark: isDark,
-                ),
-                const SizedBox(height: 12),
-                if (posted.isEmpty)
-                  _EmptyCard(
-                    message: 'You haven\'t posted any jobs yet.',
+                if (state.canPostJobs) ...[
+                  // Posted jobs
+                  _SectionHeader(
+                    title: 'Your Posted Jobs',
+                    count: posted.length,
                     isDark: isDark,
-                  )
-                else
-                  ...posted.map((j) => _JobCard(
-                        job: j,
-                        badge: j.status == JobStatus.open
-                            ? 'OPEN · ${j.applicantIds.length} applicants'
-                            : j.status == JobStatus.inProgress
-                                ? 'IN PROGRESS'
-                                : j.status == JobStatus.pendingCompletion
-                                    ? 'NEEDS CONFIRMATION'
-                                    : 'COMPLETED',
-                        badgeColor: j.status == JobStatus.open
-                            ? AppColors.indigo600
-                            : j.status == JobStatus.inProgress
-                                ? const Color(0xFF059669)
-                                : j.status == JobStatus.pendingCompletion
-                                    ? const Color(0xFFEA580C)
-                                    : const Color(0xFF7C3AED),
-                        isDark: isDark,
-                        actionLabel: j.status == JobStatus.open ? 'Delete' : null,
-                        actionColor: const Color(0xFFDC2626),
-                        actionIcon: Icons.delete_outline_rounded,
-                        onAction: j.status == JobStatus.open
-                            ? () => _confirmJobDelete(
-                                  context,
-                                  state: state,
-                                  job: j,
-                                  isDark: isDark,
-                                )
-                            : null,
-                      )),
-                const SizedBox(height: 24),
+                  ),
+                  const SizedBox(height: 12),
+                  if (posted.isEmpty)
+                    _EmptyCard(
+                      message: 'You haven\'t posted any jobs yet.',
+                      isDark: isDark,
+                    )
+                  else
+                    ...posted.map((j) => _JobCard(
+                          job: j,
+                          badge: j.status == JobStatus.open
+                              ? 'OPEN · ${j.applicantIds.length} applicants'
+                              : j.status == JobStatus.inProgress
+                                  ? 'IN PROGRESS'
+                                  : j.status == JobStatus.pendingCompletion
+                                      ? 'NEEDS CONFIRMATION'
+                                      : 'COMPLETED',
+                          badgeColor: j.status == JobStatus.open
+                              ? AppColors.indigo600
+                              : j.status == JobStatus.inProgress
+                                  ? const Color(0xFF059669)
+                                  : j.status == JobStatus.pendingCompletion
+                                      ? const Color(0xFFEA580C)
+                                      : const Color(0xFF7C3AED),
+                          isDark: isDark,
+                          actionLabel: j.status == JobStatus.open ? 'Delete' : null,
+                          actionColor: const Color(0xFFDC2626),
+                          actionIcon: Icons.delete_outline_rounded,
+                          onAction: j.status == JobStatus.open
+                              ? () => _confirmJobDelete(
+                                    context,
+                                    state: state,
+                                    job: j,
+                                    isDark: isDark,
+                                  )
+                              : null,
+                        )),
+                  const SizedBox(height: 24),
+                ],
                 // Applied jobs
                 _SectionHeader(
                   title: 'Jobs You Applied To',
@@ -513,7 +517,7 @@ class DashboardScreen extends StatelessWidget {
                                 isDark: isDark,
                                 title: 'Withdraw Application',
                                 message: 'Cancel your application for "${j.title}"?',
-                                onConfirm: () => state.withdrawApplication(j.id),
+                                onConfirm: () async => await state.withdrawApplication(j.id),
                               )
                           : null,
                     );
@@ -542,40 +546,54 @@ class DashboardScreen extends StatelessWidget {
                         title: 'Delete Service',
                         message:
                             'Remove your "${s.skills.join(", ")}" service listing?',
-                        onConfirm: () => state.deleteService(s.id),
+                        onConfirm: () async => await state.deleteService(s.id),
                       ),
                     ),
                   ),
                 const SizedBox(height: 24),
                 // Conversations
-                _SectionHeader(
-                  title: 'Your Conversations',
-                  count: state.conversations.length,
-                  isDark: isDark,
-                ),
-                const SizedBox(height: 12),
-                if (state.conversations.isEmpty)
-                  _EmptyCard(
-                    message:
-                        'No conversations yet. Message someone from a service or job listing!',
-                    isDark: isDark,
-                  )
-                else
-                  ...state.conversations.map(
-                    (conv) => _ConvoCard(
-                      name: conv.otherUserName,
-                      contextLabel: conv.contextLabel,
-                      preview: conv.lastMessagePreview,
-                      time: conv.lastMessageTime,
-                      isDark: isDark,
-                      onTap: () => Navigator.of(context).push(
-                        SmoothPageRoute(
-                          builder: (_) =>
-                              ChatScreen(conversationId: conv.id),
+                StreamBuilder<List<Conversation>>(
+                  stream: state.conversationsStream,
+                  builder: (context, snapshot) {
+                    final convos = snapshot.data ?? [];
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        _SectionHeader(
+                          title: 'Your Conversations',
+                          count: convos.length,
+                          isDark: isDark,
                         ),
-                      ),
-                    ),
-                  ),
+                        const SizedBox(height: 12),
+                        if (convos.isEmpty)
+                          _EmptyCard(
+                            message:
+                                'No conversations yet. Message someone from a service or job listing!',
+                            isDark: isDark,
+                          )
+                        else
+                          ...convos.map(
+                            (conv) => _ConvoCard(
+                              name: conv.otherUserName,
+                              contextLabel: conv.contextLabel,
+                              preview: '',
+                              time: null,
+                              isDark: isDark,
+                              onTap: () => Navigator.of(context).push(
+                                SmoothPageRoute(
+                                  builder: (_) => ChatScreen(
+                                    conversationId: conv.id,
+                                    otherUserName: conv.otherUserName,
+                                    contextLabel: conv.contextLabel,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                      ],
+                    );
+                  },
+                ),
                 const SizedBox(height: 48),
               ],
             ),
@@ -722,9 +740,10 @@ void _confirmJobDelete(
           ),
         ),
         FilledButton(
-          onPressed: () {
+          onPressed: () async {
             Navigator.pop(ctx);
-            final result = state.deleteJobWithStrike(job.id);
+            final result = await state.deleteJobWithStrike(job.id);
+            if (!context.mounted) return;
 
             if (result == null) {
               ScaffoldMessenger.of(context).showSnackBar(

@@ -146,11 +146,14 @@ class _JobsScreenState extends State<JobsScreen> {
                     (s) => s.toLowerCase().contains(filter.toLowerCase()),
                   )).toList();
 
-          final filteredServices = isAll
-              ? state.services
-              : state.services.where((s) => s.skills.any(
-                    (sk) => sk.toLowerCase().contains(filter.toLowerCase()),
-                  )).toList();
+          final canHire = state.canPostJobs;
+          final filteredServices = !canHire
+              ? <Service>[]
+              : isAll
+                  ? state.services
+                  : state.services.where((s) => s.skills.any(
+                        (sk) => sk.toLowerCase().contains(filter.toLowerCase()),
+                      )).toList();
 
           final totalCount = filteredJobs.length + filteredServices.length;
 
