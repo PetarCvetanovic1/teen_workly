@@ -12,7 +12,20 @@
           "package_name": "com.teenworkly.app"
         }
       },
-      "oauth_client": [],
+      "oauth_client": [
+        {
+          "client_id": "387879577336-u45ueuj9pdn4kc9nglarpl5fp3qavmll.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.teenworkly.app",
+            "certificate_hash": "984be75602c6995ef42b887929c9e2178752bdb9"
+          }
+        },
+        {
+          "client_id": "387879577336-qeh1hns71n3fd2rscd020d3e734ruglr.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
       "api_key": [
         {
           "current_key": "AIzaSyC_2FUwRo3tu-Yh4cuYW49Acngbm7XDYHE"
@@ -20,7 +33,19 @@
       ],
       "services": {
         "appinvite_service": {
-          "other_platform_oauth_client": []
+          "other_platform_oauth_client": [
+            {
+              "client_id": "387879577336-qeh1hns71n3fd2rscd020d3e734ruglr.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "387879577336-b0nb54j28obf7iruh8ln9jgoes6lnr2q.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.example.teenWorkly"
+              }
+            }
+          ]
         }
       }
     }

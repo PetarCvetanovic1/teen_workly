@@ -11,10 +11,10 @@ import 'post_service_screen.dart';
 import 'job_detail_screen.dart';
 import 'service_detail_screen.dart';
 import 'huddle_screen.dart';
+import 'dashboard_screen.dart';
+import 'profile_editor_screen.dart';
 import '../widgets/app_drawer.dart';
-import '../widgets/logo_title.dart';
-import '../widgets/app_bar_nav.dart';
-import '../widgets/auth_button.dart';
+import '../widgets/tw_app_bar.dart';
 
 class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key});
@@ -23,27 +23,18 @@ class HomeScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
+    final appState = context.watch<AppState>();
+    final isLoggedIn = appState.isLoggedIn;
+    final profile = appState.profile;
 
     return Scaffold(
-      appBar: AppBar(
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        centerTitle: false,
-        titleSpacing: 4,
+      appBar: TwAppBar(
         leading: Builder(
           builder: (ctx) => IconButton(
             icon: const Icon(Icons.menu_rounded),
             onPressed: () => Scaffold.of(ctx).openDrawer(),
           ),
         ),
-        title: Stack(
-          alignment: Alignment.center,
-          children: const [
-            Align(alignment: Alignment.centerLeft, child: LogoTitle()),
-            Center(child: AppBarNav()),
-          ],
-        ),
-        actions: const [AuthButton()],
       ),
       drawer: const AppDrawer(),
       body: Container(
@@ -65,9 +56,17 @@ class HomeScreen extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.center,
               children: [
-                const SizedBox(height: 48),
-                // Live badge
-                Container(
+                if (isLoggedIn && profile != null) ...[
+                  const SizedBox(height: 24),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 20),
+                    child: _SignedInHomeHeader(state: appState, isDark: isDark),
+                  ),
+                  const SizedBox(height: 28),
+                ] else ...[
+                  const SizedBox(height: 48),
+                  // Live badge
+                  Container(
                   padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
                   decoration: BoxDecoration(
                     color: isDark
@@ -259,6 +258,7 @@ class HomeScreen extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(height: 64),
+                ],
                 // Latest jobs
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 24),
@@ -478,6 +478,120 @@ class _HeroButton extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+class _SignedInHomeHeader extends StatelessWidget {
+  final AppState state;
+  final bool isDark;
+
+  const _SignedInHomeHeader({required this.state, required this.isDark});
+
+  @override
+  Widget build(BuildContext context) {
+    final name = state.profile?.name ?? 'there';
+    final goal = state.vaultGoal?.trim() ?? '';
+    final hasGoal = state.hasVaultGoal && goal.isNotEmpty;
+    final remaining = state.vaultRemainingAmount.toStringAsFixed(0);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Welcome back, $name',
+          style: GoogleFonts.plusJakartaSans(
+            fontSize: 26,
+            fontWeight: FontWeight.w800,
+            letterSpacing: -0.5,
+            color: isDark ? Colors.white : AppColors.slate900,
+          ),
+        ),
+        const SizedBox(height: 6),
+        Text(
+          'Your personal TeenWorkly space',
+          style: GoogleFonts.plusJakartaSans(
+            fontSize: 14,
+            fontWeight: FontWeight.w500,
+            color: const Color(0xFF94A3B8),
+          ),
+        ),
+        const SizedBox(height: 16),
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              colors: [
+                AppColors.indigo600.withValues(alpha: 0.12),
+                const Color(0xFF7C3AED).withValues(alpha: 0.10),
+              ],
+            ),
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(
+              color: AppColors.indigo600.withValues(alpha: 0.25),
+            ),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                hasGoal ? 'Vault: $goal' : 'Vault',
+                style: GoogleFonts.plusJakartaSans(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w800,
+                  color: isDark ? Colors.white : AppColors.slate900,
+                ),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                hasGoal
+                    ? 'You are only \$$remaining away. Keep going.'
+                    : 'Set your vault goal in Profile to track progress.',
+                style: GoogleFonts.plusJakartaSans(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: const Color(0xFF94A3B8),
+                ),
+              ),
+              const SizedBox(height: 10),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(5),
+                child: LinearProgressIndicator(
+                  value: hasGoal ? state.vaultProgress : 0,
+                  minHeight: 7,
+                  backgroundColor:
+                      isDark ? const Color(0xFF334155) : AppColors.slate200,
+                  color: AppColors.indigo600,
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 14),
+        Wrap(
+          spacing: 10,
+          runSpacing: 10,
+          children: [
+            _HeroButton(
+              label: 'My Profile',
+              onTap: () => Navigator.of(context).push(
+                SmoothPageRoute(builder: (_) => const ProfileScreen()),
+              ),
+              filled: true,
+              isDark: isDark,
+            ),
+            _HeroButton(
+              label: 'Dashboard',
+              onTap: () => Navigator.of(context).push(
+                SmoothPageRoute(builder: (_) => const DashboardScreen()),
+              ),
+              filled: false,
+              isDark: isDark,
+            ),
+          ],
+        ),
+      ],
     );
   }
 }

@@ -5,9 +5,7 @@ import 'package:provider/provider.dart';
 import '../app_colors.dart';
 import '../state/app_state.dart';
 import '../widgets/app_drawer.dart';
-import '../widgets/logo_title.dart';
-import '../widgets/app_bar_nav.dart';
-import '../widgets/auth_button.dart';
+import '../widgets/tw_app_bar.dart';
 import '../widgets/content_wrap.dart';
 import '../services/moderation.dart';
 import 'home_screen.dart';
@@ -57,23 +55,26 @@ class _ProfileScreenState extends State<ProfileScreen> {
   late TextEditingController _schoolCtrl;
   late TextEditingController _ageCtrl;
   late TextEditingController _bioCtrl;
+  late TextEditingController _vaultGoalCtrl;
+  late TextEditingController _vaultTargetCtrl;
   late Set<String> _skills;
   late Set<String> _interests;
   bool _isEditing = false;
   bool _aiGenerating = false;
+  bool _hydratedFromProfile = false;
 
   @override
   void initState() {
     super.initState();
-    final p = context.read<AppState>().profile!;
-    _nameCtrl = TextEditingController(text: p.name);
-    _locationCtrl = TextEditingController(text: p.location ?? '');
-    _schoolCtrl = TextEditingController(text: p.school ?? '');
-    _ageCtrl = TextEditingController(
-        text: p.age != null ? p.age.toString() : '');
-    _bioCtrl = TextEditingController(text: p.bio ?? '');
-    _skills = Set.from(p.skills);
-    _interests = Set.from(p.interests);
+    _nameCtrl = TextEditingController();
+    _locationCtrl = TextEditingController();
+    _schoolCtrl = TextEditingController();
+    _ageCtrl = TextEditingController();
+    _bioCtrl = TextEditingController();
+    _vaultGoalCtrl = TextEditingController();
+    _vaultTargetCtrl = TextEditingController();
+    _skills = <String>{};
+    _interests = <String>{};
   }
 
   @override
@@ -83,6 +84,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
     _schoolCtrl.dispose();
     _ageCtrl.dispose();
     _bioCtrl.dispose();
+    _vaultGoalCtrl.dispose();
+    _vaultTargetCtrl.dispose();
     super.dispose();
   }
 
@@ -92,36 +95,52 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
     return Consumer<AppState>(
       builder: (context, state, _) {
-        final p = state.profile!;
+        final p = state.profile;
+        if (p == null) {
+          return Scaffold(
+            appBar: TwAppBar(
+              leading: Builder(
+                builder: (ctx) => IconButton(
+                  icon: const Icon(Icons.menu_rounded),
+                  onPressed: () => Scaffold.of(ctx).openDrawer(),
+                ),
+              ),
+              onLogoTap: () => Navigator.of(context).pushAndRemoveUntil(
+                SmoothPageRoute(builder: (_) => const HomeScreen()),
+                (_) => false,
+              ),
+            ),
+            drawer: const AppDrawer(),
+            body: const Center(child: CircularProgressIndicator()),
+          );
+        }
+
+        if (!_hydratedFromProfile) {
+          _nameCtrl.text = p.name;
+          _locationCtrl.text = p.location ?? '';
+          _schoolCtrl.text = p.school ?? '';
+          _ageCtrl.text = p.age != null ? p.age.toString() : '';
+          _bioCtrl.text = p.bio ?? '';
+          _vaultGoalCtrl.text = p.vaultGoal ?? '';
+          _vaultTargetCtrl.text =
+              p.vaultTargetAmount != null ? p.vaultTargetAmount!.toStringAsFixed(0) : '';
+          _skills = Set.from(p.skills);
+          _interests = Set.from(p.interests);
+          _hydratedFromProfile = true;
+        }
 
         return Scaffold(
-          appBar: AppBar(
-            backgroundColor: Colors.transparent,
-            elevation: 0,
-            centerTitle: false,
-            titleSpacing: 4,
+          appBar: TwAppBar(
             leading: Builder(
               builder: (ctx) => IconButton(
                 icon: const Icon(Icons.menu_rounded),
                 onPressed: () => Scaffold.of(ctx).openDrawer(),
               ),
             ),
-            title: Stack(
-              alignment: Alignment.center,
-              children: [
-                Align(
-                  alignment: Alignment.centerLeft,
-                  child: LogoTitle(
-                    onTap: () => Navigator.of(context).pushAndRemoveUntil(
-                      SmoothPageRoute(builder: (_) => const HomeScreen()),
-                      (_) => false,
-                    ),
-                  ),
-                ),
-                const Center(child: AppBarNav()),
-              ],
+            onLogoTap: () => Navigator.of(context).pushAndRemoveUntil(
+              SmoothPageRoute(builder: (_) => const HomeScreen()),
+              (_) => false,
             ),
-            actions: const [AuthButton()],
           ),
           drawer: const AppDrawer(),
           body: SingleChildScrollView(
@@ -142,7 +161,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   ),
                   child: Center(
                     child: Text(
-                      p.initials,
+                      p.initials.toUpperCase(),
                       style: GoogleFonts.plusJakartaSans(
                         fontSize: 28,
                         fontWeight: FontWeight.w800,
@@ -214,6 +233,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       ),
                     ],
                   ),
+                ],
+                if (state.hasVaultGoal) ...[
+                  const SizedBox(height: 12),
+                  _vaultGoalCard(isDark, state),
                 ],
                 const SizedBox(height: 24),
                 // AI Profile Builder button
@@ -301,6 +324,23 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       ),
                     ),
                   ),
+                if (!_isEditing) ...[
+                  const SizedBox(height: 10),
+                  SizedBox(
+                    width: double.infinity,
+                    child: OutlinedButton.icon(
+                      onPressed: _showChangePasswordDialog,
+                      icon: const Icon(Icons.lock_reset_rounded, size: 18),
+                      label: const Text('Change Password'),
+                      style: OutlinedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
                 const SizedBox(height: 24),
                 // Profile info cards or edit form
                 if (_isEditing)
@@ -482,6 +522,15 @@ class _ProfileScreenState extends State<ProfileScreen> {
           _formField(_ageCtrl, '16', isDark,
               keyboardType: TextInputType.number),
           const SizedBox(height: 20),
+          _formLabel('VAULT GOAL'),
+          const SizedBox(height: 8),
+          _formField(_vaultGoalCtrl, 'e.g. Switzerland trip', isDark),
+          const SizedBox(height: 20),
+          _formLabel('TARGET AMOUNT (\$)'),
+          const SizedBox(height: 8),
+          _formField(_vaultTargetCtrl, 'e.g. 1200', isDark,
+              keyboardType: const TextInputType.numberWithOptions(decimal: true)),
+          const SizedBox(height: 20),
           _formLabel('SKILLS'),
           const SizedBox(height: 8),
           Wrap(
@@ -602,6 +651,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
           school: _schoolCtrl.text.trim(),
           age: int.tryParse(_ageCtrl.text.trim()),
           bio: _bioCtrl.text.trim(),
+          vaultGoal: _vaultGoalCtrl.text.trim(),
+          vaultTargetAmount: _vaultTargetCtrl.text.trim().isEmpty
+              ? 0
+              : double.tryParse(_vaultTargetCtrl.text.trim()),
           skills: Set.from(_skills),
           interests: Set.from(_interests),
         );
@@ -615,6 +668,63 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
+  Widget _vaultGoalCard(bool isDark, AppState state) {
+    final goal = state.vaultGoal?.trim() ?? '';
+    final target = state.vaultTargetAmount ?? 0;
+    final saved = state.vaultSavedAmount;
+    final remaining = state.vaultRemainingAmount;
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [
+            AppColors.indigo600.withValues(alpha: 0.12),
+            const Color(0xFF7C3AED).withValues(alpha: 0.10),
+          ],
+        ),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(
+          color: AppColors.indigo600.withValues(alpha: 0.25),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Vault Goal: $goal',
+            style: GoogleFonts.plusJakartaSans(
+              fontSize: 14,
+              fontWeight: FontWeight.w800,
+              color: isDark ? Colors.white : AppColors.slate900,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            'Saved \$${saved.toStringAsFixed(0)} / \$${target.toStringAsFixed(0)} · \$${remaining.toStringAsFixed(0)} left',
+            style: GoogleFonts.plusJakartaSans(
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+              color: const Color(0xFF94A3B8),
+            ),
+          ),
+          const SizedBox(height: 10),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(6),
+            child: LinearProgressIndicator(
+              value: state.vaultProgress,
+              minHeight: 7,
+              backgroundColor:
+                  isDark ? const Color(0xFF334155) : AppColors.slate200,
+              color: AppColors.indigo600,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   void _showValidationError(String reason) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
@@ -622,6 +732,156 @@ class _ProfileScreenState extends State<ProfileScreen> {
         behavior: SnackBarBehavior.floating,
         backgroundColor: const Color(0xFFDC2626),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      ),
+    );
+  }
+
+  void _showChangePasswordDialog() {
+    final currentCtrl = TextEditingController();
+    final newCtrl = TextEditingController();
+    final confirmCtrl = TextEditingController();
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    bool obscureCurrent = true;
+    bool obscureNew = true;
+    bool obscureConfirm = true;
+    bool saving = false;
+
+    showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setSheet) => AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          backgroundColor: isDark ? const Color(0xFF1E293B) : Colors.white,
+          title: Text(
+            'Change Password',
+            style: GoogleFonts.plusJakartaSans(
+              fontWeight: FontWeight.w800,
+              color: isDark ? Colors.white : AppColors.slate900,
+            ),
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: currentCtrl,
+                obscureText: obscureCurrent,
+                decoration: InputDecoration(
+                  labelText: 'Current password',
+                  suffixIcon: IconButton(
+                    icon: Icon(obscureCurrent
+                        ? Icons.visibility_off_rounded
+                        : Icons.visibility_rounded),
+                    onPressed: () =>
+                        setSheet(() => obscureCurrent = !obscureCurrent),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: newCtrl,
+                obscureText: obscureNew,
+                decoration: InputDecoration(
+                  labelText: 'New password',
+                  suffixIcon: IconButton(
+                    icon: Icon(
+                        obscureNew ? Icons.visibility_off_rounded : Icons.visibility_rounded),
+                    onPressed: () => setSheet(() => obscureNew = !obscureNew),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: confirmCtrl,
+                obscureText: obscureConfirm,
+                decoration: InputDecoration(
+                  labelText: 'Confirm new password',
+                  suffixIcon: IconButton(
+                    icon: Icon(obscureConfirm
+                        ? Icons.visibility_off_rounded
+                        : Icons.visibility_rounded),
+                    onPressed: () =>
+                        setSheet(() => obscureConfirm = !obscureConfirm),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: saving ? null : () => Navigator.pop(ctx),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: saving
+                  ? null
+                  : () async {
+                      final current = currentCtrl.text;
+                      final next = newCtrl.text;
+                      final confirm = confirmCtrl.text;
+                      if (current.isEmpty || next.isEmpty || confirm.isEmpty) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('Fill all password fields.'),
+                            backgroundColor: Color(0xFFDC2626),
+                          ),
+                        );
+                        return;
+                      }
+                      if (next != confirm) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('New passwords do not match.'),
+                            backgroundColor: Color(0xFFDC2626),
+                          ),
+                        );
+                        return;
+                      }
+                      if (next.length < 8 ||
+                          !RegExp(r'[A-Za-z]').hasMatch(next) ||
+                          !RegExp(r'\d').hasMatch(next)) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text(
+                                'New password must be 8+ chars with letters and numbers.'),
+                            backgroundColor: Color(0xFFDC2626),
+                          ),
+                        );
+                        return;
+                      }
+
+                      setSheet(() => saving = true);
+                      final error = await context.read<AppState>().changePassword(
+                            currentPassword: current,
+                            newPassword: next,
+                          );
+                      if (!mounted) return;
+                      setSheet(() => saving = false);
+                      if (error != null) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text(error),
+                            backgroundColor: const Color(0xFFDC2626),
+                          ),
+                        );
+                        return;
+                      }
+                      if (ctx.mounted) Navigator.pop(ctx);
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('Password updated successfully.'),
+                        ),
+                      );
+                    },
+              child: saving
+                  ? const SizedBox(
+                      height: 16,
+                      width: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Text('Save Password'),
+            ),
+          ],
+        ),
       ),
     );
   }

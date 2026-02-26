@@ -8,9 +8,7 @@ import '../services/firestore_service.dart';
 import '../services/moderation.dart';
 import '../widgets/content_wrap.dart';
 import '../widgets/app_drawer.dart';
-import '../widgets/logo_title.dart';
-import '../widgets/app_bar_nav.dart';
-import '../widgets/auth_button.dart';
+import '../widgets/tw_app_bar.dart';
 import '../utils/smooth_route.dart';
 import 'home_screen.dart';
 
@@ -30,34 +28,17 @@ class _HuddleScreenState extends State<HuddleScreen> {
     final theme = Theme.of(context);
 
     return Scaffold(
-      appBar: AppBar(
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        centerTitle: false,
-        titleSpacing: 4,
+      appBar: TwAppBar(
         leading: Builder(
           builder: (ctx) => IconButton(
             icon: const Icon(Icons.menu_rounded),
             onPressed: () => Scaffold.of(ctx).openDrawer(),
           ),
         ),
-        title: Stack(
-          alignment: Alignment.center,
-          children: [
-            Align(
-              alignment: Alignment.centerLeft,
-              child: GestureDetector(
-                onTap: () => Navigator.of(context).pushAndRemoveUntil(
-                  SmoothPageRoute(builder: (_) => const HomeScreen()),
-                  (_) => false,
-                ),
-                child: const LogoTitle(),
-              ),
-            ),
-            const Center(child: AppBarNav()),
-          ],
+        onLogoTap: () => Navigator.of(context).pushAndRemoveUntil(
+          SmoothPageRoute(builder: (_) => const HomeScreen()),
+          (_) => false,
         ),
-        actions: const [AuthButton()],
       ),
       drawer: const AppDrawer(),
       floatingActionButton: Consumer<AppState>(

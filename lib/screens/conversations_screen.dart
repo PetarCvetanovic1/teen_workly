@@ -6,9 +6,7 @@ import '../app_colors.dart';
 import '../models/models.dart';
 import '../state/app_state.dart';
 import '../widgets/app_drawer.dart';
-import '../widgets/logo_title.dart';
-import '../widgets/app_bar_nav.dart';
-import '../widgets/auth_button.dart';
+import '../widgets/tw_app_bar.dart';
 import '../widgets/content_wrap.dart';
 import 'home_screen.dart';
 import 'chat_screen.dart';
@@ -21,38 +19,38 @@ class ConversationsScreen extends StatelessWidget {
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return Scaffold(
-      appBar: AppBar(
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        centerTitle: false,
-        titleSpacing: 4,
+      appBar: TwAppBar(
         leading: Builder(
           builder: (ctx) => IconButton(
             icon: const Icon(Icons.menu_rounded),
             onPressed: () => Scaffold.of(ctx).openDrawer(),
           ),
         ),
-        title: Stack(
-          alignment: Alignment.center,
-          children: [
-            Align(
-              alignment: Alignment.centerLeft,
-              child: LogoTitle(
-                onTap: () => Navigator.of(context).pushAndRemoveUntil(
-                  SmoothPageRoute(builder: (_) => const HomeScreen()),
-                  (_) => false,
-                ),
-              ),
-            ),
-            const Center(child: AppBarNav()),
-          ],
+        onLogoTap: () => Navigator.of(context).pushAndRemoveUntil(
+          SmoothPageRoute(builder: (_) => const HomeScreen()),
+          (_) => false,
         ),
-        actions: const [AuthButton()],
       ),
       drawer: const AppDrawer(),
       body: StreamBuilder<List<Conversation>>(
         stream: context.read<AppState>().conversationsStream,
         builder: (context, snapshot) {
+          if (snapshot.hasError) {
+            return Center(
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: Text(
+                  'Could not load conversations: ${snapshot.error}',
+                  textAlign: TextAlign.center,
+                  style: GoogleFonts.plusJakartaSans(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: const Color(0xFFDC2626),
+                  ),
+                ),
+              ),
+            );
+          }
           final convos = snapshot.data ?? [];
 
           return ContentWrap(

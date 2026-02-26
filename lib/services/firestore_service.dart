@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import '../models/models.dart';
@@ -16,17 +17,31 @@ class FirestoreService {
 
   // ── Users ──
 
-  static Future<void> createOrUpdateUser(UserProfile profile) async {
-    await _usersCol.doc(profile.id).set({
+  static Future<void> createOrUpdateUser(
+    UserProfile profile, {
+    String? authProvider,
+    bool touchLogin = false,
+  }) async {
+    final data = <String, dynamic>{
       'name': profile.name,
-      'email': profile.email,
+      'email': profile.email.trim().toLowerCase(),
       'location': profile.location,
       'bio': profile.bio,
       'skills': profile.skills.toList(),
       'interests': profile.interests.toList(),
       'school': profile.school,
       'age': profile.age,
-    }, SetOptions(merge: true));
+      'vaultGoal': profile.vaultGoal,
+      'vaultTargetAmount': profile.vaultTargetAmount,
+      'updatedAt': FieldValue.serverTimestamp(),
+    };
+    if (authProvider != null && authProvider.isNotEmpty) {
+      data['authProvider'] = authProvider;
+    }
+    if (touchLogin) {
+      data['lastLoginAt'] = FieldValue.serverTimestamp();
+    }
+    await _usersCol.doc(profile.id).set(data, SetOptions(merge: true));
   }
 
   static Future<UserProfile?> getUser(String uid) async {
@@ -43,6 +58,8 @@ class FirestoreService {
       interests: Set<String>.from(d['interests'] ?? []),
       school: d['school'],
       age: d['age'],
+      vaultGoal: d['vaultGoal'],
+      vaultTargetAmount: (d['vaultTargetAmount'] as num?)?.toDouble(),
     );
   }
 
@@ -56,7 +73,41 @@ class FirestoreService {
   }
 
   static Future<void> addJob(Job job) async {
-    await _jobsCol.doc(job.id).set(_jobToMap(job));
+    const maxAttempts = 3;
+    for (var attempt = 1; attempt <= maxAttempts; attempt++) {
+      try {
+        await _jobsCol
+            .doc(job.id)
+            .set(_jobToMap(job))
+            .timeout(const Duration(seconds: 12));
+        return;
+      } on TimeoutException {
+        if (attempt == maxAttempts) {
+          throw Exception(
+            'Could not reach the database. Job was not posted online.',
+          );
+        }
+      } on FirebaseException catch (e) {
+        if (e.code == 'permission-denied') {
+          throw Exception(
+            'Firestore blocked this write (permission-denied). '
+            'Check Firestore rules for authenticated users.',
+          );
+        }
+        if (e.code == 'unauthenticated') {
+          throw Exception('You are not authenticated with Firebase.');
+        }
+        final retriable = e.code == 'unavailable' ||
+            e.code == 'deadline-exceeded' ||
+            e.code == 'aborted';
+        if (!retriable || attempt == maxAttempts) {
+          throw Exception(
+            'Firestore error (${e.code}): ${e.message ?? 'unknown error'}',
+          );
+        }
+      }
+      await Future<void>.delayed(Duration(milliseconds: 600 * attempt));
+    }
   }
 
   static Future<void> updateJob(Job job) async {
@@ -237,9 +288,9 @@ class FirestoreService {
   static Stream<List<Conversation>> conversationsStream(String userId) {
     return _conversationsCol
         .where('participants', arrayContains: userId)
-        .orderBy('lastMessageAt', descending: true)
         .snapshots()
-        .map((snap) => snap.docs.map((doc) {
+        .map((snap) {
+          final items = snap.docs.map((doc) {
               final d = doc.data();
               final participants = List<String>.from(d['participants'] ?? []);
               final names = Map<String, String>.from(d['participantNames'] ?? {});
@@ -247,13 +298,23 @@ class FirestoreService {
                 (id) => id != userId,
                 orElse: () => '',
               );
+              final ts = d['lastMessageAt'] as Timestamp?;
               return Conversation(
                 id: doc.id,
                 otherUserId: otherId,
                 otherUserName: names[otherId] ?? 'Unknown',
                 contextLabel: d['contextLabel'],
+                lastMessageText: d['lastMessageText'],
+                lastMessageAt: ts?.toDate(),
               );
-            }).toList());
+            }).toList();
+          items.sort((a, b) {
+            final aMs = a.lastMessageTime?.millisecondsSinceEpoch ?? 0;
+            final bMs = b.lastMessageTime?.millisecondsSinceEpoch ?? 0;
+            return bMs.compareTo(aMs);
+          });
+          return items;
+        });
   }
 
   static Future<Conversation> getOrCreateConversation({
@@ -286,6 +347,7 @@ class FirestoreService {
       'participantNames': {myId: myName, otherUserId: otherUserName},
       'contextLabel': contextLabel,
       'lastMessageAt': Timestamp.now(),
+      'lastMessageText': '',
     });
 
     return Conversation(
@@ -332,6 +394,7 @@ class FirestoreService {
     });
     batch.update(_conversationsCol.doc(conversationId), {
       'lastMessageAt': Timestamp.fromDate(message.timestamp),
+      'lastMessageText': message.text,
     });
     await batch.commit();
   }

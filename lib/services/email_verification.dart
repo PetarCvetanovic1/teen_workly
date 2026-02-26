@@ -2,6 +2,13 @@ import 'dart:convert';
 import 'dart:math';
 import 'package:http/http.dart' as http;
 
+class EmailSendResult {
+  final bool success;
+  final String? error;
+
+  const EmailSendResult({required this.success, this.error});
+}
+
 class EmailVerificationService {
   // ── EmailJS credentials ──
   // Sign up free at https://www.emailjs.com
@@ -22,7 +29,7 @@ class EmailVerificationService {
     return List.generate(6, (_) => rng.nextInt(10)).join();
   }
 
-  static Future<bool> sendVerificationEmail({
+  static Future<EmailSendResult> sendVerificationEmail({
     required String toEmail,
     required String toName,
     required String code,
@@ -34,7 +41,7 @@ class EmailVerificationService {
         print('[EmailVerification] Code for $toEmail: $code');
         return true;
       }());
-      return true;
+      return const EmailSendResult(success: true);
     }
 
     try {
@@ -52,9 +59,19 @@ class EmailVerificationService {
           },
         }),
       );
-      return response.statusCode == 200;
-    } catch (_) {
-      return false;
+      if (response.statusCode == 200) {
+        return const EmailSendResult(success: true);
+      }
+      return EmailSendResult(
+        success: false,
+        error:
+            'Email service error ${response.statusCode}. Check EmailJS service/template/public key.',
+      );
+    } catch (e) {
+      return EmailSendResult(
+        success: false,
+        error: 'Network/email error: $e',
+      );
     }
   }
 }

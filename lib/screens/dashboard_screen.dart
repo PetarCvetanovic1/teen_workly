@@ -6,55 +6,47 @@ import '../app_colors.dart';
 import '../models/models.dart';
 import '../state/app_state.dart';
 import '../widgets/app_drawer.dart';
-import '../widgets/logo_title.dart';
-import '../widgets/app_bar_nav.dart';
-import '../widgets/auth_button.dart';
+import '../widgets/tw_app_bar.dart';
 import '../widgets/content_wrap.dart';
 import 'home_screen.dart';
 import 'job_detail_screen.dart';
 import 'chat_screen.dart';
 
-class DashboardScreen extends StatelessWidget {
+class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
+
+  @override
+  State<DashboardScreen> createState() => _DashboardScreenState();
+}
+
+class _DashboardScreenState extends State<DashboardScreen> {
+  bool _hideCompletedAppliedJobs = false;
 
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return Scaffold(
-      appBar: AppBar(
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        centerTitle: false,
-        titleSpacing: 4,
+      appBar: TwAppBar(
         leading: Builder(
           builder: (ctx) => IconButton(
             icon: const Icon(Icons.menu_rounded),
             onPressed: () => Scaffold.of(ctx).openDrawer(),
           ),
         ),
-        title: Stack(
-          alignment: Alignment.center,
-          children: [
-            Align(
-              alignment: Alignment.centerLeft,
-              child: LogoTitle(
-                onTap: () => Navigator.of(context).pushAndRemoveUntil(
-                  SmoothPageRoute(builder: (_) => const HomeScreen()),
-                  (_) => false,
-                ),
-              ),
-            ),
-            const Center(child: AppBarNav()),
-          ],
+        onLogoTap: () => Navigator.of(context).pushAndRemoveUntil(
+          SmoothPageRoute(builder: (_) => const HomeScreen()),
+          (_) => false,
         ),
-        actions: const [AuthButton()],
       ),
       drawer: const AppDrawer(),
       body: Consumer<AppState>(
         builder: (context, state, _) {
           final posted = state.myPostedJobs;
           final applied = state.myAppliedJobs;
+          final visibleApplied = _hideCompletedAppliedJobs
+              ? applied.where((j) => j.status != JobStatus.completed).toList()
+              : applied;
           final current = state.myCurrentJobs;
           final completed = state.myCompletedJobs;
           final myServices = state.myServices;
@@ -86,6 +78,17 @@ class DashboardScreen extends StatelessWidget {
                         : const Color(0xFF64748B),
                   ),
                 ),
+                if (state.hasVaultGoal) ...[
+                  const SizedBox(height: 16),
+                  _VaultGoalCard(
+                    isDark: isDark,
+                    goal: state.vaultGoal ?? '',
+                    saved: state.vaultSavedAmount,
+                    target: state.vaultTargetAmount ?? 0,
+                    progress: state.vaultProgress,
+                    nudge: state.vaultNudgeMessage,
+                  ),
+                ],
                 if (state.amVerified) ...[
                   const SizedBox(height: 16),
                   Container(
@@ -476,24 +479,58 @@ class DashboardScreen extends StatelessWidget {
                   const SizedBox(height: 24),
                 ],
                 // Applied jobs
-                _SectionHeader(
-                  title: 'Jobs You Applied To',
-                  count: applied.length,
-                  isDark: isDark,
+                Row(
+                  children: [
+                    _SectionHeader(
+                      title: 'Jobs You Applied To',
+                      count: visibleApplied.length,
+                      isDark: isDark,
+                    ),
+                    const Spacer(),
+                    TextButton.icon(
+                      onPressed: () => setState(() {
+                        _hideCompletedAppliedJobs = !_hideCompletedAppliedJobs;
+                      }),
+                      icon: Icon(
+                        _hideCompletedAppliedJobs
+                            ? Icons.visibility_rounded
+                            : Icons.visibility_off_rounded,
+                        size: 16,
+                        color: AppColors.indigo600,
+                      ),
+                      label: Text(
+                        _hideCompletedAppliedJobs
+                            ? 'Show Completed'
+                            : 'Hide Completed',
+                        style: GoogleFonts.plusJakartaSans(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                          color: AppColors.indigo600,
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
                 const SizedBox(height: 12),
-                if (applied.isEmpty)
+                if (visibleApplied.isEmpty)
                   _EmptyCard(
                     message: 'You haven\'t applied to any jobs yet.',
                     isDark: isDark,
                   )
                 else
-                  ...applied.map((j) {
+                  ...visibleApplied.map((j) {
                     String badge;
                     Color badgeColor;
                     final canCancel = j.hiredId != state.currentUserId &&
                         j.status == JobStatus.open;
-                    if (j.hiredId == state.currentUserId) {
+                    if (j.status == JobStatus.completed &&
+                        j.hiredId == state.currentUserId) {
+                      badge = 'FINISHED';
+                      badgeColor = const Color(0xFF7C3AED);
+                    } else if (j.status == JobStatus.completed) {
+                      badge = 'COMPLETED';
+                      badgeColor = const Color(0xFF94A3B8);
+                    } else if (j.hiredId == state.currentUserId) {
                       badge = 'HIRED!';
                       badgeColor = const Color(0xFF059669);
                     } else if (j.hiredId != null) {
@@ -555,6 +592,24 @@ class DashboardScreen extends StatelessWidget {
                 StreamBuilder<List<Conversation>>(
                   stream: state.conversationsStream,
                   builder: (context, snapshot) {
+                    if (snapshot.hasError) {
+                      return Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          _SectionHeader(
+                            title: 'Your Conversations',
+                            count: 0,
+                            isDark: isDark,
+                          ),
+                          const SizedBox(height: 12),
+                          _EmptyCard(
+                            message:
+                                'Could not load conversations: ${snapshot.error}',
+                            isDark: isDark,
+                          ),
+                        ],
+                      );
+                    }
                     final convos = snapshot.data ?? [];
                     return Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -576,8 +631,8 @@ class DashboardScreen extends StatelessWidget {
                             (conv) => _ConvoCard(
                               name: conv.otherUserName,
                               contextLabel: conv.contextLabel,
-                              preview: '',
-                              time: null,
+                              preview: conv.lastMessagePreview,
+                              time: conv.lastMessageTime,
                               isDark: isDark,
                               onTap: () => Navigator.of(context).push(
                                 SmoothPageRoute(
@@ -909,6 +964,120 @@ class _StatCard extends StatelessWidget {
               fontSize: 12,
               fontWeight: FontWeight.w600,
               color: const Color(0xFF94A3B8),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _VaultGoalCard extends StatelessWidget {
+  final bool isDark;
+  final String goal;
+  final double saved;
+  final double target;
+  final double progress;
+  final String nudge;
+
+  const _VaultGoalCard({
+    required this.isDark,
+    required this.goal,
+    required this.saved,
+    required this.target,
+    required this.progress,
+    required this.nudge,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final remaining = (target - saved) <= 0 ? 0 : (target - saved);
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [
+            AppColors.indigo600.withValues(alpha: 0.12),
+            const Color(0xFF7C3AED).withValues(alpha: 0.10),
+          ],
+        ),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: AppColors.indigo600.withValues(alpha: 0.25),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Vault Goal',
+            style: GoogleFonts.plusJakartaSans(
+              fontSize: 11,
+              fontWeight: FontWeight.w800,
+              letterSpacing: 1.2,
+              color: AppColors.indigo600,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            goal,
+            style: GoogleFonts.plusJakartaSans(
+              fontSize: 18,
+              fontWeight: FontWeight.w800,
+              color: isDark ? Colors.white : AppColors.slate900,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            'Saved \$${saved.toStringAsFixed(0)} / \$${target.toStringAsFixed(0)} · \$${remaining.toStringAsFixed(0)} left',
+            style: GoogleFonts.plusJakartaSans(
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+              color: const Color(0xFF94A3B8),
+            ),
+          ),
+          const SizedBox(height: 10),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(4),
+            child: LinearProgressIndicator(
+              value: progress,
+              minHeight: 7,
+              backgroundColor:
+                  isDark ? const Color(0xFF334155) : AppColors.slate200,
+              color: AppColors.indigo600,
+            ),
+          ),
+          const SizedBox(height: 10),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: isDark
+                  ? const Color(0xFF0F172A).withValues(alpha: 0.45)
+                  : Colors.white.withValues(alpha: 0.7),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(
+                color: isDark ? const Color(0xFF334155) : AppColors.slate200,
+              ),
+            ),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Icon(Icons.notifications_active_rounded,
+                    size: 16, color: AppColors.indigo600),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    nudge,
+                    style: GoogleFonts.plusJakartaSans(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: isDark ? Colors.white : AppColors.slate900,
+                    ),
+                  ),
+                ),
+              ],
             ),
           ),
         ],

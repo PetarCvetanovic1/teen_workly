@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import '../utils/smooth_route.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
@@ -7,6 +8,7 @@ import '../state/app_state.dart';
 import '../widgets/content_wrap.dart';
 import '../services/moderation.dart';
 import '../services/email_verification.dart';
+import 'jobs_screen.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -179,6 +181,28 @@ class _LoginScreenState extends State<LoginScreen> {
                       validator: (v) =>
                           (v == null || v.isEmpty) ? 'Required' : null,
                     ),
+                    const SizedBox(height: 8),
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: TextButton(
+                        onPressed: _sendPasswordResetEmail,
+                        style: TextButton.styleFrom(
+                          foregroundColor: AppColors.indigo600,
+                          visualDensity: VisualDensity.compact,
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 4,
+                            vertical: 2,
+                          ),
+                        ),
+                        child: Text(
+                          'Forgot password?',
+                          style: GoogleFonts.plusJakartaSans(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                    ),
                     const SizedBox(height: 28),
                     Material(
                       color: isDark ? Colors.white : AppColors.slate900,
@@ -200,6 +224,38 @@ class _LoginScreenState extends State<LoginScreen> {
                                   ? AppColors.slate900
                                   : Colors.white,
                             ),
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    Material(
+                      color: isDark
+                          ? const Color(0xFF0F172A).withValues(alpha: 0.5)
+                          : Colors.white,
+                      borderRadius: BorderRadius.circular(16),
+                      child: InkWell(
+                        onTap: _signInWithGoogle,
+                        borderRadius: BorderRadius.circular(16),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              const Icon(Icons.g_mobiledata_rounded,
+                                  size: 24, color: Color(0xFFEA4335)),
+                              const SizedBox(width: 8),
+                              Text(
+                                'Continue with Google',
+                                style: GoogleFonts.plusJakartaSans(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w700,
+                                  color: isDark
+                                      ? Colors.white
+                                      : AppColors.slate900,
+                                ),
+                              ),
+                            ],
                           ),
                         ),
                       ),
@@ -320,20 +376,49 @@ class _LoginScreenState extends State<LoginScreen> {
   Future<void> _submit() async {
     if (!(_formKey.currentState?.validate() ?? false)) return;
 
-    final error = await context
-        .read<AppState>()
-        .login(_emailCtrl.text.trim(), _passCtrl.text);
-
-    if (!mounted) return;
-
-    if (error != null) {
+    final email = _emailCtrl.text.trim().toLowerCase();
+    try {
+      await FirebaseAuth.instance.signInWithEmailAndPassword(
+        email: email,
+        password: _passCtrl.text,
+      );
+    } on FirebaseAuthException catch (e) {
+      if (!mounted) return;
+      String msg;
+      switch (e.code) {
+        case 'user-not-found':
+        case 'wrong-password':
+        case 'invalid-credential':
+        case 'invalid-login-credentials':
+          msg = 'Email or password is incorrect.';
+          break;
+        case 'network-request-failed':
+          msg = 'Network error. Check internet and try again.';
+          break;
+        case 'too-many-requests':
+          msg = 'Too many attempts. Please wait and try again.';
+          break;
+        default:
+          msg = 'Login failed (${e.code}).';
+      }
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(error), backgroundColor: Colors.red),
+        SnackBar(content: Text(msg), backgroundColor: Colors.red),
+      );
+      return;
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Login failed: $e'), backgroundColor: Colors.red),
       );
       return;
     }
 
-    Navigator.of(context).pop();
+    if (!mounted) return;
+
+    Navigator.of(context).pushAndRemoveUntil(
+      SmoothPageRoute(builder: (_) => const JobsScreen()),
+      (_) => false,
+    );
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: const Text('Welcome back!'),
@@ -341,6 +426,133 @@ class _LoginScreenState extends State<LoginScreen> {
         shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(12)),
       ),
+    );
+  }
+
+  Future<void> _sendPasswordResetEmail() async {
+    final email = _emailCtrl.text.trim().toLowerCase();
+    final emailError = _validateEmail(email);
+    if (emailError != null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Enter your email above first to reset password.'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
+    try {
+      // Send Firebase email-link sign-in (no paid backend needed).
+      try {
+        await FirebaseAuth.instance.sendSignInLinkToEmail(
+          email: email,
+          actionCodeSettings: ActionCodeSettings(
+            url: 'https://teenworkly.firebaseapp.com',
+            handleCodeInApp: true,
+            androidPackageName: 'com.teenworkly.app',
+            androidInstallApp: true,
+            iOSBundleId: 'com.example.teenWorkly',
+          ),
+        );
+      } on FirebaseAuthException catch (e) {
+        // Fallback without action settings if configured domains reject it.
+        if (e.code == 'invalid-continue-uri' ||
+            e.code == 'unauthorized-continue-uri' ||
+            e.code == 'missing-continue-uri') {
+          await FirebaseAuth.instance.sendSignInLinkToEmail(
+            email: email,
+            actionCodeSettings: ActionCodeSettings(
+              url: 'https://teenworkly.firebaseapp.com',
+              handleCodeInApp: true,
+              androidPackageName: 'com.teenworkly.app',
+              androidInstallApp: true,
+              iOSBundleId: 'com.example.teenWorkly',
+            ),
+          );
+        } else {
+          rethrow;
+        }
+      }
+
+      // Always send backup EmailJS mail too (this path is known working).
+      final backupCode = EmailVerificationService.generateCode();
+      await EmailVerificationService.sendVerificationEmail(
+        toEmail: email,
+        toName: 'TeenWorkly User',
+        code: backupCode,
+      );
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Email sent. Check inbox and spam.'),
+        ),
+      );
+      Navigator.of(context).push(
+        SmoothPageRoute(
+          builder: (_) => ResetPasswordScreen(
+            initialEmail: email,
+            codeJustSent: true,
+          ),
+        ),
+      );
+    } on FirebaseAuthException catch (e) {
+      if (!mounted) return;
+      String msg;
+      switch (e.code) {
+        case 'invalid-email':
+          msg = 'That email format is invalid.';
+          break;
+        case 'missing-email':
+          msg = 'Enter your email first.';
+          break;
+        case 'user-not-found':
+          msg = 'No account found with that email.';
+          break;
+        case 'operation-not-allowed':
+          msg =
+              'Password reset is not enabled. Enable Email/Password in Firebase Auth.';
+          break;
+        case 'too-many-requests':
+          msg = 'Too many attempts. Please wait and try again.';
+          break;
+        case 'network-request-failed':
+          msg = 'Network error. Check internet and try again.';
+          break;
+        default:
+          msg = 'Reset failed (${e.code}): ${e.message ?? 'Unknown auth error'}';
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(msg), backgroundColor: Colors.red),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Could not send reset email: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
+  Future<void> _signInWithGoogle() async {
+    final error = await context.read<AppState>().loginWithGoogle();
+    if (!mounted) return;
+    final messenger = ScaffoldMessenger.of(context);
+    if (error != null) {
+      messenger.showSnackBar(
+        SnackBar(content: Text(error), backgroundColor: Colors.red),
+      );
+      return;
+    }
+    messenger.showSnackBar(
+      const SnackBar(content: Text('Signed in with Google!')),
+    );
+    Navigator.of(context).pushAndRemoveUntil(
+      SmoothPageRoute(builder: (_) => const JobsScreen()),
+      (_) => false,
     );
   }
 }
@@ -545,40 +757,10 @@ class _SignUpScreenState extends State<SignUpScreen> {
                         if (v == null || v.trim().isEmpty) return 'Required';
                         final age = int.tryParse(v.trim());
                         if (age == null) return 'Enter a number';
-                        if (age < 13) return 'You must be at least 13';
-                        if (age > 19) return 'TeenWorkly is for teens (13–19)';
+                        if (age < 10) return 'You must be at least 10';
                         return null;
                       },
                     ),
-                    if (int.tryParse(_ageCtrl.text.trim()) != null &&
-                        int.parse(_ageCtrl.text.trim()) < 16) ...[
-                      const SizedBox(height: 8),
-                      Container(
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          color: AppColors.indigo600.withValues(alpha: 0.08),
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: Row(
-                          children: [
-                            const Icon(Icons.info_outline_rounded,
-                                size: 16, color: AppColors.indigo600),
-                            const SizedBox(width: 8),
-                            Expanded(
-                              child: Text(
-                                'Under 16? You can find jobs and offer services, '
-                                'but posting jobs is available at 16+.',
-                                style: GoogleFonts.plusJakartaSans(
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.w600,
-                                  color: AppColors.indigo600,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
                     const SizedBox(height: 28),
                     Material(
                       color: isDark ? Colors.white : AppColors.slate900,
@@ -628,6 +810,38 @@ class _SignUpScreenState extends State<SignUpScreen> {
                                         : Colors.white,
                                   ),
                                 ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    Material(
+                      color: isDark
+                          ? const Color(0xFF0F172A).withValues(alpha: 0.5)
+                          : Colors.white,
+                      borderRadius: BorderRadius.circular(16),
+                      child: InkWell(
+                        onTap: _signUpWithGoogle,
+                        borderRadius: BorderRadius.circular(16),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              const Icon(Icons.g_mobiledata_rounded,
+                                  size: 24, color: Color(0xFFEA4335)),
+                              const SizedBox(width: 8),
+                              Text(
+                                'Continue with Google',
+                                style: GoogleFonts.plusJakartaSans(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w700,
+                                  color: isDark
+                                      ? Colors.white
+                                      : AppColors.slate900,
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
                       ),
                     ),
@@ -798,12 +1012,12 @@ class _SignUpScreenState extends State<SignUpScreen> {
   void _submit() async {
     if (!(_formKey.currentState?.validate() ?? false)) return;
 
-    final email = _emailCtrl.text.trim();
+    final email = _emailCtrl.text.trim().toLowerCase();
 
     setState(() => _sendingCode = true);
 
     final code = EmailVerificationService.generateCode();
-    final sent = await EmailVerificationService.sendVerificationEmail(
+    final emailResult = await EmailVerificationService.sendVerificationEmail(
       toEmail: email,
       toName: _nameCtrl.text.trim(),
       code: code,
@@ -812,11 +1026,13 @@ class _SignUpScreenState extends State<SignUpScreen> {
     if (!mounted) return;
     setState(() => _sendingCode = false);
 
-    if (!sent) {
+    if (!emailResult.success) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: const Text(
-              'Could not send verification email. Check your email and try again.'),
+          content: Text(
+            emailResult.error ??
+                'Could not send verification email. Check your email and try again.',
+          ),
           behavior: SnackBarBehavior.floating,
           backgroundColor: const Color(0xFFDC2626),
           shape:
@@ -855,7 +1071,21 @@ class _SignUpScreenState extends State<SignUpScreen> {
       return;
     }
 
-    Navigator.of(context).pop();
+    // Safety: ensure the auth session is actually active before routing away.
+    if (FirebaseAuth.instance.currentUser == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Account was created but sign-in session is missing. Please log in.'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
+    Navigator.of(context).pushAndRemoveUntil(
+      SmoothPageRoute(builder: (_) => const JobsScreen()),
+      (_) => false,
+    );
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: const Text('Email verified! Welcome to TeenWorkly!'),
@@ -865,6 +1095,26 @@ class _SignUpScreenState extends State<SignUpScreen> {
       ),
     );
   }
+
+  Future<void> _signUpWithGoogle() async {
+    final error = await context.read<AppState>().loginWithGoogle();
+    if (!mounted) return;
+    final messenger = ScaffoldMessenger.of(context);
+    if (error != null) {
+      messenger.showSnackBar(
+        SnackBar(content: Text(error), backgroundColor: Colors.red),
+      );
+      return;
+    }
+    messenger.showSnackBar(
+      const SnackBar(content: Text('Signed in with Google!')),
+    );
+    Navigator.of(context).pushAndRemoveUntil(
+      SmoothPageRoute(builder: (_) => const JobsScreen()),
+      (_) => false,
+    );
+  }
+
 }
 
 class _VerificationDialog extends StatefulWidget {
@@ -974,6 +1224,7 @@ class _VerificationDialogState extends State<_VerificationDialog> {
           TextField(
             controller: _codeCtrl,
             keyboardType: TextInputType.number,
+            textInputAction: TextInputAction.done,
             textAlign: TextAlign.center,
             maxLength: 6,
             style: GoogleFonts.plusJakartaSans(
@@ -1008,6 +1259,8 @@ class _VerificationDialogState extends State<_VerificationDialog> {
                 color: const Color(0xFFDC2626),
               ),
             ),
+            onSubmitted: (_) => _verify(),
+            onEditingComplete: _verify,
           ),
           const SizedBox(height: 20),
           SizedBox(
@@ -1046,6 +1299,266 @@ class _VerificationDialogState extends State<_VerificationDialog> {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class ResetPasswordScreen extends StatefulWidget {
+  final String? initialEmail;
+  final bool codeJustSent;
+
+  const ResetPasswordScreen({
+    super.key,
+    this.initialEmail,
+    this.codeJustSent = false,
+  });
+
+  @override
+  State<ResetPasswordScreen> createState() => _ResetPasswordScreenState();
+}
+
+class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
+  final _formKey = GlobalKey<FormState>();
+  final _emailCtrl = TextEditingController();
+  final _codeCtrl = TextEditingController();
+  bool _sending = false;
+  bool _submitting = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _emailCtrl.text = (widget.initialEmail ?? '').trim().toLowerCase();
+  }
+
+  @override
+  void dispose() {
+    _emailCtrl.dispose();
+    _codeCtrl.dispose();
+    super.dispose();
+  }
+
+  String? _validateEmail(String? v) {
+    if (v == null || v.trim().isEmpty) return 'Required';
+    final regex = RegExp(r'^[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}$');
+    if (!regex.hasMatch(v.trim())) return 'Enter a valid email address';
+    return null;
+  }
+
+  Future<void> _sendVerification() async {
+    final email = _emailCtrl.text.trim().toLowerCase();
+    final emailErr = _validateEmail(email);
+    if (emailErr != null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(emailErr), backgroundColor: Colors.red),
+      );
+      return;
+    }
+    setState(() => _sending = true);
+    try {
+      await FirebaseAuth.instance.sendSignInLinkToEmail(
+        email: email,
+        actionCodeSettings: ActionCodeSettings(
+          url: 'https://teenworkly.firebaseapp.com',
+          handleCodeInApp: true,
+          androidPackageName: 'com.teenworkly.app',
+          androidInstallApp: true,
+          iOSBundleId: 'com.example.teenWorkly',
+        ),
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Sign-in link sent. Check inbox/spam and paste the full link below.',
+          ),
+        ),
+      );
+    } on FirebaseAuthException catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Could not send sign-in link (${e.code}).'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Could not send verification code: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _sending = false);
+    }
+  }
+
+  Future<void> _resetPassword() async {
+    if (!(_formKey.currentState?.validate() ?? false)) return;
+    final email = _emailCtrl.text.trim().toLowerCase();
+    final link = _codeCtrl.text.trim();
+    if (link.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Paste the sign-in link first.'), backgroundColor: Colors.red),
+      );
+      return;
+    }
+    if (!link.contains('http')) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Paste the full link from your email.'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
+    setState(() => _submitting = true);
+    try {
+      final error = await context.read<AppState>().loginWithEmailLink(
+            email: email,
+            emailLink: link,
+          );
+      if (error != null) {
+        throw Exception(error);
+      }
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Code accepted. You are logged in.')),
+      );
+      Navigator.of(context).pushAndRemoveUntil(
+        SmoothPageRoute(builder: (_) => const JobsScreen()),
+        (_) => false,
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(e.toString().replaceFirst('Exception: ', '')), backgroundColor: Colors.red),
+      );
+    } finally {
+      if (mounted) setState(() => _submitting = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return Scaffold(
+      appBar: AppBar(
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back_rounded),
+          onPressed: () => Navigator.pop(context),
+        ),
+        title: const Text('Reset Password'),
+      ),
+      body: SingleChildScrollView(
+        padding: const EdgeInsets.symmetric(horizontal: 24),
+        child: ContentWrap(
+          child: Form(
+            key: _formKey,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const SizedBox(height: 24),
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: isDark
+                        ? const Color(0xFF0F172A).withValues(alpha: 0.7)
+                        : AppColors.slate100.withValues(alpha: 0.8),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: isDark ? const Color(0xFF334155) : AppColors.slate200,
+                    ),
+                  ),
+                  child: Text(
+                    'After you receive the email link:\n'
+                    '1) tap Send Verification Email,\n'
+                    '2) copy the full link from the email,\n'
+                    '3) paste it below to log in.',
+                    style: GoogleFonts.plusJakartaSans(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: isDark ? Colors.white : AppColors.slate900,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextFormField(
+                  controller: _emailCtrl,
+                  validator: _validateEmail,
+                  decoration: const InputDecoration(
+                    labelText: 'Email',
+                    hintText: 'you@example.com',
+                  ),
+                ),
+                const SizedBox(height: 12),
+                if (!widget.codeJustSent) ...[
+                  ElevatedButton(
+                    onPressed: _sending ? null : _sendVerification,
+                    child: _sending
+                        ? const SizedBox(
+                            height: 18,
+                            width: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Text('Send Verification Email'),
+                  ),
+                  const SizedBox(height: 16),
+                ] else ...[
+                  Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: isDark
+                          ? const Color(0xFF0F172A).withValues(alpha: 0.5)
+                          : Colors.white.withValues(alpha: 0.7),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Text(
+                      'Link sent. Paste the full sign-in link from your email below.',
+                      style: GoogleFonts.plusJakartaSans(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: isDark ? Colors.white : AppColors.slate900,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                ],
+                TextFormField(
+                  controller: _codeCtrl,
+                  validator: (v) =>
+                      (v == null || v.trim().isEmpty) ? 'Required' : null,
+                  decoration: const InputDecoration(
+                    labelText: 'Verification Link',
+                    hintText: 'Paste full sign-in link',
+                  ),
+                ),
+                const SizedBox(height: 18),
+                FilledButton(
+                  onPressed: _submitting ? null : _resetPassword,
+                  style: FilledButton.styleFrom(
+                    backgroundColor: isDark ? Colors.white : AppColors.slate900,
+                    foregroundColor: isDark ? AppColors.slate900 : Colors.white,
+                  ),
+                  child: _submitting
+                      ? const SizedBox(
+                          height: 18,
+                          width: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Text('Sign In With Link'),
+                ),
+                const SizedBox(height: 24),
+              ],
+            ),
+          ),
+        ),
       ),
     );
   }

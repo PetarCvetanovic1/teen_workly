@@ -12,6 +12,8 @@ class UserProfile {
   Set<String> interests;
   String? school;
   int? age;
+  String? vaultGoal;
+  double? vaultTargetAmount;
 
   UserProfile({
     required this.id,
@@ -23,6 +25,8 @@ class UserProfile {
     Set<String>? interests,
     this.school,
     this.age,
+    this.vaultGoal,
+    this.vaultTargetAmount,
   })  : skills = skills ?? {},
         interests = interests ?? {};
 
@@ -248,6 +252,8 @@ class Conversation {
   final String otherUserId;
   final String otherUserName;
   final String? contextLabel;
+  final String? lastMessageText;
+  final DateTime? lastMessageAt;
   final List<ChatMessage> messages;
 
   Conversation({
@@ -255,14 +261,21 @@ class Conversation {
     required this.otherUserId,
     required this.otherUserName,
     this.contextLabel,
+    this.lastMessageText,
+    this.lastMessageAt,
     List<ChatMessage>? messages,
   }) : messages = messages ?? [];
 
   String get lastMessagePreview {
+    if (lastMessageText != null && lastMessageText!.trim().isNotEmpty) {
+      return lastMessageText!;
+    }
     if (messages.isEmpty) return 'No messages yet';
     return messages.last.text;
   }
 
-  DateTime? get lastMessageTime =>
-      messages.isEmpty ? null : messages.last.timestamp;
+  DateTime? get lastMessageTime {
+    if (lastMessageAt != null) return lastMessageAt;
+    return messages.isEmpty ? null : messages.last.timestamp;
+  }
 }

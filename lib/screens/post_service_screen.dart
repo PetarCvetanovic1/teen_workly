@@ -7,9 +7,7 @@ import '../models/models.dart';
 import '../state/app_state.dart';
 import '../services/moderation.dart';
 import '../widgets/app_drawer.dart';
-import '../widgets/logo_title.dart';
-import '../widgets/app_bar_nav.dart';
-import '../widgets/auth_button.dart';
+import '../widgets/tw_app_bar.dart';
 import '../widgets/content_wrap.dart';
 import 'home_screen.dart';
 
@@ -83,35 +81,21 @@ class _PostServiceScreenState extends State<PostServiceScreen> {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final state = context.watch<AppState>();
+    final neighborhoodLocked = state.userLocationText.isNotEmpty;
 
     return Scaffold(
-      appBar: AppBar(
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        centerTitle: false,
-        titleSpacing: 4,
+      appBar: TwAppBar(
         leading: Builder(
           builder: (ctx) => IconButton(
             icon: const Icon(Icons.menu_rounded),
             onPressed: () => Scaffold.of(ctx).openDrawer(),
           ),
         ),
-        title: Stack(
-          alignment: Alignment.center,
-          children: [
-            Align(
-              alignment: Alignment.centerLeft,
-              child: LogoTitle(
-                onTap: () => Navigator.of(context).pushAndRemoveUntil(
-                  SmoothPageRoute(builder: (_) => const HomeScreen()),
-                  (_) => false,
-                ),
-              ),
-            ),
-            const Center(child: AppBarNav()),
-          ],
+        onLogoTap: () => Navigator.of(context).pushAndRemoveUntil(
+          SmoothPageRoute(builder: (_) => const HomeScreen()),
+          (_) => false,
         ),
-        actions: const [AuthButton()],
       ),
       drawer: const AppDrawer(),
       body: SingleChildScrollView(
@@ -187,7 +171,19 @@ class _PostServiceScreenState extends State<PostServiceScreen> {
                         controller: _locationCtrl,
                         hint: 'e.g. Waterloo, ON',
                         isDark: isDark,
+                        readOnly: neighborhoodLocked,
                       ),
+                      if (neighborhoodLocked) ...[
+                        const SizedBox(height: 6),
+                        Text(
+                          'Neighborhood is locked to your selected work location.',
+                          style: GoogleFonts.plusJakartaSans(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
+                            color: const Color(0xFF94A3B8),
+                          ),
+                        ),
+                      ],
                       const SizedBox(height: 24),
                       _label('WHAT CAN YOU DO?'),
                       const SizedBox(height: 8),
@@ -424,6 +420,7 @@ class _PostServiceScreenState extends State<PostServiceScreen> {
                             'A short intro — what makes you great at this?',
                         isDark: isDark,
                         maxLines: 4,
+                        minLength: 8,
                       ),
                       const SizedBox(height: 32),
                       Material(
@@ -507,10 +504,13 @@ class _PostServiceScreenState extends State<PostServiceScreen> {
     required String hint,
     required bool isDark,
     int maxLines = 1,
+    int? minLength,
+    bool readOnly = false,
   }) {
     return TextFormField(
       controller: controller,
       maxLines: maxLines,
+      readOnly: readOnly,
       style: GoogleFonts.plusJakartaSans(
         fontWeight: FontWeight.w600,
         color: isDark ? Colors.white : AppColors.slate900,
@@ -546,8 +546,17 @@ class _PostServiceScreenState extends State<PostServiceScreen> {
         ),
         contentPadding:
             const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+        suffixIcon: readOnly
+            ? const Icon(Icons.lock_rounded, color: Color(0xFF94A3B8), size: 18)
+            : null,
       ),
-      validator: (v) => (v == null || v.isEmpty) ? 'Required' : null,
+      validator: (v) {
+        if (v == null || v.isEmpty) return 'Required';
+        if (minLength != null && v.trim().length < minLength) {
+          return 'At least $minLength characters';
+        }
+        return null;
+      },
     );
   }
 

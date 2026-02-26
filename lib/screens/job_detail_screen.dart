@@ -852,31 +852,39 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
                   ),
                 ],
                 const SizedBox(height: 18),
-                TextField(
-                  controller: commentCtrl,
-                  maxLines: 3,
-                  style: GoogleFonts.plusJakartaSans(
-                    fontWeight: FontWeight.w500,
-                    fontSize: 13,
-                    color: isDark ? Colors.white : AppColors.slate900,
-                  ),
-                  decoration: InputDecoration(
-                    hintText:
-                        'Tell others about your experience (optional)',
-                    hintStyle: GoogleFonts.plusJakartaSans(
-                      fontWeight: FontWeight.w500,
-                      fontSize: 13,
-                      color: const Color(0xFF94A3B8),
+                Center(
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 460),
+                    child: TextField(
+                      controller: commentCtrl,
+                      keyboardType: TextInputType.multiline,
+                      textInputAction: TextInputAction.newline,
+                      minLines: 3,
+                      maxLines: 6,
+                      style: GoogleFonts.plusJakartaSans(
+                        fontWeight: FontWeight.w500,
+                        fontSize: 13,
+                        color: isDark ? Colors.white : AppColors.slate900,
+                      ),
+                      decoration: InputDecoration(
+                        hintText:
+                            'Tell others about your experience (optional)',
+                        hintStyle: GoogleFonts.plusJakartaSans(
+                          fontWeight: FontWeight.w500,
+                          fontSize: 13,
+                          color: const Color(0xFF94A3B8),
+                        ),
+                        filled: true,
+                        fillColor: isDark
+                            ? const Color(0xFF0F172A).withValues(alpha: 0.5)
+                            : AppColors.slate100,
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(14),
+                          borderSide: BorderSide.none,
+                        ),
+                        contentPadding: const EdgeInsets.all(16),
+                      ),
                     ),
-                    filled: true,
-                    fillColor: isDark
-                        ? const Color(0xFF0F172A).withValues(alpha: 0.5)
-                        : AppColors.slate100,
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(14),
-                      borderSide: BorderSide.none,
-                    ),
-                    contentPadding: const EdgeInsets.all(16),
                   ),
                 ),
               ],

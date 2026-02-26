@@ -11,7 +11,7 @@ import '../screens/post_service_screen.dart';
 import '../screens/dashboard_screen.dart';
 import '../screens/conversations_screen.dart';
 import '../screens/login_screen.dart';
-import '../screens/profile_screen.dart';
+import '../screens/profile_editor_screen.dart';
 import '../screens/contact_screen.dart';
 import '../screens/huddle_screen.dart';
 
@@ -25,13 +25,14 @@ class AppDrawer extends StatelessWidget {
     return Consumer<AppState>(
       builder: (context, state, _) {
         final loggedIn = state.isLoggedIn;
+        final profile = state.profile;
 
         return Drawer(
           child: SafeArea(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                if (loggedIn) ...[
+                if (loggedIn && profile != null) ...[
                   Padding(
                     padding: const EdgeInsets.fromLTRB(24, 24, 24, 4),
                     child: Row(
@@ -50,7 +51,7 @@ class AppDrawer extends StatelessWidget {
                           ),
                           child: Center(
                             child: Text(
-                              state.profile!.initials,
+                              profile.initials.toUpperCase(),
                               style: GoogleFonts.plusJakartaSans(
                                 fontSize: 18,
                                 fontWeight: FontWeight.w800,
@@ -65,7 +66,7 @@ class AppDrawer extends StatelessWidget {
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Text(
-                                state.profile!.name,
+                                profile.name,
                                 style: GoogleFonts.plusJakartaSans(
                                   fontSize: 16,
                                   fontWeight: FontWeight.w800,
@@ -75,7 +76,7 @@ class AppDrawer extends StatelessWidget {
                                 ),
                               ),
                               Text(
-                                state.profile!.email,
+                                profile.email,
                                 style: GoogleFonts.plusJakartaSans(
                                   fontSize: 12,
                                   fontWeight: FontWeight.w500,

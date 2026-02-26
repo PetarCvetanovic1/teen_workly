@@ -1,17 +1,16 @@
 import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import '../utils/smooth_route.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import '../app_colors.dart';
 import '../models/models.dart';
 import '../state/app_state.dart';
-import '../services/moderation.dart';
 import '../widgets/app_drawer.dart';
-import '../widgets/logo_title.dart';
-import '../widgets/app_bar_nav.dart';
-import '../widgets/auth_button.dart';
+import '../widgets/tw_app_bar.dart';
 import '../widgets/content_wrap.dart';
 import 'home_screen.dart';
+import 'jobs_screen.dart';
 
 const _jobTypes = ['Part-time', 'Seasonal', 'One-time'];
 
@@ -74,35 +73,21 @@ class _PostJobScreenState extends State<PostJobScreen> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
+    final state = context.watch<AppState>();
+    final neighborhoodLocked = state.userLocationText.isNotEmpty;
 
     return Scaffold(
-      appBar: AppBar(
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        centerTitle: false,
-        titleSpacing: 4,
+      appBar: TwAppBar(
         leading: Builder(
           builder: (ctx) => IconButton(
             icon: const Icon(Icons.menu_rounded),
             onPressed: () => Scaffold.of(ctx).openDrawer(),
           ),
         ),
-        title: Stack(
-          alignment: Alignment.center,
-          children: [
-            Align(
-              alignment: Alignment.centerLeft,
-              child: LogoTitle(
-                onTap: () => Navigator.of(context).pushAndRemoveUntil(
-                  SmoothPageRoute(builder: (_) => const HomeScreen()),
-                  (_) => false,
-                ),
-              ),
-            ),
-            const Center(child: AppBarNav()),
-          ],
+        onLogoTap: () => Navigator.of(context).pushAndRemoveUntil(
+          SmoothPageRoute(builder: (_) => const HomeScreen()),
+          (_) => false,
         ),
-        actions: const [AuthButton()],
       ),
       drawer: const AppDrawer(),
       body: SingleChildScrollView(
@@ -195,7 +180,19 @@ class _PostJobScreenState extends State<PostJobScreen> {
                         controller: _locationCtrl,
                         hint: 'Neighborhood or Street',
                         isDark: isDark,
+                        readOnly: neighborhoodLocked,
                       ),
+                      if (neighborhoodLocked) ...[
+                        const SizedBox(height: 6),
+                        Text(
+                          'Neighborhood is locked to your selected work location.',
+                          style: GoogleFonts.plusJakartaSans(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
+                            color: const Color(0xFF94A3B8),
+                          ),
+                        ),
+                      ],
                       const SizedBox(height: 24),
                       _buildLabel('DESCRIPTION'),
                       const SizedBox(height: 8),
@@ -204,6 +201,7 @@ class _PostJobScreenState extends State<PostJobScreen> {
                         hint: 'Tell the teens what they\'ll be doing...',
                         isDark: isDark,
                         maxLines: 5,
+                        minLength: 8,
                       ),
                       const SizedBox(height: 24),
                       _buildLabel('SERVICES NEEDED'),
@@ -336,7 +334,7 @@ class _PostJobScreenState extends State<PostJobScreen> {
                                       ),
                                       const SizedBox(width: 12),
                                       Text(
-                                        'Checking content...',
+                                        'Posting job...',
                                         style: GoogleFonts.plusJakartaSans(
                                           fontSize: 16,
                                           fontWeight: FontWeight.w800,
@@ -391,10 +389,13 @@ class _PostJobScreenState extends State<PostJobScreen> {
     required String hint,
     required bool isDark,
     int maxLines = 1,
+    int? minLength,
+    bool readOnly = false,
   }) {
     return TextFormField(
       controller: controller,
       maxLines: maxLines,
+      readOnly: readOnly,
       style: GoogleFonts.plusJakartaSans(
         fontWeight: FontWeight.w600,
         color: isDark ? Colors.white : AppColors.slate900,
@@ -436,8 +437,17 @@ class _PostJobScreenState extends State<PostJobScreen> {
           horizontal: 20,
           vertical: 16,
         ),
+        suffixIcon: readOnly
+            ? const Icon(Icons.lock_rounded, color: Color(0xFF94A3B8), size: 18)
+            : null,
       ),
-      validator: (v) => (v == null || v.isEmpty) ? 'Required' : null,
+      validator: (v) {
+        if (v == null || v.isEmpty) return 'Required';
+        if (minLength != null && v.trim().length < minLength) {
+          return 'At least $minLength characters';
+        }
+        return null;
+      },
     );
   }
 
@@ -496,87 +506,156 @@ class _PostJobScreenState extends State<PostJobScreen> {
 
   void _submitForm() async {
     if (_submitting) return;
-    if (!(_formKey.currentState?.validate() ?? false)) return;
+    if (!(_formKey.currentState?.validate() ?? false)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text('Please complete all required fields first.'),
+          behavior: SnackBarBehavior.floating,
+          backgroundColor: const Color(0xFFDC2626),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
+        ),
+      );
+      return;
+    }
+    if (_selectedServices.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text('Select at least one service category.'),
+          behavior: SnackBarBehavior.floating,
+          backgroundColor: const Color(0xFFDC2626),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
+        ),
+      );
+      return;
+    }
+    if (_selectedServices.contains('Other') &&
+        _otherServiceCtrl.text.trim().isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text('Please describe the "Other" service you need.'),
+          behavior: SnackBarBehavior.floating,
+          backgroundColor: const Color(0xFFDC2626),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
+        ),
+      );
+      return;
+    }
 
     final state = context.read<AppState>();
-
-    if (state.amReportSuspended) {
-      final left = state.reportSuspensionTimeLeft(state.currentUserId);
-      final days = (left.inHours / 24).ceil();
-      _showModerationWarning(
-        'Your account has been suspended due to multiple reports from other users. '
-        'Suspension ends in ${days > 0 ? "$days day${days == 1 ? "" : "s"}" : "a few hours"}.',
-      );
-      return;
-    }
-
-    if (state.isPostingSuspended) {
-      final hours = state.suspensionTimeLeft.inHours;
-      final days = (hours / 24).ceil();
-      _showModerationWarning(
-        'You\'re currently suspended from posting jobs for '
-        '${days > 0 ? "$days day${days == 1 ? "" : "s"}" : "a few hours"}. '
-        'This happened because you deleted 3 jobs that already had applicants. '
-        'Please wait for the suspension to end.',
-      );
-      return;
-    }
-
-    if (!state.canPostMoreJobs) {
-      _showModerationWarning(
-        state.isTrustedPoster
-            ? 'You\'ve reached the limit of 5 active job postings. '
-                'Wait for some to finish before posting more.'
-            : 'You can have up to 3 active job postings at a time. '
-                'Complete or delete existing jobs to post more. '
-                'Trusted posters (5+ completed jobs) can post up to 5.',
-      );
-      return;
-    }
-
     setState(() => _submitting = true);
+    User? authUser = FirebaseAuth.instance.currentUser;
+    try {
+      if (authUser == null) {
+        for (var i = 0; i < 6; i++) {
+          await Future<void>.delayed(const Duration(milliseconds: 200));
+          authUser = FirebaseAuth.instance.currentUser;
+          if (authUser != null) break;
+        }
+      }
+      if (authUser == null) {
+        _showModerationWarning(
+          'You need to be logged in before posting a job. Please log in and try again.',
+        );
+        return;
+      }
+      // Never let profile loading freeze posting flow.
+      try {
+        await state
+            .ensureProfileLoaded()
+            .timeout(const Duration(seconds: 2));
+      } catch (_) {}
 
-    final result = await ModerationService.moderateJob(
-      title: _titleCtrl.text.trim(),
-      description: _descCtrl.text.trim(),
-      type: _selectedType,
-    );
+      if (state.amReportSuspended) {
+        final left = state.reportSuspensionTimeLeft(state.currentUserId);
+        final days = (left.inHours / 24).ceil();
+        _showModerationWarning(
+          'Your account has been suspended due to multiple reports from other users. '
+          'Suspension ends in ${days > 0 ? "$days day${days == 1 ? "" : "s"}" : "a few hours"}.',
+        );
+        return;
+      }
 
-    if (!mounted) return;
-    setState(() => _submitting = false);
+      if (state.isPostingSuspended) {
+        final hours = state.suspensionTimeLeft.inHours;
+        final days = (hours / 24).ceil();
+        _showModerationWarning(
+          'You\'re currently suspended from posting jobs for '
+          '${days > 0 ? "$days day${days == 1 ? "" : "s"}" : "a few hours"}. '
+          'This happened because you deleted 3 jobs that already had applicants. '
+          'Please wait for the suspension to end.',
+        );
+        return;
+      }
 
-    if (!result.approved) {
-      _showModerationWarning(result.reason!);
-      return;
-    }
+      if (!state.canPostMoreJobs) {
+        _showModerationWarning(
+          state.isTrustedPoster
+              ? 'You\'ve reached the limit of 5 active job postings. '
+                  'Wait for some to finish before posting more.'
+              : 'You can have up to 3 active job postings at a time. '
+                  'Complete or delete existing jobs to post more. '
+                  'Trusted posters (5+ completed jobs) can post up to 5.',
+        );
+        return;
+      }
 
-    final job = Job(
-      id: DateTime.now().microsecondsSinceEpoch.toString(),
-      title: _titleCtrl.text.trim(),
-      type: _selectedType,
-      location: _locationCtrl.text.trim(),
-      description: _descCtrl.text.trim(),
-      services: Set.from(_selectedServices),
-      otherService: _selectedServices.contains('Other')
-          ? _otherServiceCtrl.text.trim()
-          : null,
-      posterId: state.currentUserId,
-      posterName: state.currentUserName,
-      createdAt: DateTime.now(),
-      payment: double.tryParse(_payCtrl.text.trim()) ?? 0,
-    );
-    await state.addJob(job);
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: const Text('Job posted! Check your Dashboard.'),
-        behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(12),
+      final authDisplayName = authUser.displayName?.trim() ?? '';
+      final effectivePosterName = state.currentUserName == 'Guest'
+          ? (authDisplayName.isNotEmpty
+              ? authDisplayName
+              : (authUser.email?.split('@').first ?? 'User'))
+          : state.currentUserName;
+      final job = Job(
+        id: DateTime.now().microsecondsSinceEpoch.toString(),
+        title: _titleCtrl.text.trim(),
+        type: _selectedType,
+        location: _locationCtrl.text.trim(),
+        description: _descCtrl.text.trim(),
+        services: Set.from(_selectedServices),
+        otherService: _selectedServices.contains('Other')
+            ? _otherServiceCtrl.text.trim()
+            : null,
+        posterId: authUser.uid,
+        posterName: effectivePosterName,
+        createdAt: DateTime.now(),
+        payment: double.tryParse(_payCtrl.text.trim()) ?? 0,
+      );
+      await state.addJob(job);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text('Job posted successfully!'),
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
         ),
-      ),
-    );
-    Navigator.of(context).pop();
+      );
+      Navigator.of(context).pushAndRemoveUntil(
+        SmoothPageRoute(builder: (_) => const JobsScreen()),
+        (_) => false,
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Could not post job: $e'),
+          behavior: SnackBarBehavior.floating,
+          backgroundColor: const Color(0xFFDC2626),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _submitting = false);
+    }
   }
 
   void _showModerationWarning(String reason) {

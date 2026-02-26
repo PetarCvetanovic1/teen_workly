@@ -1,11 +1,12 @@
 import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import '../utils/smooth_route.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import '../app_colors.dart';
 import '../state/app_state.dart';
 import '../screens/login_screen.dart';
-import '../screens/profile_screen.dart';
+import '../screens/profile_editor_screen.dart';
 
 class AuthButton extends StatelessWidget {
   const AuthButton({super.key});
@@ -16,13 +17,43 @@ class AuthButton extends StatelessWidget {
 
     return Consumer<AppState>(
       builder: (context, state, _) {
+        final profile = state.profile;
         if (state.isLoggedIn) {
+          final fallbackName = (() {
+            final user = FirebaseAuth.instance.currentUser;
+            final display = (user?.displayName ?? '').trim();
+            if (display.isNotEmpty) return display;
+            final email = (user?.email ?? '').trim();
+            if (email.contains('@')) return email.split('@').first;
+            if (email.isNotEmpty) return email;
+            return 'User';
+          })();
+          String computeInitials(String raw) {
+            final parts = raw
+                .split(RegExp(r'[\s._\-]+'))
+                .map((p) => p.trim())
+                .where((p) => p.isNotEmpty)
+                .toList();
+            if (parts.length >= 2) {
+              return (parts.first[0] + parts.last[0]).toUpperCase();
+            }
+            final compact = raw.replaceAll(RegExp(r'[^A-Za-z0-9]'), '');
+            if (compact.length >= 2) {
+              return compact.substring(0, 2).toUpperCase();
+            }
+            if (compact.isNotEmpty) return compact[0].toUpperCase();
+            return 'U';
+          }
+
+          final initials = profile?.initials ?? computeInitials(fallbackName);
           return Padding(
             padding: const EdgeInsets.only(right: 8),
             child: GestureDetector(
-              onTap: () => Navigator.of(context).push(
-                SmoothPageRoute(builder: (_) => const ProfileScreen()),
-              ),
+              onTap: profile == null
+                  ? null
+                  : () => Navigator.of(context).push(
+                        SmoothPageRoute(builder: (_) => const ProfileScreen()),
+                      ),
               child: Container(
                 width: 36,
                 height: 36,
@@ -34,10 +65,11 @@ class AuthButton extends StatelessWidget {
                 ),
                 child: Center(
                   child: Text(
-                    state.profile!.initials,
+                    (initials.isEmpty ? 'U' : initials).toUpperCase(),
                     style: GoogleFonts.plusJakartaSans(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w800,
+                      fontSize: 14,
+                      letterSpacing: 0.4,
+                      fontWeight: FontWeight.w900,
                       color: Colors.white,
                     ),
                   ),

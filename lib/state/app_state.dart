@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:google_sign_in/google_sign_in.dart';
 import '../models/models.dart';
 import '../services/firestore_service.dart';
 
@@ -8,11 +10,21 @@ class AppState extends ChangeNotifier {
   final _auth = FirebaseAuth.instance;
 
   UserProfile? _profile;
-  bool get isLoggedIn => _profile != null;
+  bool get isLoggedIn => _auth.currentUser != null;
   UserProfile? get profile => _profile;
 
   String get currentUserId => _auth.currentUser?.uid ?? 'guest';
-  String get currentUserName => _profile?.name ?? 'Guest';
+  String get currentUserName {
+    final profileName = _profile?.name.trim();
+    if (profileName != null && profileName.isNotEmpty) return profileName;
+    final displayName = _auth.currentUser?.displayName?.trim();
+    if (displayName != null && displayName.isNotEmpty) return displayName;
+    final email = _auth.currentUser?.email?.trim();
+    if (email != null && email.isNotEmpty) {
+      return email.split('@').first;
+    }
+    return 'Guest';
+  }
 
   List<Job> _jobs = [];
   List<Service> _services = [];
@@ -35,7 +47,7 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
-  bool get canPostJobs => true;
+  bool get canPostJobs => isLoggedIn;
 
   AppState() {
     _auth.authStateChanges().listen(_onAuthChanged);
@@ -43,8 +55,7 @@ class AppState extends ChangeNotifier {
 
   Future<void> _onAuthChanged(User? user) async {
     if (user != null) {
-      _profile = await FirestoreService.getUser(user.uid);
-      _startListening();
+      await _syncProfileForCurrentUser();
     } else {
       _profile = null;
       _stopListening();
@@ -95,48 +106,311 @@ class AppState extends ChangeNotifier {
 
   // ── Auth ──
 
+  Future<void> _syncProfileForCurrentUser({
+    String? preferredName,
+    int? preferredAge,
+    String? authProvider,
+    bool touchLogin = false,
+  }) async {
+    final user = _auth.currentUser;
+    if (user == null) return;
+
+    UserProfile? existing;
+    try {
+      existing = await FirestoreService.getUser(user.uid);
+    } catch (_) {
+      existing = null;
+    }
+
+    final normalizedEmail =
+        (user.email ?? existing?.email ?? '').trim().toLowerCase();
+    final nameFromInput = preferredName?.trim();
+    final resolvedName = (nameFromInput != null && nameFromInput.isNotEmpty)
+        ? nameFromInput
+        : ((existing?.name.isNotEmpty ?? false)
+            ? existing!.name
+            : ((user.displayName?.trim().isNotEmpty ?? false)
+                ? user.displayName!.trim()
+                : (normalizedEmail.isNotEmpty
+                    ? normalizedEmail.split('@').first
+                    : 'User')));
+
+    final profile = existing ??
+        UserProfile(
+          id: user.uid,
+          name: resolvedName,
+          email: normalizedEmail,
+          age: preferredAge,
+        );
+
+    profile.name = resolvedName;
+    if (normalizedEmail.isNotEmpty) {
+      profile.email = normalizedEmail;
+    }
+    if (preferredAge != null) {
+      profile.age = preferredAge;
+    }
+
+    try {
+      await FirestoreService.createOrUpdateUser(
+        profile,
+        authProvider: authProvider,
+        touchLogin: touchLogin,
+      );
+    } catch (_) {
+      // Keep local profile active even if Firestore write is temporarily unavailable.
+    }
+
+    _profile = profile;
+    _startListening();
+    notifyListeners();
+  }
+
   Future<String?> signUp({
     required String name,
     required String email,
     required String password,
     int? age,
   }) async {
+    final normalizedEmail = email.trim().toLowerCase();
     try {
+      // Join-now should create a brand-new account session.
+      // If someone is currently logged in, clear that session first.
+      if (_auth.currentUser != null) {
+        await _auth.signOut();
+      }
       final cred = await _auth.createUserWithEmailAndPassword(
-        email: email,
+        email: normalizedEmail,
         password: password,
       );
-      final uid = cred.user!.uid;
-      final profile = UserProfile(
-        id: uid,
-        name: name,
-        email: email,
-        age: age,
+      try {
+        await cred.user?.updateDisplayName(name.trim());
+      } catch (_) {}
+      return await _finalizeAuthSession(
+        credential: cred,
+        preferredName: name,
+        preferredAge: age,
+        authProvider: 'password',
+        touchLogin: true,
       );
-      await FirestoreService.createOrUpdateUser(profile);
-      _profile = profile;
-      _startListening();
-      notifyListeners();
-      return null;
     } on FirebaseAuthException catch (e) {
-      return e.message ?? 'Sign up failed';
+      if (e.code == 'email-already-in-use') {
+        return 'That email is already in use. Use a different email or log in.';
+      }
+      if (e.code == 'configuration-not-found' ||
+          e.code == 'operation-not-allowed') {
+        return 'Email/Password auth is not enabled in Firebase. '
+            'Open Firebase Console > Authentication > Sign-in method > enable Email/Password.';
+      }
+      return 'Sign up failed (${e.code}): ${e.message ?? 'Unknown auth error'}';
+    } catch (e) {
+      return 'Sign up failed: $e';
     }
   }
 
   Future<String?> login(String email, String password) async {
+    final normalizedEmail = email.trim().toLowerCase();
     try {
-      await _auth.signInWithEmailAndPassword(
-        email: email,
+      final cred = await _auth.signInWithEmailAndPassword(
+        email: normalizedEmail,
         password: password,
       );
-      return null;
+      return await _finalizeAuthSession(
+        credential: cred,
+        authProvider: 'password',
+        touchLogin: true,
+      );
     } on FirebaseAuthException catch (e) {
-      return e.message ?? 'Login failed';
+      if (e.code == 'configuration-not-found' ||
+          e.code == 'operation-not-allowed') {
+        return 'Email/Password auth is not enabled in Firebase. '
+            'Open Firebase Console > Authentication > Sign-in method > enable Email/Password.';
+      }
+      if (e.code == 'user-not-found' ||
+          e.code == 'wrong-password' ||
+          e.code == 'invalid-credential' ||
+          e.code == 'invalid-login-credentials') {
+        return 'Email or password is incorrect.';
+      }
+      if (e.code == 'network-request-failed') {
+        return 'Network error. Check your internet and try again.';
+      }
+      if (e.code == 'too-many-requests') {
+        return 'Too many attempts. Please wait a bit and try again.';
+      }
+      if (e.code == 'internal-error') {
+        // Firebase can occasionally return this transiently even with valid creds.
+        return 'Temporary login error. Please try again in a few seconds.';
+      }
+      return 'Login failed (${e.code}): ${e.message ?? 'Unknown auth error'}';
+    }
+  }
+
+  Future<String?> loginWithEmailLink({
+    required String email,
+    required String emailLink,
+  }) async {
+    final normalizedEmail = email.trim().toLowerCase();
+    final normalizedLink = emailLink.trim();
+    try {
+      if (!_auth.isSignInWithEmailLink(normalizedLink)) {
+        return 'That link is invalid. Paste the full sign-in link from your email.';
+      }
+      final cred = await _auth.signInWithEmailLink(
+        email: normalizedEmail,
+        emailLink: normalizedLink,
+      );
+      return await _finalizeAuthSession(
+        credential: cred,
+        authProvider: 'email-link',
+        touchLogin: true,
+      );
+    } on FirebaseAuthException catch (e) {
+      return 'Email link login failed (${e.code}): ${e.message ?? 'Unknown auth error'}';
+    } catch (e) {
+      return 'Email link login failed: $e';
+    }
+  }
+
+  Future<String?> _finalizeAuthSession({
+    required UserCredential credential,
+    String? preferredName,
+    int? preferredAge,
+    String? authProvider,
+    bool touchLogin = false,
+  }) async {
+    final userFromCredential = credential.user;
+    final user = userFromCredential ?? _auth.currentUser;
+    if (user == null) {
+      return 'Sign in failed: Firebase did not return a user session.';
+    }
+
+    try {
+      await user.reload();
+    } on FirebaseAuthException catch (e) {
+      if (e.code == 'user-not-found' ||
+          e.code == 'user-token-expired' ||
+          e.code == 'invalid-user-token') {
+        return 'Sign in failed: session token is invalid. Please try again.';
+      }
+    }
+
+    User? activeUser = _auth.currentUser;
+    if (activeUser == null) {
+      // Some environments report credential success before currentUser settles.
+      for (var i = 0; i < 5; i++) {
+        await Future<void>.delayed(const Duration(milliseconds: 200));
+        activeUser = _auth.currentUser;
+        if (activeUser != null) break;
+      }
+    }
+    if (activeUser == null) {
+      return 'Sign in failed: account exists but session was not established.';
+    }
+
+    try {
+      // Prefer non-forced token read to avoid transient internal errors.
+      String? token = await activeUser.getIdToken(false);
+      if (token == null || token.isEmpty) {
+        token = await activeUser.getIdToken(true);
+      }
+      if (token == null || token.isEmpty) {
+        return 'Sign in failed: Firebase did not provide a valid sign-in token.';
+      }
+    } on FirebaseAuthException catch (e) {
+      // Do not block login on transient token refresh failures if session exists.
+      if (e.code == 'internal-error' || e.code == 'network-request-failed') {
+        await _syncProfileForCurrentUser(
+          preferredName: preferredName,
+          preferredAge: preferredAge,
+          authProvider: authProvider,
+          touchLogin: touchLogin,
+        );
+        return null;
+      }
+      return 'Sign in failed (${e.code}): ${e.message ?? 'Could not read auth token'}';
+    }
+
+    await _syncProfileForCurrentUser(
+      preferredName: preferredName,
+      preferredAge: preferredAge,
+      authProvider: authProvider,
+      touchLogin: touchLogin,
+    );
+    return null;
+  }
+
+  Future<String?> loginWithGoogle() async {
+    try {
+      UserCredential cred;
+      if (kIsWeb) {
+        final provider = GoogleAuthProvider();
+        cred = await _auth.signInWithPopup(provider);
+      } else {
+        final googleSignIn = GoogleSignIn.instance;
+        await googleSignIn.initialize();
+        // Force account picker each time so testing multiple accounts works.
+        try {
+          await googleSignIn.signOut();
+        } catch (_) {}
+        final account = await googleSignIn.authenticate();
+        final auth = account.authentication;
+        final credential = GoogleAuthProvider.credential(
+          idToken: auth.idToken,
+        );
+        cred = await _auth.signInWithCredential(credential);
+      }
+
+      final user = cred.user;
+      if (user == null) return 'Google sign in failed: no user returned.';
+
+      await _syncProfileForCurrentUser(
+        preferredName: user.displayName,
+        authProvider: 'google.com',
+        touchLogin: true,
+      );
+      return null;
+    } on GoogleSignInException catch (e) {
+      switch (e.code) {
+        case GoogleSignInExceptionCode.canceled:
+          return 'Google sign-in was canceled.';
+        case GoogleSignInExceptionCode.interrupted:
+          return 'Google sign-in was interrupted. Try again.';
+        case GoogleSignInExceptionCode.uiUnavailable:
+          return 'Google sign-in UI is unavailable on this device/emulator.';
+        case GoogleSignInExceptionCode.clientConfigurationError:
+          return 'Google sign-in client is misconfigured. '
+              'Check SHA fingerprints and google-services.json.';
+        case GoogleSignInExceptionCode.providerConfigurationError:
+          return 'Google Play Services/Google provider is not configured correctly on this device.';
+        case GoogleSignInExceptionCode.userMismatch:
+          return 'Google account mismatch. Try again and pick the account explicitly.';
+        case GoogleSignInExceptionCode.unknownError:
+          final desc = e.description?.trim();
+          if (desc != null && desc.isNotEmpty) {
+            return 'Google sign-in failed: $desc';
+          }
+          return 'Google sign-in failed (unknown error).';
+      }
+    } on FirebaseAuthException catch (e) {
+      if (e.code == 'operation-not-allowed' ||
+          e.code == 'configuration-not-found') {
+        return 'Google sign-in is not enabled/configured in Firebase for this app.';
+      }
+      return 'Google sign in failed (${e.code}): ${e.message ?? 'Unknown auth error'}';
+    } catch (e) {
+      return 'Google sign in failed: $e';
     }
   }
 
   Future<void> logout() async {
     await _auth.signOut();
+  }
+
+  Future<void> ensureProfileLoaded() async {
+    if (_auth.currentUser == null) return;
+    if (_profile != null) return;
+    await _syncProfileForCurrentUser();
   }
 
   Future<void> updateProfile({
@@ -147,6 +421,8 @@ class AppState extends ChangeNotifier {
     Set<String>? interests,
     String? school,
     int? age,
+    String? vaultGoal,
+    double? vaultTargetAmount,
   }) async {
     if (_profile == null) return;
     if (name != null) _profile!.name = name;
@@ -156,8 +432,44 @@ class AppState extends ChangeNotifier {
     if (interests != null) _profile!.interests = interests;
     if (school != null) _profile!.school = school;
     if (age != null) _profile!.age = age;
+    if (vaultGoal != null) _profile!.vaultGoal = vaultGoal;
+    if (vaultTargetAmount != null) _profile!.vaultTargetAmount = vaultTargetAmount;
     await FirestoreService.createOrUpdateUser(_profile!);
     notifyListeners();
+  }
+
+  Future<String?> changePassword({
+    required String currentPassword,
+    required String newPassword,
+  }) async {
+    final user = _auth.currentUser;
+    if (user == null) return 'You are not logged in.';
+    final email = user.email;
+    if (email == null || email.trim().isEmpty) {
+      return 'Your account does not have a password login email.';
+    }
+    try {
+      final credential = EmailAuthProvider.credential(
+        email: email.trim().toLowerCase(),
+        password: currentPassword,
+      );
+      await user.reauthenticateWithCredential(credential);
+      await user.updatePassword(newPassword);
+      return null;
+    } on FirebaseAuthException catch (e) {
+      if (e.code == 'wrong-password' ||
+          e.code == 'invalid-credential' ||
+          e.code == 'invalid-login-credentials') {
+        return 'Current password is incorrect.';
+      }
+      if (e.code == 'weak-password') return 'New password is too weak.';
+      if (e.code == 'requires-recent-login') {
+        return 'Please log in again, then try changing password.';
+      }
+      return 'Password change failed (${e.code}).';
+    } catch (e) {
+      return 'Password change failed: $e';
+    }
   }
 
   // ── Data getters ──
@@ -201,6 +513,66 @@ class AppState extends ChangeNotifier {
       .where(
           (j) => j.status == JobStatus.completed && j.posterId == currentUserId)
       .fold(0.0, (sum, j) => sum + j.payment);
+
+  String? get vaultGoal => _profile?.vaultGoal;
+  double? get vaultTargetAmount => _profile?.vaultTargetAmount;
+  bool get hasVaultGoal =>
+      (vaultGoal ?? '').trim().isNotEmpty &&
+      (vaultTargetAmount ?? 0) > 0;
+  double get vaultSavedAmount => moneyEarned;
+  double get vaultRemainingAmount {
+    if (!hasVaultGoal) return 0;
+    final remaining = (vaultTargetAmount ?? 0) - vaultSavedAmount;
+    return remaining <= 0 ? 0 : remaining;
+  }
+
+  double get vaultProgress {
+    if (!hasVaultGoal) return 0;
+    final target = vaultTargetAmount ?? 0;
+    if (target <= 0) return 0;
+    final value = vaultSavedAmount / target;
+    return value.clamp(0.0, 1.0);
+  }
+
+  Job? get vaultSuggestedJob {
+    if (!hasVaultGoal) return null;
+    final openJobs = _jobs.where((j) => j.status == JobStatus.open);
+    final local = (_userLocationText.isNotEmpty
+            ? _userLocationText
+            : (_profile?.location ?? ''))
+        .toLowerCase();
+
+    if (local.isNotEmpty) {
+      for (final j in openJobs) {
+        if (j.posterId == currentUserId) continue;
+        if (_blockedUserIds.contains(j.posterId)) continue;
+        if (j.location.toLowerCase().contains(local)) return j;
+      }
+    }
+
+    for (final j in openJobs) {
+      if (j.posterId == currentUserId) continue;
+      if (_blockedUserIds.contains(j.posterId)) continue;
+      return j;
+    }
+    return null;
+  }
+
+  String get vaultNudgeMessage {
+    if (!hasVaultGoal) return '';
+    if (vaultRemainingAmount <= 0) {
+      return 'You reached your "${vaultGoal!.trim()}" goal. Great job!';
+    }
+
+    final left = vaultRemainingAmount.toStringAsFixed(0);
+    final suggested = vaultSuggestedJob;
+    if (suggested != null) {
+      return 'You are only \$$left away from "${vaultGoal!.trim()}". '
+          'There is a "${suggested.title}" job near ${suggested.location}.';
+    }
+    return 'You are only \$$left away from "${vaultGoal!.trim()}". '
+        'Check new jobs to move closer to your goal.';
+  }
 
   List<Review> reviewsForUser(String userId) =>
       _reviews.where((r) => r.workerId == userId).toList();
@@ -333,7 +705,23 @@ class AppState extends ChangeNotifier {
   // ── Jobs ──
 
   Future<void> addJob(Job job) async {
-    await FirestoreService.addJob(job);
+    if (job.posterId.trim().isEmpty || job.posterId == 'guest') {
+      throw Exception('You must be logged in to post a job.');
+    }
+    // Optimistic update so "Posted Jobs" shows immediately in Dashboard.
+    final exists = _jobs.any((j) => j.id == job.id);
+    if (!exists) {
+      _jobs = [job, ..._jobs];
+      notifyListeners();
+    }
+    try {
+      await FirestoreService.addJob(job);
+    } catch (e) {
+      // Roll back optimistic insert when backend write fails.
+      _jobs.removeWhere((j) => j.id == job.id);
+      notifyListeners();
+      rethrow;
+    }
   }
 
   Future<void> applyToJob(String jobId) async {

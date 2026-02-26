@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import 'firebase_options.dart';
@@ -54,6 +55,11 @@ void main() async {
   await Firebase.initializeApp(
     options: DefaultFirebaseOptions.currentPlatform,
   );
+  // Prevent stale/offline cache states from trapping writes locally.
+  FirebaseFirestore.instance.settings = const Settings(
+    persistenceEnabled: false,
+  );
+  await FirebaseFirestore.instance.enableNetwork();
   runApp(const TeenWorklyApp());
 }
 

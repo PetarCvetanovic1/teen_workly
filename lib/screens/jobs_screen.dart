@@ -1,17 +1,18 @@
+import 'dart:async';
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import '../utils/smooth_route.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:http/http.dart' as http;
 import 'package:provider/provider.dart';
 import '../app_colors.dart';
 import '../models/models.dart';
 import '../state/app_state.dart';
 import '../widgets/app_drawer.dart';
-import '../widgets/logo_title.dart';
-import '../widgets/app_bar_nav.dart';
-import '../widgets/auth_button.dart';
+import '../widgets/tw_app_bar.dart';
 import 'home_screen.dart';
 import 'post_job_screen.dart';
 import 'job_detail_screen.dart';
@@ -37,6 +38,112 @@ const _categories = [
   'Other',
 ];
 
+class _PlaceSuggestion {
+  final String label;
+  final LatLng point;
+
+  const _PlaceSuggestion({
+    required this.label,
+    required this.point,
+  });
+}
+
+String _simplifyWorkLocation(String raw) {
+  final parts = raw
+      .split(',')
+      .map((p) => p.trim())
+      .where((p) => p.isNotEmpty)
+      .toList();
+  if (parts.isEmpty) return raw.trim();
+
+  final streetWords = RegExp(
+    r'\b(st|street|ave|avenue|rd|road|cres|crescent|blvd|boulevard|dr|drive|lane|ln|way|court|ct)\b',
+    caseSensitive: false,
+  );
+  final postalLike = RegExp(
+    r'(^\d{5}(-\d{4})?$)|(^[A-Z]\d[A-Z][ -]?\d[A-Z]\d$)',
+    caseSensitive: false,
+  );
+  final adminOrCountry = RegExp(
+    r'\b(region|county|district|state|province|canada|usa|united states|serbia)\b',
+    caseSensitive: false,
+  );
+
+  String? city;
+  for (final p in parts.reversed) {
+    if (RegExp(r'\d').hasMatch(p)) continue;
+    if (streetWords.hasMatch(p)) continue;
+    if (postalLike.hasMatch(p)) continue;
+    if (adminOrCountry.hasMatch(p)) continue;
+    city = p;
+    break;
+  }
+  city ??= parts.last;
+
+  String? street;
+  if (parts.isNotEmpty &&
+      RegExp(r'^\d+[A-Za-z]?$').hasMatch(parts.first.trim()) &&
+      parts.length >= 2) {
+    street = parts[1];
+  }
+  street ??= parts.firstWhere(
+    (p) =>
+        !adminOrCountry.hasMatch(p) &&
+        !postalLike.hasMatch(p) &&
+        streetWords.hasMatch(p),
+    orElse: () => '',
+  );
+
+  if (street.isNotEmpty && street.toLowerCase() != city.toLowerCase()) {
+    return '$street, $city';
+  }
+  return city;
+}
+
+Future<List<_PlaceSuggestion>> _fetchPlaceSuggestions({
+  required String query,
+}) async {
+  final params = <String, String>{
+    'q': query.trim(),
+    'format': 'jsonv2',
+    'limit': '5',
+  };
+  final uri = Uri.https('nominatim.openstreetmap.org', '/search', params);
+  final res = await http.get(
+    uri,
+    headers: const {
+      'User-Agent': 'TeenWorkly/1.0 (contact: support@teenworkly.app)',
+    },
+  );
+  if (res.statusCode != 200) return const [];
+  final decoded = jsonDecode(res.body);
+  if (decoded is! List) return const [];
+
+  return decoded.map<_PlaceSuggestion?>((item) {
+    if (item is! Map<String, dynamic>) return null;
+    final label = item['display_name']?.toString() ?? '';
+    final lat = double.tryParse('${item['lat']}');
+    final lon = double.tryParse('${item['lon']}');
+    if (label.isEmpty || lat == null || lon == null) return null;
+    return _PlaceSuggestion(
+      label: label,
+      point: LatLng(lat, lon),
+    );
+  }).whereType<_PlaceSuggestion>().toList();
+}
+
+Future<List<_PlaceSuggestion>> _searchPlaceSuggestions({
+  required String query,
+}) async {
+  if (query.trim().length < 2) return const [];
+  try {
+    final trimmed = query.trim();
+    return await _fetchPlaceSuggestions(query: trimmed);
+  } catch (_) {
+    return const [];
+  }
+}
+
 class JobsScreen extends StatefulWidget {
   const JobsScreen({super.key});
 
@@ -49,18 +156,21 @@ class _JobsScreenState extends State<JobsScreen> {
   bool _isMapView = false;
   double _radiusKm = 5.0;
   LatLng? _userLocation;
-  final _locationCtrl = TextEditingController();
   bool _locationLoading = false;
 
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) => _promptLocation());
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (!mounted) return;
+      if (context.read<AppState>().userLocationText.isEmpty) {
+        await _promptLocation();
+      }
+    });
   }
 
   @override
   void dispose() {
-    _locationCtrl.dispose();
     super.dispose();
   }
 
@@ -77,15 +187,60 @@ class _JobsScreenState extends State<JobsScreen> {
           Navigator.pop(ctx);
           await _detectGPS();
         },
-        onManual: (text) {
+        onManual: (place) async {
           Navigator.pop(ctx);
+          final approved = await _confirmManualLocation(place.label);
+          if (!mounted) return;
+          if (!approved) return;
+          final state = context.read<AppState>();
           setState(() {
-            _userLocation = const LatLng(43.4643, -80.5204);
+            _userLocation = place.point;
           });
-          context.read<AppState>().setUserLocation(text);
+          state.setUserLocation(_simplifyWorkLocation(place.label));
         },
       ),
     );
+  }
+
+  Future<bool> _confirmManualLocation(String label) async {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: isDark ? const Color(0xFF1E293B) : Colors.white,
+        title: Text(
+          'Use this location?',
+          style: GoogleFonts.plusJakartaSans(
+            fontSize: 18,
+            fontWeight: FontWeight.w800,
+            color: isDark ? Colors.white : AppColors.slate900,
+          ),
+        ),
+        content: Text(
+          label,
+          style: GoogleFonts.plusJakartaSans(
+            fontSize: 14,
+            fontWeight: FontWeight.w600,
+            color: isDark ? const Color(0xFFCBD5E1) : const Color(0xFF475569),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: FilledButton.styleFrom(
+              backgroundColor: AppColors.indigo600,
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('Use location'),
+          ),
+        ],
+      ),
+    );
+    return result == true;
   }
 
   Future<void> _detectGPS() async {
@@ -115,7 +270,9 @@ class _JobsScreenState extends State<JobsScreen> {
         if (state.userLocationText.isEmpty) {
           final profileLoc = state.profile?.location ?? '';
           state.setUserLocation(
-              profileLoc.isNotEmpty ? profileLoc : 'My Location');
+              profileLoc.isNotEmpty
+                  ? _simplifyWorkLocation(profileLoc)
+                  : 'Current Area');
         }
       }
     } catch (_) {
@@ -135,14 +292,27 @@ class _JobsScreenState extends State<JobsScreen> {
 
     return Scaffold(
       drawer: const AppDrawer(),
+      appBar: TwAppBar(
+        leading: Builder(
+          builder: (ctx) => IconButton(
+            icon: const Icon(Icons.menu_rounded),
+            onPressed: () => Scaffold.of(ctx).openDrawer(),
+          ),
+        ),
+        onLogoTap: () => Navigator.of(context).pushAndRemoveUntil(
+          SmoothPageRoute(builder: (_) => const HomeScreen()),
+          (_) => false,
+        ),
+      ),
       body: Consumer<AppState>(
         builder: (context, state, _) {
           final filter = _categories[_selectedCategory];
           final isAll = filter == 'All';
 
+          final openJobs = state.jobs.where((j) => j.status == JobStatus.open).toList();
           final filteredJobs = isAll
-              ? state.jobs
-              : state.jobs.where((j) => j.services.any(
+              ? openJobs
+              : openJobs.where((j) => j.services.any(
                     (s) => s.toLowerCase().contains(filter.toLowerCase()),
                   )).toList();
 
@@ -156,11 +326,15 @@ class _JobsScreenState extends State<JobsScreen> {
                       )).toList();
 
           final totalCount = filteredJobs.length + filteredServices.length;
-
+          final workLocation = state.userLocationText;
           return Column(
             children: [
-              _buildAppBar(context, isDark),
-              _buildControls(theme, isDark, totalCount),
+              _buildControls(
+                theme,
+                isDark,
+                totalCount,
+                workLocation: workLocation,
+              ),
               Expanded(
                 child: _isMapView
                     ? _MapView(
@@ -186,50 +360,12 @@ class _JobsScreenState extends State<JobsScreen> {
     );
   }
 
-  Widget _buildAppBar(BuildContext context, bool isDark) {
-    return Container(
-      color: isDark ? AppColors.slate950 : Colors.white,
-      child: SafeArea(
-        bottom: false,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
-          child: Row(
-            children: [
-              Builder(
-                builder: (ctx) => IconButton(
-                  icon: const Icon(Icons.menu_rounded),
-                  onPressed: () => Scaffold.of(ctx).openDrawer(),
-                ),
-              ),
-              Expanded(
-                child: Stack(
-                  alignment: Alignment.center,
-                  children: [
-                    Align(
-                      alignment: Alignment.centerLeft,
-                      child: LogoTitle(
-                        onTap: () {
-                          Navigator.of(context).pushAndRemoveUntil(
-                            SmoothPageRoute(
-                                builder: (_) => const HomeScreen()),
-                            (_) => false,
-                          );
-                        },
-                      ),
-                    ),
-                    const Center(child: AppBarNav()),
-                  ],
-                ),
-              ),
-              const AuthButton(),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildControls(ThemeData theme, bool isDark, int totalCount) {
+  Widget _buildControls(
+    ThemeData theme,
+    bool isDark,
+    int totalCount, {
+    required String workLocation,
+  }) {
     return Container(
       color: isDark ? AppColors.slate950 : Colors.white,
       child: Column(
@@ -280,11 +416,52 @@ class _JobsScreenState extends State<JobsScreen> {
           ),
           Padding(
             padding: const EdgeInsets.fromLTRB(24, 0, 24, 8),
-            child: Text(
-              '$totalCount opportunit${totalCount == 1 ? 'y' : 'ies'} available',
-              style: theme.textTheme.bodyMedium?.copyWith(
-                color: theme.colorScheme.onSurface.withValues(alpha: 0.65),
-              ),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    '$totalCount opportunit${totalCount == 1 ? 'y' : 'ies'} available',
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      color: theme.colorScheme.onSurface.withValues(alpha: 0.65),
+                    ),
+                  ),
+                ),
+                if (workLocation.isNotEmpty)
+                  Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: isDark
+                          ? AppColors.slate900
+                          : AppColors.indigo600.withValues(alpha: 0.08),
+                      borderRadius: BorderRadius.circular(999),
+                      border: Border.all(
+                        color: isDark
+                            ? const Color(0xFF334155)
+                            : AppColors.indigo600.withValues(alpha: 0.25),
+                      ),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          Icons.place_rounded,
+                          size: 13,
+                          color: AppColors.indigo600,
+                        ),
+                        const SizedBox(width: 6),
+                        Text(
+                          workLocation,
+                          style: GoogleFonts.plusJakartaSans(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w700,
+                            color: isDark ? Colors.white : AppColors.slate900,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+              ],
             ),
           ),
           SizedBox(
@@ -651,7 +828,7 @@ class _MapView extends StatelessWidget {
 class _LocationSheet extends StatefulWidget {
   final bool isDark;
   final Future<void> Function() onDetect;
-  final ValueChanged<String> onManual;
+  final Future<void> Function(_PlaceSuggestion) onManual;
 
   const _LocationSheet({
     required this.isDark,
@@ -665,9 +842,69 @@ class _LocationSheet extends StatefulWidget {
 
 class _LocationSheetState extends State<_LocationSheet> {
   final _ctrl = TextEditingController();
+  final List<_PlaceSuggestion> _suggestions = [];
+  Timer? _debounce;
+  bool _searching = false;
+
+  Future<void> _onQueryChanged(String value) async {
+    _debounce?.cancel();
+    _debounce = Timer(const Duration(milliseconds: 300), () async {
+      final q = value.trim();
+      if (q.length < 2) {
+        if (!mounted) return;
+        setState(() {
+          _suggestions.clear();
+          _searching = false;
+        });
+        return;
+      }
+      if (!mounted) return;
+      setState(() => _searching = true);
+      final results = await _searchPlaceSuggestions(
+        query: q,
+      );
+      if (!mounted) return;
+      setState(() {
+        _suggestions
+          ..clear()
+          ..addAll(results);
+        _searching = false;
+      });
+    });
+  }
+
+  Future<void> _submitManual() async {
+    final query = _ctrl.text.trim();
+    if (query.isEmpty) return;
+
+    _PlaceSuggestion? selected;
+    if (_suggestions.isNotEmpty) {
+      selected = _suggestions.first;
+    } else {
+      setState(() => _searching = true);
+      final results = await _searchPlaceSuggestions(
+        query: query,
+      );
+      if (!mounted) return;
+      setState(() => _searching = false);
+      if (results.isNotEmpty) selected = results.first;
+    }
+
+    if (selected == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Could not find that location. Try city + country.'),
+        ),
+      );
+      return;
+    }
+
+    await widget.onManual(selected);
+  }
 
   @override
   void dispose() {
+    _debounce?.cancel();
     _ctrl.dispose();
     super.dispose();
   }
@@ -803,12 +1040,13 @@ class _LocationSheetState extends State<_LocationSheet> {
             // Manual entry
             TextFormField(
               controller: _ctrl,
+              onChanged: _onQueryChanged,
               style: GoogleFonts.plusJakartaSans(
                 fontWeight: FontWeight.w600,
                 color: widget.isDark ? Colors.white : AppColors.slate900,
               ),
               decoration: InputDecoration(
-                hintText: 'Enter city or neighborhood...',
+                hintText: 'Enter city or street...',
                 hintStyle: GoogleFonts.plusJakartaSans(
                   fontWeight: FontWeight.w500,
                   color: const Color(0xFF94A3B8),
@@ -828,17 +1066,54 @@ class _LocationSheetState extends State<_LocationSheet> {
                 suffixIcon: IconButton(
                   icon: const Icon(Icons.arrow_forward_rounded,
                       color: AppColors.indigo600),
-                  onPressed: () {
-                    if (_ctrl.text.trim().isNotEmpty) {
-                      widget.onManual(_ctrl.text.trim());
-                    }
+                  onPressed: _searching ? null : _submitManual,
+                ),
+              ),
+              onFieldSubmitted: (_) => _submitManual(),
+            ),
+            if (_searching) ...[
+              const SizedBox(height: 10),
+              const LinearProgressIndicator(minHeight: 2),
+            ],
+            if (_suggestions.isNotEmpty) ...[
+              const SizedBox(height: 10),
+              ConstrainedBox(
+                constraints: const BoxConstraints(maxHeight: 180),
+                child: ListView.separated(
+                  shrinkWrap: true,
+                  itemCount: _suggestions.length,
+                  separatorBuilder: (_, index) => Divider(
+                    height: 1,
+                    color: widget.isDark
+                        ? const Color(0xFF334155)
+                        : AppColors.slate200,
+                  ),
+                  itemBuilder: (context, index) {
+                    final s = _suggestions[index];
+                    return ListTile(
+                      dense: true,
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 8),
+                      leading: const Icon(
+                        Icons.place_rounded,
+                        size: 18,
+                        color: AppColors.indigo600,
+                      ),
+                      title: Text(
+                        s.label,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: GoogleFonts.plusJakartaSans(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          color: widget.isDark ? Colors.white : AppColors.slate900,
+                        ),
+                      ),
+                      onTap: () async => widget.onManual(s),
+                    );
                   },
                 ),
               ),
-              onFieldSubmitted: (v) {
-                if (v.trim().isNotEmpty) widget.onManual(v.trim());
-              },
-            ),
+            ],
             const SizedBox(height: 12),
             TextButton(
               onPressed: () => Navigator.pop(context),

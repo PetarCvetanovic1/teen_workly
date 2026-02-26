@@ -145,6 +145,22 @@ class _ChatScreenState extends State<ChatScreen> {
               child: StreamBuilder<List<ChatMessage>>(
                 stream: state.messagesStream(widget.conversationId),
                 builder: (context, snapshot) {
+                  if (snapshot.hasError) {
+                    return Center(
+                      child: Padding(
+                        padding: const EdgeInsets.all(24),
+                        child: Text(
+                          'Could not load messages: ${snapshot.error}',
+                          textAlign: TextAlign.center,
+                          style: GoogleFonts.plusJakartaSans(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                            color: const Color(0xFFDC2626),
+                          ),
+                        ),
+                      ),
+                    );
+                  }
                   final messages = snapshot.data ?? [];
                   if (messages.isEmpty) {
                     return Center(
