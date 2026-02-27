@@ -8,6 +8,18 @@ import '../screens/post_service_screen.dart';
 import '../screens/dashboard_screen.dart';
 import '../screens/huddle_screen.dart';
 
+DateTime? _lastNavTapAt;
+
+bool _canNavigateFromTopNav() {
+  final now = DateTime.now();
+  final last = _lastNavTapAt;
+  if (last != null && now.difference(last) < const Duration(milliseconds: 450)) {
+    return false;
+  }
+  _lastNavTapAt = now;
+  return true;
+}
+
 /// Pill-shaped nav bar.
 /// On wide screens it renders inline (for the title Stack).
 /// On narrow screens (<600 px) it renders as a compact icon-only strip
@@ -24,6 +36,13 @@ class AppBarNav extends StatelessWidget implements PreferredSizeWidget {
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final compact = MediaQuery.of(context).size.width < 600;
+
+    void replaceTopLevel(Widget page) {
+      if (!_canNavigateFromTopNav()) return;
+      Navigator.of(context).pushReplacement(
+        SmoothPageRoute(builder: (_) => page),
+      );
+    }
 
     return Padding(
       padding: compact
@@ -50,9 +69,7 @@ class AppBarNav extends StatelessWidget implements PreferredSizeWidget {
               icon: Icons.add_rounded,
               color: AppColors.indigo600,
               compact: compact,
-              onTap: () => Navigator.of(context).push(
-                SmoothPageRoute(builder: (_) => const PostJobScreen()),
-              ),
+              onTap: () => replaceTopLevel(const PostJobScreen()),
               isDark: isDark,
             ),
             const SizedBox(width: 4),
@@ -61,9 +78,7 @@ class AppBarNav extends StatelessWidget implements PreferredSizeWidget {
               icon: Icons.groups_rounded,
               color: const Color(0xFFF59E0B),
               compact: compact,
-              onTap: () => Navigator.of(context).push(
-                SmoothPageRoute(builder: (_) => const HuddleScreen()),
-              ),
+              onTap: () => replaceTopLevel(const HuddleScreen()),
               isDark: isDark,
             ),
             const SizedBox(width: 4),
@@ -72,9 +87,7 @@ class AppBarNav extends StatelessWidget implements PreferredSizeWidget {
               icon: Icons.handyman_rounded,
               color: const Color(0xFF059669),
               compact: compact,
-              onTap: () => Navigator.of(context).push(
-                SmoothPageRoute(builder: (_) => const PostServiceScreen()),
-              ),
+              onTap: () => replaceTopLevel(const PostServiceScreen()),
               isDark: isDark,
             ),
             const SizedBox(width: 4),
@@ -83,9 +96,7 @@ class AppBarNav extends StatelessWidget implements PreferredSizeWidget {
               icon: Icons.search_rounded,
               color: const Color(0xFF7C3AED),
               compact: compact,
-              onTap: () => Navigator.of(context).push(
-                SmoothPageRoute(builder: (_) => const JobsScreen()),
-              ),
+              onTap: () => replaceTopLevel(const JobsScreen()),
               isDark: isDark,
             ),
             const SizedBox(width: 4),
@@ -94,9 +105,7 @@ class AppBarNav extends StatelessWidget implements PreferredSizeWidget {
               icon: Icons.dashboard_rounded,
               color: const Color(0xFFEA580C),
               compact: compact,
-              onTap: () => Navigator.of(context).push(
-                SmoothPageRoute(builder: (_) => const DashboardScreen()),
-              ),
+              onTap: () => replaceTopLevel(const DashboardScreen()),
               isDark: isDark,
             ),
           ],

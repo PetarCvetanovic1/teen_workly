@@ -12,6 +12,7 @@ class UserProfile {
   Set<String> interests;
   String? school;
   int? age;
+  DateTime? ageLastUpdatedAt;
   String? vaultGoal;
   double? vaultTargetAmount;
 
@@ -25,6 +26,7 @@ class UserProfile {
     Set<String>? interests,
     this.school,
     this.age,
+    this.ageLastUpdatedAt,
     this.vaultGoal,
     this.vaultTargetAmount,
   })  : skills = skills ?? {},

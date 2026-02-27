@@ -1,3 +1,5 @@
+import 'package:cloud_functions/cloud_functions.dart';
+
 class ModerationResult {
   final bool approved;
   final String? reason;
@@ -5,6 +7,8 @@ class ModerationResult {
 }
 
 class ModerationService {
+  static final FirebaseFunctions _functions = FirebaseFunctions.instance;
+
   static const _bannedWords = [
     'goon', 'gooning', 'goonin', 'porn', 'onlyfans', 'nsfw', 'nude', 'nudes',
     'naked', 'sex', 'sexual', 'sexy', 'xxx', 'dick', 'penis', 'vagina',
@@ -28,6 +32,68 @@ class ModerationService {
     'cunt', 'twat', 'bollocks', 'wanking', 'shag',
     'damn', 'dammit', 'bastard', 'piss', 'pissed',
     'brainrot', 'brain rot', 'edging',
+    'motherfucker', 'mother fucker', 'mfer', 'mf',
+    'bullshit', 'bs', 'wtf', 'stfu', 'douche', 'douchebag',
+    'jackass', 'prick', 'pussy', 'cock',
+    'chink', 'kike', 'spic', 'dih', 'puh', 'bih', 
+    'femboy', 'femboys', 'furry', 'furries', 'futa', 'trap',
+    'simp', 'incel', 'cuck', 'gooner', 'coomer',
+    'anal', 'blowjob', 'bj', 'handjob', 'rimjob', 'deepthroat',
+    'gangbang', 'threesome', 'nudes', 'nudity', 'naked',
+    'nsfl', 'gore', 'beheading', 'decapitate',
+    'selfharm', 'self harm', 'kms', 'unalive',
+    'die', 'hang yourself', 'cut yourself',
+    'fraud', 'phish', 'phishing', 'steal card', 'stolen card',
+    'dox', 'doxx', 'doxxing', 'swat',
+  ];
+
+  // Extra strict local hard-block layer for when AI is unavailable.
+  // NOTE: This intentionally over-blocks risky content.
+  static const _hardBlockRegexes = <String>[
+    // Severe profanity / harassment
+    r'\b(f+[\W_]*u+[\W_]*c+[\W_]*k+)\b',
+    r'\b(s+[\W_]*h+[\W_]*i+[\W_]*t+)\b',
+    r'\b(b+[\W_]*i+[\W_]*t+[\W_]*c+[\W_]*h+)\b',
+    r'\b(c+[\W_]*u+[\W_]*n+[\W_]*t+)\b',
+    r'\b(a+[\W_]*s+[\W_]*s+[\W_]*h+[\W_]*o+[\W_]*l+[\W_]*e+)\b',
+    r'\b(n+[\W_]*i+[\W_]*g+[\W_]*g+[\W_]*a+)\b',
+    r'\b(n+[\W_]*i+[\W_]*g+[\W_]*g+[\W_]*e+[\W_]*r+)\b',
+    r'\b(f+[\W_]*a+[\W_]*g+[\W_]*g*[\W_]*o+[\W_]*t*)\b',
+    r'\b(r+[\W_]*e+[\W_]*t+[\W_]*a+[\W_]*r+[\W_]*d+)\b',
+
+    // Sexual / explicit
+    r'\b(sex|sexual|sexy|xxx|porn|onlyfans|nsfw|nude|nudes|naked)\b',
+    r'\b(dick|penis|vagina|boob|boobs|tits|titty|titties|cock|pussy)\b',
+    r'\b(blow[\W_]*job|hand[\W_]*job|rim[\W_]*job|deep[\W_]*throat)\b',
+    r'\b(orgasm|cum+|cumming|ejaculat(e|ion)|masturbat(e|ion|ing))\b',
+    r'\b(femboy|femboys|furry|furries|hentai|ahegao|milf|dilf)\b',
+
+    // Predatory / unsafe meetup
+    r'\b(come\s+alone|no\s+parents|dont\s+tell\s+anyone|do\s+not\s+tell\s+anyone)\b',
+    r'\b(send\s+(pics|photos|nudes)|show\s+me\s+your\s+body)\b',
+    r'\b(overnight\s+stay|sleep\s+over\s+alone|private\s+meet)\b',
+
+    // Violence / self-harm
+    r'\b(kill|murder|rape|rapist|molest|pedo|pedophile)\b',
+    r'\b(kys|kms|hang\s+yourself|cut\s+yourself|self[\W_]*harm|unalive)\b',
+    r'\b(gun|weapon|bomb|terrorist|behead(ing)?|decapitat(e|ion))\b',
+
+    // Drugs / scams
+    r'\b(cocaine|meth|heroin|fentanyl|lsd|ecstasy|molly|xanax|percocet|crack)\b',
+    r'\b(scam|scammer|fraud|phish(ing)?|wire\s+transfer|gift\s+card\s+payment)\b',
+    r'\b(venmo\s+me\s+first|cashapp\s+me\s+first|pay\s+upfront)\b',
+  ];
+
+  // Stems used to catch masked/censored variants like f***, sh!t, bi7ch, etc.
+  static const _blockedStems = <String>[
+    'fuck', 'shit', 'bitch', 'asshole', 'cunt', 'faggot', 'retard',
+    'nigga', 'nigger', 'whore', 'slut', 'motherfucker',
+    'dick', 'cock', 'pussy', 'penis', 'vagina',
+    'porn', 'nude', 'nudes', 'nsfw', 'sex', 'sexual',
+    'rape', 'rapist', 'molest', 'pedo', 'pedophile',
+    'dih', 'puh', 'bih', 'nethnyaho', 
+    'kys', 'kms', 'selfharm', 'suicide',
+    'femboy', 'furry', 'hentai',
   ];
 
   static const _suspiciousPatterns = [
@@ -67,7 +133,7 @@ class ModerationService {
       );
     }
 
-    if (description.trim().length < 15) {
+    if (description.trim().length < 8) {
       return const ModerationResult(
         approved: false,
         reason: 'Description is too short. Give applicants enough detail to understand the job.',
@@ -129,6 +195,16 @@ class ModerationService {
       }
     }
 
+    final aiResult = await _validateWithAi(
+      [
+        'Job title: $title',
+        'Job type: $type',
+        'Description: $description',
+        if (paymentHint != null) 'Payment: \$${paymentHint.toStringAsFixed(2)}',
+      ].join('\n'),
+    );
+    if (!aiResult.approved) return aiResult;
+
     return const ModerationResult(approved: true);
   }
 
@@ -174,9 +250,47 @@ class ModerationService {
   }
 
   static ModerationResult? _checkProfanity(String text) {
+    final normalized = _normalizeForProfanity(text);
+    final compact = normalized.replaceAll(' ', '');
+    final lower = text.toLowerCase();
+
+    for (final pattern in _hardBlockRegexes) {
+      final re = RegExp(pattern, caseSensitive: false);
+      if (re.hasMatch(lower) || re.hasMatch(normalized) || re.hasMatch(compact)) {
+        return const ModerationResult(
+          approved: false,
+          reason:
+              'Your post contains inappropriate language and has been blocked. '
+              'Please keep all content family-friendly and professional.',
+        );
+      }
+    }
+
+    if (_looksLikeObfuscatedProfanity(text)) {
+      return const ModerationResult(
+        approved: false,
+        reason:
+            'Your post contains inappropriate language and has been blocked. '
+            'Please keep all content family-friendly and professional.',
+      );
+    }
+
     for (final word in _bannedWords) {
-      if (RegExp('\\b${RegExp.escape(word)}', caseSensitive: false)
-          .hasMatch(text)) {
+      final needle = _normalizeForProfanity(word).trim();
+      if (needle.isEmpty) continue;
+      final isPhrase = needle.contains(' ');
+      final regex = RegExp(
+        isPhrase
+            ? '\\b${RegExp.escape(needle).replaceAll(' ', r'\s+')}\\b'
+            : '\\b${RegExp.escape(needle)}\\b',
+        caseSensitive: false,
+      );
+      final inNormalized = regex.hasMatch(normalized);
+      // Catch obfuscated spacing/punctuation for longer words only.
+      final inCompact =
+          !isPhrase && needle.length >= 4 && compact.contains(needle);
+
+      if (inNormalized || inCompact) {
         return const ModerationResult(
           approved: false,
           reason:
@@ -186,6 +300,56 @@ class ModerationService {
       }
     }
     return null;
+  }
+
+  static String _normalizeForProfanity(String text) {
+    final lower = text.toLowerCase();
+    final leetNormalized = lower
+        .replaceAll('@', 'a')
+        .replaceAll('4', 'a')
+        .replaceAll('3', 'e')
+        .replaceAll('1', 'i')
+        .replaceAll('!', 'i')
+        .replaceAll('|', 'i')
+        .replaceAll('0', 'o')
+        .replaceAll('5', 's')
+        .replaceAll(r'$', 's')
+        .replaceAll('7', 't');
+
+    return leetNormalized
+        .replaceAll(RegExp(r'[^a-z0-9]+'), ' ')
+        .replaceAll(RegExp(r'\s+'), ' ')
+        .trim();
+  }
+
+  static bool _looksLikeObfuscatedProfanity(String text) {
+    // Fast-path: masked profanity shapes like f***, sh!t, b!tch, etc.
+    final obviousMask = RegExp(
+      r'\b[a-z][a-z0-9]*[\*\!@#\$%&]+[a-z0-9]*\b',
+      caseSensitive: false,
+    );
+    final hasObviousMask = obviousMask.hasMatch(text);
+
+    final tokens = text.split(RegExp(r'\s+'));
+    for (final raw in tokens) {
+      final token = raw.trim();
+      if (token.length < 3) continue;
+
+      final hasMaskChars = RegExp(r'[\*\!@#\$%&0-9_]').hasMatch(token);
+      if (!hasMaskChars && !hasObviousMask) continue;
+
+      final normalizedToken = _normalizeForProfanity(token).replaceAll(' ', '');
+      if (normalizedToken.length < 3) continue;
+
+      for (final stem in _blockedStems) {
+        if (stem.length < 3) continue;
+        if (normalizedToken.contains(stem)) {
+          return true;
+        }
+      }
+    }
+
+    return false;
   }
 
   static ModerationResult? _checkSuspicious(String text) {
@@ -236,7 +400,44 @@ class ModerationService {
       );
     }
 
+    final aiResult = await _validateWithAi(text);
+    if (!aiResult.approved) return aiResult;
+
     return const ModerationResult(approved: true);
+  }
+
+  static Future<ModerationResult> _validateWithAi(String text) async {
+    try {
+      final callable = _functions.httpsCallable('validatePost');
+      final res = await callable
+          .call({'text': text})
+          .timeout(const Duration(seconds: 12));
+      final data = res.data;
+      if (data is Map && data['safe'] == true) {
+        return const ModerationResult(approved: true);
+      }
+      final reason = data is Map ? data['reason']?.toString() : null;
+      return ModerationResult(
+        approved: false,
+        reason: reason?.isNotEmpty == true
+            ? reason
+            : 'Blocked by AI safety checks.',
+      );
+    } on FirebaseFunctionsException catch (e) {
+      if (e.code == 'permission-denied') {
+        return ModerationResult(
+          approved: false,
+          reason: e.message?.isNotEmpty == true
+              ? e.message
+              : 'Blocked by AI safety checks.',
+        );
+      }
+      // Fail open for temporary backend issues; local moderation already ran.
+      return const ModerationResult(approved: true);
+    } catch (_) {
+      // Fail open for temporary backend issues; local moderation already ran.
+      return const ModerationResult(approved: true);
+    }
   }
 
   // --- Profile validation ---

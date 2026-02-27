@@ -111,18 +111,18 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
                 ),
                 const SizedBox(height: 12),
                 // Meta row
-                Row(
+                Wrap(
+                  spacing: 10,
+                  runSpacing: 8,
                   children: [
                     _MetaChip(
                       icon: Icons.person_outline_rounded,
                       label: job.posterName,
                     ),
-                    const SizedBox(width: 10),
                     _MetaChip(
                       icon: Icons.location_on_outlined,
                       label: job.location,
                     ),
-                    const SizedBox(width: 10),
                     _MetaChip(
                       icon: Icons.schedule_rounded,
                       label: job.type,
@@ -212,6 +212,11 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
                     ...List.generate(job.applicantIds.length, (i) {
                       return _ApplicantTile(
                         name: job.applicantNames[i],
+                        rating: state.averageRatingForUser(job.applicantIds[i]),
+                        completedJobs:
+                            state.completedJobCountForUser(job.applicantIds[i]),
+                        reviewCount: state.reviewsForUser(job.applicantIds[i]).length,
+                        verified: state.isVerified(job.applicantIds[i]),
                         isDark: isDark,
                         onHire: () async {
                           final applicantActiveJobs = state.jobs
@@ -257,6 +262,7 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
                             otherUserId: job.applicantIds[i],
                             otherUserName: job.applicantNames[i],
                             contextLabel: 'Job: ${job.title}',
+                            scopeKey: 'job:${job.id}',
                           );
                           if (!context.mounted) return;
                           Navigator.of(context).push(
@@ -294,6 +300,7 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
                           otherUserId: job.hiredId!,
                           otherUserName: job.hiredName!,
                           contextLabel: 'Job: ${job.title}',
+                          scopeKey: 'job:${job.id}',
                         );
                         if (!context.mounted) return;
                         Navigator.of(context).push(
@@ -369,6 +376,7 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
                               otherUserId: job.hiredId!,
                               otherUserName: job.hiredName!,
                               contextLabel: 'Job: ${job.title}',
+                              scopeKey: 'job:${job.id}',
                             );
                             if (!context.mounted) return;
                             Navigator.of(context).push(
@@ -487,6 +495,7 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
                               otherUserId: job.posterId,
                               otherUserName: job.posterName,
                               contextLabel: 'Job: ${job.title}',
+                              scopeKey: 'job:${job.id}',
                             );
                             if (!context.mounted) return;
                             Navigator.of(context).push(
@@ -1001,23 +1010,28 @@ class _MetaChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Icon(icon, size: 14, color: const Color(0xFF94A3B8)),
-        const SizedBox(width: 4),
-        Flexible(
-          child: Text(
-            label,
-            style: GoogleFonts.plusJakartaSans(
-              fontSize: 12,
-              fontWeight: FontWeight.w500,
-              color: const Color(0xFF94A3B8),
+    final maxChipWidth = MediaQuery.of(context).size.width < 700 ? 210.0 : 280.0;
+    return ConstrainedBox(
+      constraints: BoxConstraints(maxWidth: maxChipWidth),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 14, color: const Color(0xFF94A3B8)),
+          const SizedBox(width: 4),
+          Expanded(
+            child: Text(
+              label,
+              style: GoogleFonts.plusJakartaSans(
+                fontSize: 12,
+                fontWeight: FontWeight.w500,
+                color: const Color(0xFF94A3B8),
+              ),
+              overflow: TextOverflow.ellipsis,
+              maxLines: 1,
             ),
-            overflow: TextOverflow.ellipsis,
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 }
@@ -1042,12 +1056,20 @@ class _SectionLabel extends StatelessWidget {
 
 class _ApplicantTile extends StatelessWidget {
   final String name;
+  final double rating;
+  final int completedJobs;
+  final int reviewCount;
+  final bool verified;
   final bool isDark;
   final VoidCallback onHire;
   final VoidCallback onMessage;
 
   const _ApplicantTile({
     required this.name,
+    required this.rating,
+    required this.completedJobs,
+    required this.reviewCount,
+    required this.verified,
     required this.isDark,
     required this.onHire,
     required this.onMessage,
@@ -1068,66 +1090,135 @@ class _ApplicantTile extends StatelessWidget {
             color: isDark ? const Color(0xFF334155) : AppColors.slate200,
           ),
         ),
-        child: Row(
-          children: [
-            Container(
-              width: 40,
-              height: 40,
-              decoration: BoxDecoration(
-                gradient: const LinearGradient(
-                  colors: [AppColors.indigo600, Color(0xFF7C3AED)],
-                ),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Center(
-                child: Text(
-                  initials,
-                  style: GoogleFonts.plusJakartaSans(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w800,
-                    color: Colors.white,
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final compact = constraints.maxWidth < 560;
+            final actions = Wrap(
+              spacing: 4,
+              runSpacing: 4,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: [
+                IconButton(
+                  onPressed: onMessage,
+                  icon: const Icon(Icons.chat_bubble_outline_rounded,
+                      color: AppColors.indigo600, size: 20),
+                  tooltip: 'Message',
+                  visualDensity: VisualDensity.compact,
+                  constraints: const BoxConstraints(
+                    minWidth: 36,
+                    minHeight: 36,
                   ),
                 ),
-              ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Text(
-                name,
-                style: GoogleFonts.plusJakartaSans(
-                  fontSize: 15,
-                  fontWeight: FontWeight.w700,
-                  color: isDark ? Colors.white : AppColors.slate900,
-                ),
-              ),
-            ),
-            IconButton(
-              onPressed: onMessage,
-              icon: const Icon(Icons.chat_bubble_outline_rounded,
-                  color: AppColors.indigo600, size: 20),
-              tooltip: 'Message',
-            ),
-            Material(
-              color: const Color(0xFF059669),
-              borderRadius: BorderRadius.circular(10),
-              child: InkWell(
-                onTap: onHire,
-                borderRadius: BorderRadius.circular(10),
-                child: Padding(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                  child: Text(
-                    'Hire',
-                    style: GoogleFonts.plusJakartaSans(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w800,
-                      color: Colors.white,
+                Material(
+                  color: const Color(0xFF059669),
+                  borderRadius: BorderRadius.circular(10),
+                  child: InkWell(
+                    onTap: onHire,
+                    borderRadius: BorderRadius.circular(10),
+                    child: Padding(
+                      padding:
+                          const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                      child: Text(
+                        'Hire',
+                        style: GoogleFonts.plusJakartaSans(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w800,
+                          color: Colors.white,
+                        ),
+                      ),
                     ),
                   ),
                 ),
-              ),
-            ),
-          ],
+              ],
+            );
+
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Container(
+                      width: 40,
+                      height: 40,
+                      decoration: BoxDecoration(
+                        gradient: const LinearGradient(
+                          colors: [AppColors.indigo600, Color(0xFF7C3AED)],
+                        ),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Center(
+                        child: Text(
+                          initials,
+                          style: GoogleFonts.plusJakartaSans(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w800,
+                            color: Colors.white,
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  name,
+                                  style: GoogleFonts.plusJakartaSans(
+                                    fontSize: 15,
+                                    fontWeight: FontWeight.w700,
+                                    color: isDark ? Colors.white : AppColors.slate900,
+                                  ),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                              if (verified)
+                                const Tooltip(
+                                  message: 'Verified worker',
+                                  child: Icon(
+                                    Icons.verified_rounded,
+                                    size: 16,
+                                    color: Color(0xFF059669),
+                                  ),
+                                ),
+                            ],
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            reviewCount == 0
+                                ? '$completedJobs finished - No ratings yet'
+                                : '$completedJobs finished - ${rating.toStringAsFixed(1)}★ ($reviewCount)',
+                            style: GoogleFonts.plusJakartaSans(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              color: const Color(0xFF94A3B8),
+                            ),
+                            overflow: TextOverflow.ellipsis,
+                            maxLines: 2,
+                          ),
+                        ],
+                      ),
+                    ),
+                    if (!compact) ...[
+                      const SizedBox(width: 8),
+                      actions,
+                    ],
+                  ],
+                ),
+                if (compact) ...[
+                  const SizedBox(height: 8),
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: actions,
+                  ),
+                ],
+              ],
+            );
+          },
         ),
       ),
     );
@@ -1238,7 +1329,10 @@ class _ReviewCard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Row(
+            Wrap(
+              spacing: 8,
+              runSpacing: 6,
+              crossAxisAlignment: WrapCrossAlignment.center,
               children: [
                 ...List.generate(5, (i) => Icon(
                       i < review.stars
@@ -1249,7 +1343,6 @@ class _ReviewCard extends StatelessWidget {
                           ? const Color(0xFFEAB308)
                           : const Color(0xFF94A3B8),
                     )),
-                const SizedBox(width: 8),
                 Text(
                   'by ${review.reviewerName}',
                   style: GoogleFonts.plusJakartaSans(

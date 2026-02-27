@@ -125,6 +125,12 @@ async function runGeminiSafetyCheck(text, apiKey) {
 exports.validatePost = onCall(
     {secrets: [openAiApiKey, geminiApiKey]},
     async (request) => {
+      if (!request.auth) {
+        throw new HttpsError(
+            "unauthenticated",
+            "You must be signed in to validate content.",
+        );
+      }
       const text = String(request.data?.text || "").trim();
       if (!text) {
         throw new HttpsError("invalid-argument", "Post text is required.");

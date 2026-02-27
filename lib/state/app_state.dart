@@ -5,6 +5,19 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import '../models/models.dart';
 import '../services/firestore_service.dart';
+import '../services/notification_service.dart';
+
+class _JobSnapshot {
+  final int applicantCount;
+  final String? hiredId;
+  final JobStatus status;
+
+  const _JobSnapshot({
+    required this.applicantCount,
+    required this.hiredId,
+    required this.status,
+  });
+}
 
 class AppState extends ChangeNotifier {
   final _auth = FirebaseAuth.instance;
@@ -35,6 +48,14 @@ class AppState extends ChangeNotifier {
   StreamSubscription? _servicesSub;
   StreamSubscription? _reportsSub;
   StreamSubscription? _reviewsSub;
+  StreamSubscription? _conversationsSub;
+
+  bool _jobsBootstrapComplete = false;
+  final Map<String, _JobSnapshot> _lastJobSnapshots = {};
+
+  bool _conversationBootstrapComplete = false;
+  final Map<String, DateTime> _lastConversationSeenAt = {};
+  final Map<String, DateTime> _recentOutgoingAt = {};
 
   final Set<String> _blockedUserIds = {};
   final List<DateTime> _deleteStrikes = [];
@@ -50,6 +71,10 @@ class AppState extends ChangeNotifier {
   bool get canPostJobs => isLoggedIn;
 
   AppState() {
+    if (kIsWeb) {
+      // Keep users signed in across refreshes/restarts on this device.
+      unawaited(_auth.setPersistence(Persistence.LOCAL));
+    }
     _auth.authStateChanges().listen(_onAuthChanged);
   }
 
@@ -59,6 +84,11 @@ class AppState extends ChangeNotifier {
     } else {
       _profile = null;
       _stopListening();
+      _jobsBootstrapComplete = false;
+      _lastJobSnapshots.clear();
+      _conversationBootstrapComplete = false;
+      _lastConversationSeenAt.clear();
+      _recentOutgoingAt.clear();
       _jobs = [];
       _services = [];
       _reports = [];
@@ -72,8 +102,19 @@ class AppState extends ChangeNotifier {
     _servicesSub?.cancel();
     _reportsSub?.cancel();
     _reviewsSub?.cancel();
+    _conversationsSub?.cancel();
 
-    _jobsSub = FirestoreService.jobsStream().listen((data) {
+    _jobsBootstrapComplete = false;
+    _lastJobSnapshots.clear();
+    _jobsSub = FirestoreService.jobsStream().listen((data) async {
+      if (!_jobsBootstrapComplete) {
+        for (final j in data) {
+          _lastJobSnapshots[j.id] = _toSnapshot(j);
+        }
+        _jobsBootstrapComplete = true;
+      } else {
+        await _notifyOnJobEvents(data);
+      }
       _jobs = data;
       notifyListeners();
     });
@@ -95,6 +136,49 @@ class AppState extends ChangeNotifier {
       _reviews = data;
       notifyListeners();
     });
+
+    _conversationBootstrapComplete = false;
+    _lastConversationSeenAt.clear();
+    _recentOutgoingAt.clear();
+    _conversationsSub = FirestoreService.conversationsStream(currentUserId).listen(
+      (items) async {
+        final activeIds = items.map((c) => c.id).toSet();
+        _lastConversationSeenAt.removeWhere((id, _) => !activeIds.contains(id));
+        _recentOutgoingAt.removeWhere((id, at) =>
+            !activeIds.contains(id) ||
+            DateTime.now().difference(at) > const Duration(minutes: 3));
+
+        if (!_conversationBootstrapComplete) {
+          for (final conv in items) {
+            final last = conv.lastMessageTime;
+            if (last != null) _lastConversationSeenAt[conv.id] = last;
+          }
+          _conversationBootstrapComplete = true;
+          return;
+        }
+
+        for (final conv in items) {
+          final last = conv.lastMessageTime;
+          if (last == null) continue;
+          final prev = _lastConversationSeenAt[conv.id];
+          final isNew = prev == null || last.isAfter(prev);
+          _lastConversationSeenAt[conv.id] = last;
+          if (!isNew) continue;
+
+          final outgoingAt = _recentOutgoingAt[conv.id];
+          final likelyOwnMessage = outgoingAt != null &&
+              last.isBefore(outgoingAt.add(const Duration(seconds: 8)));
+          if (likelyOwnMessage) continue;
+
+          await NotificationService.instance.showMessageNotification(
+            title: conv.otherUserName.isEmpty
+                ? 'New message'
+                : 'New message from ${conv.otherUserName}',
+            body: conv.lastMessagePreview,
+          );
+        }
+      },
+    );
   }
 
   void _stopListening() {
@@ -102,6 +186,53 @@ class AppState extends ChangeNotifier {
     _servicesSub?.cancel();
     _reportsSub?.cancel();
     _reviewsSub?.cancel();
+    _conversationsSub?.cancel();
+  }
+
+  _JobSnapshot _toSnapshot(Job job) => _JobSnapshot(
+        applicantCount: job.applicantIds.length,
+        hiredId: job.hiredId,
+        status: job.status,
+      );
+
+  Future<void> _notifyOnJobEvents(List<Job> jobs) async {
+    final activeIds = jobs.map((j) => j.id).toSet();
+    _lastJobSnapshots.removeWhere((id, _) => !activeIds.contains(id));
+
+    for (final j in jobs) {
+      final prev = _lastJobSnapshots[j.id];
+      final next = _toSnapshot(j);
+      _lastJobSnapshots[j.id] = next;
+      if (prev == null) continue;
+
+      final applicantDelta = j.applicantIds.length - prev.applicantCount;
+      if (j.posterId == currentUserId && applicantDelta > 0) {
+        await NotificationService.instance.showMessageNotification(
+          title: 'New applicant',
+          body: '$applicantDelta new applicant${applicantDelta == 1 ? '' : 's'} for "${j.title}"',
+        );
+      }
+
+      final justHiredYou =
+          j.hiredId == currentUserId && prev.hiredId != currentUserId;
+      if (justHiredYou) {
+        await NotificationService.instance.showMessageNotification(
+          title: 'You were hired',
+          body: 'You were hired for "${j.title}".',
+        );
+      }
+
+      final completedNow =
+          prev.status != JobStatus.completed && j.status == JobStatus.completed;
+      final relatedToMe =
+          j.posterId == currentUserId || j.hiredId == currentUserId;
+      if (completedNow && relatedToMe) {
+        await NotificationService.instance.showMessageNotification(
+          title: 'Job completed',
+          body: '"${j.title}" was marked completed.',
+        );
+      }
+    }
   }
 
   // ── Auth ──
@@ -349,11 +480,9 @@ class AppState extends ChangeNotifier {
       } else {
         final googleSignIn = GoogleSignIn.instance;
         await googleSignIn.initialize();
-        // Force account picker each time so testing multiple accounts works.
-        try {
-          await googleSignIn.signOut();
-        } catch (_) {}
-        final account = await googleSignIn.authenticate();
+        // Keep last Google session on device so returning users don't need
+        // to re-enter email/password every time.
+        final account = googleSignIn.currentUser ?? await googleSignIn.authenticate();
         final auth = account.authentication;
         final credential = GoogleAuthProvider.credential(
           idToken: auth.idToken,
@@ -431,7 +560,26 @@ class AppState extends ChangeNotifier {
     if (skills != null) _profile!.skills = skills;
     if (interests != null) _profile!.interests = interests;
     if (school != null) _profile!.school = school;
-    if (age != null) _profile!.age = age;
+    if (age != null) {
+      final currentAge = _profile!.age;
+      if (currentAge != null && age != currentAge) {
+        if (age <= currentAge) {
+          throw Exception('Age can only increase, by 1 year each year.');
+        }
+        if ((age - currentAge) != 1) {
+          throw Exception('Age can only increase by 1 year at a time.');
+        }
+        final lastChanged = _profile!.ageLastUpdatedAt;
+        if (lastChanged != null &&
+            DateTime.now().difference(lastChanged) < const Duration(days: 365)) {
+          throw Exception('You can only change age once every year.');
+        }
+        _profile!.ageLastUpdatedAt = DateTime.now();
+      } else if (currentAge == null) {
+        _profile!.ageLastUpdatedAt = DateTime.now();
+      }
+      _profile!.age = age;
+    }
     if (vaultGoal != null) _profile!.vaultGoal = vaultGoal;
     if (vaultTargetAmount != null) _profile!.vaultTargetAmount = vaultTargetAmount;
     await FirestoreService.createOrUpdateUser(_profile!);
@@ -747,6 +895,7 @@ class AppState extends ChangeNotifier {
       otherUserId: applicantId,
       otherUserName: applicantName,
       contextLabel: 'Job: ${job.title}',
+      scopeKey: 'job:$jobId',
     );
     await FirestoreService.sendMessage(
       conversationId: conv.id,
@@ -916,6 +1065,7 @@ class AppState extends ChangeNotifier {
     required String otherUserId,
     required String otherUserName,
     String? contextLabel,
+    String? scopeKey,
   }) async {
     return FirestoreService.getOrCreateConversation(
       myId: currentUserId,
@@ -923,10 +1073,16 @@ class AppState extends ChangeNotifier {
       otherUserId: otherUserId,
       otherUserName: otherUserName,
       contextLabel: contextLabel,
+      scopeKey: scopeKey,
     );
   }
 
+  Future<void> deleteConversation(String conversationId) async {
+    await FirestoreService.deleteConversation(conversationId);
+  }
+
   Future<void> sendMessage(String conversationId, String text) async {
+    _recentOutgoingAt[conversationId] = DateTime.now();
     final message = ChatMessage(
       id: DateTime.now().microsecondsSinceEpoch.toString(),
       senderId: currentUserId,

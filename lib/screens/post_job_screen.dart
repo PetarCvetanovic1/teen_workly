@@ -9,6 +9,8 @@ import '../state/app_state.dart';
 import '../widgets/app_drawer.dart';
 import '../widgets/tw_app_bar.dart';
 import '../widgets/content_wrap.dart';
+import '../services/location_service.dart';
+import '../services/moderation.dart';
 import 'home_screen.dart';
 import 'jobs_screen.dart';
 
@@ -74,7 +76,6 @@ class _PostJobScreenState extends State<PostJobScreen> {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
     final state = context.watch<AppState>();
-    final neighborhoodLocked = state.userLocationText.isNotEmpty;
 
     return Scaffold(
       appBar: TwAppBar(
@@ -180,19 +181,16 @@ class _PostJobScreenState extends State<PostJobScreen> {
                         controller: _locationCtrl,
                         hint: 'Neighborhood or Street',
                         isDark: isDark,
-                        readOnly: neighborhoodLocked,
                       ),
-                      if (neighborhoodLocked) ...[
-                        const SizedBox(height: 6),
-                        Text(
-                          'Neighborhood is locked to your selected work location.',
-                          style: GoogleFonts.plusJakartaSans(
-                            fontSize: 11,
-                            fontWeight: FontWeight.w600,
-                            color: const Color(0xFF94A3B8),
-                          ),
+                      const SizedBox(height: 6),
+                      Text(
+                        'You can post at a different nearby place (library, park, etc.), up to 10 km from your map home location.',
+                        style: GoogleFonts.plusJakartaSans(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                          color: const Color(0xFF94A3B8),
                         ),
-                      ],
+                      ),
                       const SizedBox(height: 24),
                       _buildLabel('DESCRIPTION'),
                       const SizedBox(height: 8),
@@ -202,6 +200,11 @@ class _PostJobScreenState extends State<PostJobScreen> {
                         isDark: isDark,
                         maxLines: 5,
                         minLength: 8,
+                        helperText: _descRemainingText,
+                        helperColor: _descRemainingCount > 0
+                            ? const Color(0xFFEA580C)
+                            : const Color(0xFF059669),
+                        onChanged: (_) => setState(() {}),
                       ),
                       const SizedBox(height: 24),
                       _buildLabel('SERVICES NEEDED'),
@@ -391,11 +394,15 @@ class _PostJobScreenState extends State<PostJobScreen> {
     int maxLines = 1,
     int? minLength,
     bool readOnly = false,
+    String? helperText,
+    Color? helperColor,
+    void Function(String)? onChanged,
   }) {
     return TextFormField(
       controller: controller,
       maxLines: maxLines,
       readOnly: readOnly,
+      onChanged: onChanged,
       style: GoogleFonts.plusJakartaSans(
         fontWeight: FontWeight.w600,
         color: isDark ? Colors.white : AppColors.slate900,
@@ -437,6 +444,12 @@ class _PostJobScreenState extends State<PostJobScreen> {
           horizontal: 20,
           vertical: 16,
         ),
+        helperText: helperText,
+        helperStyle: GoogleFonts.plusJakartaSans(
+          fontSize: 11,
+          fontWeight: FontWeight.w600,
+          color: helperColor ?? const Color(0xFF94A3B8),
+        ),
         suffixIcon: readOnly
             ? const Icon(Icons.lock_rounded, color: Color(0xFF94A3B8), size: 18)
             : null,
@@ -449,6 +462,18 @@ class _PostJobScreenState extends State<PostJobScreen> {
         return null;
       },
     );
+  }
+
+  int get _descRemainingCount {
+    const minChars = 8;
+    final typed = _descCtrl.text.trim().length;
+    return (minChars - typed).clamp(0, minChars);
+  }
+
+  String get _descRemainingText {
+    final remaining = _descRemainingCount;
+    if (remaining <= 0) return 'Minimum reached';
+    return '$remaining more characters needed';
   }
 
   Widget _buildChip({
@@ -601,6 +626,31 @@ class _PostJobScreenState extends State<PostJobScreen> {
               : 'You can have up to 3 active job postings at a time. '
                   'Complete or delete existing jobs to post more. '
                   'Trusted posters (5+ completed jobs) can post up to 5.',
+        );
+        return;
+      }
+
+      final homeLocation = state.userLocationText.isNotEmpty
+          ? state.userLocationText
+          : (state.profile?.location ?? '');
+      final locationValidation = await LocationService.validateWithinHomeRadius(
+        homeLocation: homeLocation,
+        postingLocation: _locationCtrl.text.trim(),
+      );
+      if (locationValidation != null) {
+        _showModerationWarning(locationValidation);
+        return;
+      }
+
+      final moderationResult = await ModerationService.moderateJob(
+        title: _titleCtrl.text.trim(),
+        description: _descCtrl.text.trim(),
+        type: _selectedType,
+        paymentHint: double.tryParse(_payCtrl.text.trim()),
+      );
+      if (!moderationResult.approved) {
+        _showModerationWarning(
+          moderationResult.reason ?? 'This post was blocked by AI safety checks.',
         );
         return;
       }

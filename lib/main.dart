@@ -6,7 +6,10 @@ import 'package:provider/provider.dart';
 import 'firebase_options.dart';
 import 'app_colors.dart';
 import 'state/app_state.dart';
+import 'services/notification_service.dart';
 import 'screens/home_screen.dart';
+
+final GlobalKey<NavigatorState> appNavigatorKey = GlobalKey<NavigatorState>();
 
 class _SmoothPageTransitionsBuilder extends PageTransitionsBuilder {
   const _SmoothPageTransitionsBuilder();
@@ -60,6 +63,8 @@ void main() async {
     persistenceEnabled: false,
   );
   await FirebaseFirestore.instance.enableNetwork();
+  NotificationService.instance.attachNavigatorKey(appNavigatorKey);
+  await NotificationService.instance.initialize();
   runApp(const TeenWorklyApp());
 }
 
@@ -71,6 +76,7 @@ class TeenWorklyApp extends StatelessWidget {
     return ChangeNotifierProvider(
       create: (_) => AppState(),
       child: MaterialApp(
+      navigatorKey: appNavigatorKey,
       title: 'TeenWorkly',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(

@@ -24,6 +24,20 @@ class _LoginScreenState extends State<LoginScreen> {
   bool _obscure = true;
 
   @override
+  void initState() {
+    super.initState();
+    Future.microtask(() {
+      if (!mounted) return;
+      if (FirebaseAuth.instance.currentUser != null) {
+        Navigator.of(context).pushAndRemoveUntil(
+          SmoothPageRoute(builder: (_) => const JobsScreen()),
+          (_) => false,
+        );
+      }
+    });
+  }
+
+  @override
   void dispose() {
     _emailCtrl.dispose();
     _passCtrl.dispose();
@@ -575,6 +589,20 @@ class _SignUpScreenState extends State<SignUpScreen> {
   bool _obscure = true;
 
   @override
+  void initState() {
+    super.initState();
+    Future.microtask(() {
+      if (!mounted) return;
+      if (FirebaseAuth.instance.currentUser != null) {
+        Navigator.of(context).pushAndRemoveUntil(
+          SmoothPageRoute(builder: (_) => const JobsScreen()),
+          (_) => false,
+        );
+      }
+    });
+  }
+
+  @override
   void dispose() {
     _nameCtrl.dispose();
     _emailCtrl.dispose();
@@ -760,6 +788,45 @@ class _SignUpScreenState extends State<SignUpScreen> {
                         if (age < 10) return 'You must be at least 10';
                         return null;
                       },
+                    ),
+                    const SizedBox(height: 8),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 10,
+                      ),
+                      decoration: BoxDecoration(
+                        color: isDark
+                            ? const Color(0xFF0F172A).withValues(alpha: 0.55)
+                            : AppColors.slate100.withValues(alpha: 0.9),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                          color: isDark
+                              ? const Color(0xFF334155)
+                              : AppColors.slate200,
+                        ),
+                      ),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Icon(
+                            Icons.info_outline_rounded,
+                            size: 16,
+                            color: Color(0xFF94A3B8),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              'Age policy: after signup, age can only increase by 1 year and only once every 12 months.',
+                              style: GoogleFonts.plusJakartaSans(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w600,
+                                color: const Color(0xFF94A3B8),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                     const SizedBox(height: 28),
                     Material(

@@ -21,11 +21,13 @@ class HuddleScreen extends StatefulWidget {
 
 class _HuddleScreenState extends State<HuddleScreen> {
   HuddleTag? _filterTag;
+  bool _newPostSheetOpen = false;
 
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final theme = Theme.of(context);
+    final keyboardOpen = MediaQuery.of(context).viewInsets.bottom > 0;
 
     return Scaffold(
       appBar: TwAppBar(
@@ -43,7 +45,9 @@ class _HuddleScreenState extends State<HuddleScreen> {
       drawer: const AppDrawer(),
       floatingActionButton: Consumer<AppState>(
         builder: (context, state, _) {
-          if (!state.isLoggedIn) return const SizedBox.shrink();
+          if (!state.isLoggedIn || keyboardOpen || _newPostSheetOpen) {
+            return const SizedBox.shrink();
+          }
           return FloatingActionButton.extended(
             onPressed: () =>
                 _showNewPostSheet(context, isDark, state.myAgeGroup),
@@ -69,6 +73,22 @@ class _HuddleScreenState extends State<HuddleScreen> {
                 child: StreamBuilder<List<HuddlePost>>(
                   stream: FirestoreService.huddleStream(myGroup),
                   builder: (context, snapshot) {
+                    if (snapshot.hasError) {
+                      return Center(
+                        child: Padding(
+                          padding: const EdgeInsets.all(20),
+                          child: Text(
+                            'Could not load The Huddle posts: ${snapshot.error}',
+                            textAlign: TextAlign.center,
+                            style: GoogleFonts.plusJakartaSans(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                              color: const Color(0xFFDC2626),
+                            ),
+                          ),
+                        ),
+                      );
+                    }
                     final posts = snapshot.data ?? [];
                     return _HuddleFeed(
                       posts: posts,
@@ -195,14 +215,18 @@ class _HuddleScreenState extends State<HuddleScreen> {
     );
   }
 
-  void _showNewPostSheet(
-      BuildContext context, bool isDark, HuddleAgeGroup ageGroup) {
-    showModalBottomSheet(
+  Future<void> _showNewPostSheet(
+      BuildContext context, bool isDark, HuddleAgeGroup ageGroup) async {
+    setState(() => _newPostSheetOpen = true);
+    await showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (ctx) => _NewPostSheet(isDark: isDark, ageGroup: ageGroup),
     );
+    if (mounted) {
+      setState(() => _newPostSheetOpen = false);
+    }
   }
 }
 

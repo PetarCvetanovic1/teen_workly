@@ -62,6 +62,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   bool _isEditing = false;
   bool _aiGenerating = false;
   bool _hydratedFromProfile = false;
+  bool _requestedProfileLoad = false;
 
   @override
   void initState() {
@@ -95,8 +96,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
     return Consumer<AppState>(
       builder: (context, state, _) {
-        final p = state.profile;
-        if (p == null) {
+        if (!state.isLoggedIn) {
           return Scaffold(
             appBar: TwAppBar(
               leading: Builder(
@@ -111,7 +111,80 @@ class _ProfileScreenState extends State<ProfileScreen> {
               ),
             ),
             drawer: const AppDrawer(),
-            body: const Center(child: CircularProgressIndicator()),
+            body: Center(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    'You are logged out.',
+                    style: GoogleFonts.plusJakartaSans(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w700,
+                      color: isDark ? Colors.white : AppColors.slate900,
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  FilledButton(
+                    onPressed: () => Navigator.of(context).pushAndRemoveUntil(
+                      SmoothPageRoute(builder: (_) => const HomeScreen()),
+                      (_) => false,
+                    ),
+                    child: const Text('Go to Home'),
+                  ),
+                ],
+              ),
+            ),
+          );
+        }
+
+        final p = state.profile;
+        if (p == null) {
+          if (!_requestedProfileLoad) {
+            _requestedProfileLoad = true;
+            Future.microtask(() async {
+              await state.ensureProfileLoaded();
+              if (mounted) setState(() {});
+            });
+          }
+          return Scaffold(
+            appBar: TwAppBar(
+              leading: Builder(
+                builder: (ctx) => IconButton(
+                  icon: const Icon(Icons.menu_rounded),
+                  onPressed: () => Scaffold.of(ctx).openDrawer(),
+                ),
+              ),
+              onLogoTap: () => Navigator.of(context).pushAndRemoveUntil(
+                SmoothPageRoute(builder: (_) => const HomeScreen()),
+                (_) => false,
+              ),
+            ),
+            drawer: const AppDrawer(),
+            body: Center(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const CircularProgressIndicator(),
+                  const SizedBox(height: 12),
+                  Text(
+                    'Loading your profile...',
+                    style: GoogleFonts.plusJakartaSans(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      color: const Color(0xFF94A3B8),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  TextButton(
+                    onPressed: () async {
+                      await context.read<AppState>().ensureProfileLoaded();
+                      if (mounted) setState(() {});
+                    },
+                    child: const Text('Retry'),
+                  ),
+                ],
+              ),
+            ),
           );
         }
 

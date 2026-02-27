@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import '../utils/smooth_route.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -157,21 +158,52 @@ class _JobsScreenState extends State<JobsScreen> {
   double _radiusKm = 5.0;
   LatLng? _userLocation;
   bool _locationLoading = false;
+  final Map<String, LatLng> _jobMarkers = {};
+  final Set<String> _resolvingJobIds = {};
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       if (!mounted) return;
-      if (context.read<AppState>().userLocationText.isEmpty) {
-        await _promptLocation();
-      }
+      await _restoreSavedLocation();
     });
   }
 
   @override
   void dispose() {
     super.dispose();
+  }
+
+  Future<void> _restoreSavedLocation() async {
+    final state = context.read<AppState>();
+    String saved = state.userLocationText.trim();
+    if (saved.isEmpty) {
+      saved = (state.profile?.location ?? '').trim();
+      if (saved.isNotEmpty) {
+        state.setUserLocation(saved);
+      }
+    }
+
+    if (saved.isNotEmpty) {
+      var results = await _searchPlaceSuggestions(query: saved);
+      if (results.isEmpty) {
+        results = await _searchPlaceSuggestions(
+          query: _simplifyWorkLocation(saved),
+        );
+      }
+      if (!mounted) return;
+      if (results.isNotEmpty) {
+        setState(() {
+          _userLocation = results.first.point;
+        });
+        return;
+      }
+    }
+
+    // Fallback: if we have only text but no resolvable coordinates,
+    // prompt for a fresh location so the map can render the user marker.
+    await _promptLocation();
   }
 
   Future<void> _promptLocation() async {
@@ -193,10 +225,12 @@ class _JobsScreenState extends State<JobsScreen> {
           if (!mounted) return;
           if (!approved) return;
           final state = context.read<AppState>();
+          final simplified = _simplifyWorkLocation(place.label);
           setState(() {
             _userLocation = place.point;
           });
-          state.setUserLocation(_simplifyWorkLocation(place.label));
+          state.setUserLocation(simplified);
+          await state.updateProfile(location: simplified);
         },
       ),
     );
@@ -269,10 +303,10 @@ class _JobsScreenState extends State<JobsScreen> {
         final state = context.read<AppState>();
         if (state.userLocationText.isEmpty) {
           final profileLoc = state.profile?.location ?? '';
-          state.setUserLocation(
-              profileLoc.isNotEmpty
-                  ? _simplifyWorkLocation(profileLoc)
-                  : 'Current Area');
+          final simplified =
+              profileLoc.isNotEmpty ? _simplifyWorkLocation(profileLoc) : 'Current Area';
+          state.setUserLocation(simplified);
+          await state.updateProfile(location: simplified);
         }
       }
     } catch (_) {
@@ -283,6 +317,88 @@ class _JobsScreenState extends State<JobsScreen> {
         );
       }
     }
+  }
+
+  Future<void> _syncJobMarkers(List<Job> jobs) async {
+    if (!_isMapView) return;
+    final userText = context.read<AppState>().userLocationText.toLowerCase();
+    final activeIds = jobs.map((j) => j.id).toSet();
+    final staleIds = _jobMarkers.keys.where((id) => !activeIds.contains(id)).toList();
+    if (staleIds.isNotEmpty && mounted) {
+      setState(() {
+        for (final id in staleIds) {
+          _jobMarkers.remove(id);
+        }
+      });
+    }
+
+    for (final job in jobs.take(25)) {
+      if (_jobMarkers.containsKey(job.id) || _resolvingJobIds.contains(job.id)) {
+        continue;
+      }
+      final query = job.location.trim();
+      if (query.length < 2) continue;
+      _resolvingJobIds.add(job.id);
+      try {
+        List<_PlaceSuggestion> suggestions =
+            await _searchPlaceSuggestions(query: query);
+        if (suggestions.isEmpty) {
+          suggestions = await _searchPlaceSuggestions(
+            query: _simplifyWorkLocation(query),
+          );
+        }
+        if (suggestions.isEmpty && _userLocation != null) {
+          final jobLower = query.toLowerCase();
+          final sharesArea = jobLower.contains(userText) ||
+              userText.contains(jobLower) ||
+              _hasSharedLocationToken(jobLower, userText);
+          if (sharesArea) {
+            suggestions = [
+              _PlaceSuggestion(label: query, point: _userLocation!),
+            ];
+          }
+        }
+        if (!mounted) return;
+        if (suggestions.isNotEmpty) {
+          setState(() {
+            _jobMarkers[job.id] = suggestions.first.point;
+          });
+        }
+      } catch (_) {
+        // Ignore marker resolution failures for now.
+      } finally {
+        _resolvingJobIds.remove(job.id);
+      }
+    }
+  }
+
+  bool _hasSharedLocationToken(String a, String b) {
+    final stop = {
+      'ontario',
+      'canada',
+      'region',
+      'of',
+      'the',
+      'street',
+      'st',
+      'road',
+      'rd',
+      'avenue',
+      'ave',
+      'crescent',
+      'cres',
+    };
+    final tokensA = a
+        .split(RegExp(r'[, ]+'))
+        .map((t) => t.trim())
+        .where((t) => t.length > 2 && !stop.contains(t))
+        .toSet();
+    final tokensB = b
+        .split(RegExp(r'[, ]+'))
+        .map((t) => t.trim())
+        .where((t) => t.length > 2 && !stop.contains(t))
+        .toSet();
+    return tokensA.intersection(tokensB).isNotEmpty;
   }
 
   @override
@@ -327,6 +443,9 @@ class _JobsScreenState extends State<JobsScreen> {
 
           final totalCount = filteredJobs.length + filteredServices.length;
           final workLocation = state.userLocationText;
+          if (_isMapView) {
+            Future.microtask(() => _syncJobMarkers(filteredJobs));
+          }
           return Column(
             children: [
               _buildControls(
@@ -341,6 +460,8 @@ class _JobsScreenState extends State<JobsScreen> {
                         isDark: isDark,
                         radiusKm: _radiusKm,
                         userLocation: _userLocation,
+                        jobs: filteredJobs,
+                        jobMarkers: _jobMarkers,
                         onRadiusChanged: (v) => setState(() => _radiusKm = v),
                         onDetectLocation: _detectGPS,
                         locationLoading: _locationLoading,
@@ -568,6 +689,8 @@ class _MapView extends StatelessWidget {
   final bool isDark;
   final double radiusKm;
   final LatLng? userLocation;
+  final List<Job> jobs;
+  final Map<String, LatLng> jobMarkers;
   final ValueChanged<double> onRadiusChanged;
   final VoidCallback onDetectLocation;
   final bool locationLoading;
@@ -576,6 +699,8 @@ class _MapView extends StatelessWidget {
     required this.isDark,
     required this.radiusKm,
     required this.userLocation,
+    required this.jobs,
+    required this.jobMarkers,
     required this.onRadiusChanged,
     required this.onDetectLocation,
     required this.locationLoading,
@@ -584,6 +709,15 @@ class _MapView extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final center = userLocation ?? const LatLng(43.4643, -80.5204);
+    const distance = Distance();
+    final markersToRender = jobs.where((job) {
+      final point = jobMarkers[job.id];
+      if (point == null) return false;
+      if (userLocation == null) return true;
+      final meters = distance(userLocation!, point);
+      return meters <= radiusKm * 1000;
+    }).toList();
+    final markerPoints = _spreadOverlappingMarkers(markersToRender);
     final tileUrl = isDark
         ? 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png'
         : 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png';
@@ -643,6 +777,42 @@ class _MapView extends StatelessWidget {
                         ),
                       ),
                     ],
+                  ),
+                if (markersToRender.isNotEmpty)
+                  MarkerLayer(
+                    markers: markersToRender.map((job) {
+                      final point = markerPoints[job.id] ?? jobMarkers[job.id]!;
+                      return Marker(
+                        point: point,
+                        width: 42,
+                        height: 42,
+                        child: Tooltip(
+                          message: job.title,
+                          child: GestureDetector(
+                            onTap: () => _showJobQuickSheet(context, job, isDark),
+                            child: Container(
+                              decoration: BoxDecoration(
+                                color: const Color(0xFF7C3AED),
+                                shape: BoxShape.circle,
+                                border: Border.all(color: Colors.white, width: 2),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: const Color(0xFF7C3AED)
+                                        .withValues(alpha: 0.45),
+                                    blurRadius: 10,
+                                  ),
+                                ],
+                              ),
+                              child: Icon(
+                                _iconForJob(job),
+                                size: 18,
+                                color: Colors.white,
+                              ),
+                            ),
+                          ),
+                        ),
+                      );
+                    }).toList(),
                   ),
               ],
             ),
@@ -780,8 +950,8 @@ class _MapView extends StatelessWidget {
                   ),
                   child: Text(
                     userLocation != null
-                        ? 'No jobs within ${radiusKm.round()} km yet'
-                        : 'Set your location to find nearby jobs',
+                        ? '${markersToRender.length} job${markersToRender.length == 1 ? '' : 's'} in ${radiusKm.round()} km'
+                        : '${markersToRender.length} mapped job${markersToRender.length == 1 ? '' : 's'}',
                     style: GoogleFonts.plusJakartaSans(
                       fontSize: 12,
                       fontWeight: FontWeight.w700,
@@ -820,6 +990,117 @@ class _MapView extends StatelessWidget {
         ),
       ],
     );
+  }
+
+  IconData _iconForJob(Job job) {
+    final title = job.title.toLowerCase();
+    final tags = job.services.map((s) => s.toLowerCase()).join(' ');
+    final blob = '$title $tags';
+    if (blob.contains('dog') || blob.contains('pet')) return Icons.pets_rounded;
+    if (blob.contains('lawn') || blob.contains('yard') || blob.contains('snow')) {
+      return Icons.yard_rounded;
+    }
+    if (blob.contains('tutor') || blob.contains('school') || blob.contains('math')) {
+      return Icons.school_rounded;
+    }
+    if (blob.contains('baby')) return Icons.child_care_rounded;
+    if (blob.contains('clean')) return Icons.cleaning_services_rounded;
+    if (blob.contains('tech') || blob.contains('computer')) {
+      return Icons.computer_rounded;
+    }
+    if (blob.contains('event')) return Icons.celebration_rounded;
+    return Icons.work_rounded;
+  }
+
+  void _showJobQuickSheet(BuildContext context, Job job, bool isDark) {
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => Container(
+        margin: const EdgeInsets.all(12),
+        padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
+        decoration: BoxDecoration(
+          color: isDark ? const Color(0xFF1E293B) : Colors.white,
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(
+            color: isDark ? const Color(0xFF334155) : AppColors.slate200,
+          ),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              job.title,
+              style: GoogleFonts.plusJakartaSans(
+                fontSize: 16,
+                fontWeight: FontWeight.w800,
+                color: isDark ? Colors.white : AppColors.slate900,
+              ),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              job.description,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: GoogleFonts.plusJakartaSans(
+                fontSize: 13,
+                fontWeight: FontWeight.w500,
+                color: const Color(0xFF94A3B8),
+              ),
+            ),
+            const SizedBox(height: 12),
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton(
+                onPressed: () {
+                  Navigator.pop(ctx);
+                  Navigator.of(context).push(
+                    SmoothPageRoute(builder: (_) => JobDetailScreen(job: job)),
+                  );
+                },
+                style: FilledButton.styleFrom(
+                  backgroundColor: AppColors.indigo600,
+                ),
+                child: const Text('Details'),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Map<String, LatLng> _spreadOverlappingMarkers(List<Job> jobs) {
+    final grouped = <String, List<Job>>{};
+    for (final job in jobs) {
+      final p = jobMarkers[job.id];
+      if (p == null) continue;
+      final key = '${p.latitude.toStringAsFixed(5)}|${p.longitude.toStringAsFixed(5)}';
+      grouped.putIfAbsent(key, () => []).add(job);
+    }
+
+    final result = <String, LatLng>{};
+    for (final entry in grouped.entries) {
+      final cluster = entry.value;
+      for (var i = 0; i < cluster.length; i++) {
+        final job = cluster[i];
+        final base = jobMarkers[job.id]!;
+        result[job.id] = _offsetPoint(base, i, cluster.length);
+      }
+    }
+    return result;
+  }
+
+  LatLng _offsetPoint(LatLng base, int index, int total) {
+    if (total <= 1) return base;
+    const radiusMeters = 18.0;
+    final angle = (2 * math.pi * index) / total;
+    final dLat = (radiusMeters * math.sin(angle)) / 111320.0;
+    final lonMeters = (111320.0 * math.cos(base.latitude * math.pi / 180)).abs();
+    final safeLonMeters = lonMeters < 1 ? 1.0 : lonMeters;
+    final dLon = (radiusMeters * math.cos(angle)) / safeLonMeters;
+    return LatLng(base.latitude + dLat, base.longitude + dLon);
   }
 }
 
@@ -1256,21 +1537,35 @@ class _ServiceListTile extends StatelessWidget {
                         ),
                       ),
                       const SizedBox(height: 2),
-                      Row(
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 6,
+                        crossAxisAlignment: WrapCrossAlignment.center,
                         children: [
-                          const Icon(Icons.location_on_outlined,
-                              size: 12, color: Color(0xFF94A3B8)),
-                          const SizedBox(width: 3),
-                          Text(
-                            service.location,
-                            style: GoogleFonts.plusJakartaSans(
-                              fontSize: 11,
-                              fontWeight: FontWeight.w500,
-                              color: const Color(0xFF94A3B8),
-                            ),
+                          Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Icon(Icons.location_on_outlined,
+                                  size: 12, color: Color(0xFF94A3B8)),
+                              const SizedBox(width: 3),
+                              ConstrainedBox(
+                                constraints: BoxConstraints(
+                                  maxWidth:
+                                      MediaQuery.of(context).size.width * 0.45,
+                                ),
+                                child: Text(
+                                  service.location,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: GoogleFonts.plusJakartaSans(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w500,
+                                    color: const Color(0xFF94A3B8),
+                                  ),
+                                ),
+                              ),
+                            ],
                           ),
-                          if (service.priceRangeLabel.isNotEmpty) ...[
-                            const SizedBox(width: 8),
+                          if (service.priceRangeLabel.isNotEmpty)
                             Container(
                               padding: const EdgeInsets.symmetric(
                                   horizontal: 8, vertical: 2),
@@ -1288,7 +1583,6 @@ class _ServiceListTile extends StatelessWidget {
                                 ),
                               ),
                             ),
-                          ],
                         ],
                       ),
                     ],
@@ -1356,20 +1650,34 @@ class _JobListTile extends StatelessWidget {
                         ),
                       ),
                       const SizedBox(height: 4),
-                      Row(
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 6,
+                        crossAxisAlignment: WrapCrossAlignment.center,
                         children: [
-                          const Icon(Icons.location_on_outlined,
-                              size: 12, color: Color(0xFF94A3B8)),
-                          const SizedBox(width: 3),
-                          Text(
-                            job.location,
-                            style: GoogleFonts.plusJakartaSans(
-                              fontSize: 11,
-                              fontWeight: FontWeight.w500,
-                              color: const Color(0xFF94A3B8),
-                            ),
+                          Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Icon(Icons.location_on_outlined,
+                                  size: 12, color: Color(0xFF94A3B8)),
+                              const SizedBox(width: 3),
+                              ConstrainedBox(
+                                constraints: BoxConstraints(
+                                  maxWidth:
+                                      MediaQuery.of(context).size.width * 0.45,
+                                ),
+                                child: Text(
+                                  job.location,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: GoogleFonts.plusJakartaSans(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w500,
+                                    color: const Color(0xFF94A3B8),
+                                  ),
+                                ),
+                              ),
+                            ],
                           ),
-                          const SizedBox(width: 10),
                           Container(
                             padding: const EdgeInsets.symmetric(
                                 horizontal: 8, vertical: 2),
@@ -1387,8 +1695,7 @@ class _JobListTile extends StatelessWidget {
                               ),
                             ),
                           ),
-                          if (job.payment > 0) ...[
-                            const SizedBox(width: 6),
+                          if (job.payment > 0)
                             Container(
                               padding: const EdgeInsets.symmetric(
                                   horizontal: 8, vertical: 2),
@@ -1406,7 +1713,6 @@ class _JobListTile extends StatelessWidget {
                                 ),
                               ),
                             ),
-                          ],
                         ],
                       ),
                     ],

@@ -372,9 +372,18 @@ class HomeScreen extends StatelessWidget {
                 const SizedBox(height: 16),
                 Consumer<AppState>(
                   builder: (context, state, _) {
-                    final jobs = state.jobs;
+                    final myId = state.currentUserId;
+                    final jobs = state.jobs
+                        .where((j) =>
+                            j.status != JobStatus.completed &&
+                            j.posterId != myId)
+                        .toList();
                     final canHire = state.canPostJobs;
-                    final services = canHire ? state.services : <Service>[];
+                    final services = canHire
+                        ? state.services
+                            .where((s) => s.providerId != myId)
+                            .toList()
+                        : <Service>[];
                     if (jobs.isEmpty && services.isEmpty) {
                       return Padding(
                         padding: const EdgeInsets.symmetric(horizontal: 24),
@@ -491,107 +500,119 @@ class _SignedInHomeHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final name = state.profile?.name ?? 'there';
+    final age = state.profile?.age;
+    final showVault = age == null || age <= 20;
     final goal = state.vaultGoal?.trim() ?? '';
     final hasGoal = state.hasVaultGoal && goal.isNotEmpty;
     final remaining = state.vaultRemainingAmount.toStringAsFixed(0);
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          'Welcome back, $name',
-          style: GoogleFonts.plusJakartaSans(
-            fontSize: 26,
-            fontWeight: FontWeight.w800,
-            letterSpacing: -0.5,
-            color: isDark ? Colors.white : AppColors.slate900,
-          ),
-        ),
-        const SizedBox(height: 6),
-        Text(
-          'Your personal TeenWorkly space',
-          style: GoogleFonts.plusJakartaSans(
-            fontSize: 14,
-            fontWeight: FontWeight.w500,
-            color: const Color(0xFF94A3B8),
-          ),
-        ),
-        const SizedBox(height: 16),
-        Container(
-          width: double.infinity,
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              colors: [
-                AppColors.indigo600.withValues(alpha: 0.12),
-                const Color(0xFF7C3AED).withValues(alpha: 0.10),
-              ],
-            ),
-            borderRadius: BorderRadius.circular(18),
-            border: Border.all(
-              color: AppColors.indigo600.withValues(alpha: 0.25),
-            ),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                hasGoal ? 'Vault: $goal' : 'Vault',
-                style: GoogleFonts.plusJakartaSans(
-                  fontSize: 15,
-                  fontWeight: FontWeight.w800,
-                  color: isDark ? Colors.white : AppColors.slate900,
-                ),
+    return Center(
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 760),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            Text(
+              'Welcome back, $name',
+              textAlign: TextAlign.center,
+              style: GoogleFonts.plusJakartaSans(
+                fontSize: 26,
+                fontWeight: FontWeight.w800,
+                letterSpacing: -0.5,
+                color: isDark ? Colors.white : AppColors.slate900,
               ),
-              const SizedBox(height: 6),
-              Text(
-                hasGoal
-                    ? 'You are only \$$remaining away. Keep going.'
-                    : 'Set your vault goal in Profile to track progress.',
-                style: GoogleFonts.plusJakartaSans(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w600,
-                  color: const Color(0xFF94A3B8),
-                ),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              'Your personal TeenWorkly space',
+              textAlign: TextAlign.center,
+              style: GoogleFonts.plusJakartaSans(
+                fontSize: 14,
+                fontWeight: FontWeight.w500,
+                color: const Color(0xFF94A3B8),
               ),
-              const SizedBox(height: 10),
-              ClipRRect(
-                borderRadius: BorderRadius.circular(5),
-                child: LinearProgressIndicator(
-                  value: hasGoal ? state.vaultProgress : 0,
-                  minHeight: 7,
-                  backgroundColor:
-                      isDark ? const Color(0xFF334155) : AppColors.slate200,
-                  color: AppColors.indigo600,
+            ),
+            if (showVault) ...[
+              const SizedBox(height: 16),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: [
+                      AppColors.indigo600.withValues(alpha: 0.12),
+                      const Color(0xFF7C3AED).withValues(alpha: 0.10),
+                    ],
+                  ),
+                  borderRadius: BorderRadius.circular(18),
+                  border: Border.all(
+                    color: AppColors.indigo600.withValues(alpha: 0.25),
+                  ),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      hasGoal ? 'Vault: $goal' : 'Vault',
+                      style: GoogleFonts.plusJakartaSans(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w800,
+                        color: isDark ? Colors.white : AppColors.slate900,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      hasGoal
+                          ? 'You are only \$$remaining away. Keep going.'
+                          : 'Set your vault goal in Profile to track progress.',
+                      style: GoogleFonts.plusJakartaSans(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: const Color(0xFF94A3B8),
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(5),
+                      child: LinearProgressIndicator(
+                        value: hasGoal ? state.vaultProgress : 0,
+                        minHeight: 7,
+                        backgroundColor:
+                            isDark ? const Color(0xFF334155) : AppColors.slate200,
+                        color: AppColors.indigo600,
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ],
-          ),
-        ),
-        const SizedBox(height: 14),
-        Wrap(
-          spacing: 10,
-          runSpacing: 10,
-          children: [
-            _HeroButton(
-              label: 'My Profile',
-              onTap: () => Navigator.of(context).push(
-                SmoothPageRoute(builder: (_) => const ProfileScreen()),
-              ),
-              filled: true,
-              isDark: isDark,
-            ),
-            _HeroButton(
-              label: 'Dashboard',
-              onTap: () => Navigator.of(context).push(
-                SmoothPageRoute(builder: (_) => const DashboardScreen()),
-              ),
-              filled: false,
-              isDark: isDark,
+            const SizedBox(height: 14),
+            Wrap(
+              spacing: 10,
+              runSpacing: 10,
+              alignment: WrapAlignment.center,
+              children: [
+                _HeroButton(
+                  label: 'My Profile',
+                  onTap: () => Navigator.of(context).push(
+                    SmoothPageRoute(builder: (_) => const ProfileScreen()),
+                  ),
+                  filled: true,
+                  isDark: isDark,
+                ),
+                _HeroButton(
+                  label: 'Dashboard',
+                  onTap: () => Navigator.of(context).push(
+                    SmoothPageRoute(builder: (_) => const DashboardScreen()),
+                  ),
+                  filled: false,
+                  isDark: isDark,
+                ),
+              ],
             ),
           ],
         ),
-      ],
+      ),
     );
   }
 }

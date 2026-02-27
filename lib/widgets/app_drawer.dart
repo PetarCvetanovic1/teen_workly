@@ -15,6 +15,18 @@ import '../screens/profile_editor_screen.dart';
 import '../screens/contact_screen.dart';
 import '../screens/huddle_screen.dart';
 
+DateTime? _lastDrawerNavTapAt;
+
+bool _canNavigateFromDrawer() {
+  final now = DateTime.now();
+  final last = _lastDrawerNavTapAt;
+  if (last != null && now.difference(last) < const Duration(milliseconds: 450)) {
+    return false;
+  }
+  _lastDrawerNavTapAt = now;
+  return true;
+}
+
 class AppDrawer extends StatelessWidget {
   const AppDrawer({super.key});
 
@@ -26,6 +38,16 @@ class AppDrawer extends StatelessWidget {
       builder: (context, state, _) {
         final loggedIn = state.isLoggedIn;
         final profile = state.profile;
+        void replaceAfterClose(Widget page) {
+          if (!_canNavigateFromDrawer()) return;
+          Navigator.pop(context);
+          Future.microtask(() {
+            if (!context.mounted) return;
+            Navigator.of(context).pushReplacement(
+              SmoothPageRoute(builder: (_) => page),
+            );
+          });
+        }
 
         return Drawer(
           child: SafeArea(
@@ -118,115 +140,56 @@ class AppDrawer extends StatelessWidget {
                 _DrawerTile(
                   icon: Icons.add_circle_outline_rounded,
                   label: 'Post a Job',
-                  onTap: () {
-                    Navigator.pop(context);
-                    Navigator.of(context).push(
-                      SmoothPageRoute(builder: (_) => const PostJobScreen()),
-                    );
-                  },
+                  onTap: () => replaceAfterClose(const PostJobScreen()),
                 ),
                 _DrawerTile(
                   icon: Icons.groups_rounded,
                   label: 'The Huddle',
-                  onTap: () {
-                    Navigator.pop(context);
-                    Navigator.of(context).push(
-                      SmoothPageRoute(builder: (_) => const HuddleScreen()),
-                    );
-                  },
+                  onTap: () => replaceAfterClose(const HuddleScreen()),
                 ),
                 _DrawerTile(
                   icon: Icons.handyman_rounded,
                   label: 'Post a Service',
-                  onTap: () {
-                    Navigator.pop(context);
-                    Navigator.of(context).push(
-                      SmoothPageRoute(
-                          builder: (_) => const PostServiceScreen()),
-                    );
-                  },
+                  onTap: () => replaceAfterClose(const PostServiceScreen()),
                 ),
                 _DrawerTile(
                   icon: Icons.search_rounded,
                   label: 'Find a Job',
-                  onTap: () {
-                    Navigator.pop(context);
-                    Navigator.of(context).push(
-                      SmoothPageRoute(
-                        builder: (_) => const JobsScreen(),
-                      ),
-                    );
-                  },
+                  onTap: () => replaceAfterClose(const JobsScreen()),
                 ),
                 _DrawerTile(
                   icon: Icons.dashboard_rounded,
                   label: 'Dashboard',
-                  onTap: () {
-                    Navigator.pop(context);
-                    Navigator.of(context).push(
-                      SmoothPageRoute(
-                          builder: (_) => const DashboardScreen()),
-                    );
-                  },
+                  onTap: () => replaceAfterClose(const DashboardScreen()),
                 ),
                 _DrawerTile(
                   icon: Icons.chat_rounded,
                   label: 'Messages',
-                  onTap: () {
-                    Navigator.pop(context);
-                    Navigator.of(context).push(
-                      SmoothPageRoute(
-                          builder: (_) => const ConversationsScreen()),
-                    );
-                  },
+                  onTap: () => replaceAfterClose(const ConversationsScreen()),
                 ),
                 if (loggedIn)
                   _DrawerTile(
                     icon: Icons.person_rounded,
                     label: 'My Profile',
-                    onTap: () {
-                      Navigator.pop(context);
-                      Navigator.of(context).push(
-                        SmoothPageRoute(
-                            builder: (_) => const ProfileScreen()),
-                      );
-                    },
+                    onTap: () => replaceAfterClose(const ProfileScreen()),
                   ),
                 const Divider(height: 24),
                 _DrawerTile(
                   icon: Icons.mail_outline_rounded,
                   label: 'Contact Us',
-                  onTap: () {
-                    Navigator.pop(context);
-                    Navigator.of(context).push(
-                      SmoothPageRoute(
-                          builder: (_) => const ContactScreen()),
-                    );
-                  },
+                  onTap: () => replaceAfterClose(const ContactScreen()),
                 ),
                 if (!loggedIn) ...[
                   const Divider(height: 24),
                   _DrawerTile(
                     icon: Icons.login_rounded,
                     label: 'Log in',
-                    onTap: () {
-                      Navigator.pop(context);
-                      Navigator.of(context).push(
-                        SmoothPageRoute(
-                            builder: (_) => const LoginScreen()),
-                      );
-                    },
+                    onTap: () => replaceAfterClose(const LoginScreen()),
                   ),
                   _DrawerTile(
                     icon: Icons.person_add_rounded,
                     label: 'Join now',
-                    onTap: () {
-                      Navigator.pop(context);
-                      Navigator.of(context).push(
-                        SmoothPageRoute(
-                            builder: (_) => const SignUpScreen()),
-                      );
-                    },
+                    onTap: () => replaceAfterClose(const SignUpScreen()),
                   ),
                 ],
                 if (loggedIn) ...[
@@ -236,9 +199,14 @@ class AppDrawer extends StatelessWidget {
                     icon: Icons.logout_rounded,
                     label: 'Log out',
                     color: const Color(0xFFDC2626),
-                    onTap: () {
+                    onTap: () async {
                       Navigator.pop(context);
-                      context.read<AppState>().logout();
+                      await context.read<AppState>().logout();
+                      if (!context.mounted) return;
+                      Navigator.of(context).pushAndRemoveUntil(
+                        SmoothPageRoute(builder: (_) => const HomeScreen()),
+                        (_) => false,
+                      );
                       ScaffoldMessenger.of(context).showSnackBar(
                         SnackBar(
                           content: const Text('Logged out'),

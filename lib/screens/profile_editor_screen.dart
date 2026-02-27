@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import '../app_colors.dart';
+import '../services/moderation.dart';
 import '../state/app_state.dart';
 import '../utils/smooth_route.dart';
 import '../widgets/app_drawer.dart';
@@ -41,12 +42,9 @@ class ProfileScreen extends StatefulWidget {
 class _ProfileScreenState extends State<ProfileScreen> {
   final _formKey = GlobalKey<FormState>();
   final _nameCtrl = TextEditingController();
-  final _schoolCtrl = TextEditingController();
   final _locationCtrl = TextEditingController();
   final _bioCtrl = TextEditingController();
   final _ageCtrl = TextEditingController();
-  final _vaultGoalCtrl = TextEditingController();
-  final _vaultTargetCtrl = TextEditingController();
   final _customSkillCtrl = TextEditingController();
   final _customInterestCtrl = TextEditingController();
 
@@ -61,12 +59,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
   @override
   void dispose() {
     _nameCtrl.dispose();
-    _schoolCtrl.dispose();
     _locationCtrl.dispose();
     _bioCtrl.dispose();
     _ageCtrl.dispose();
-    _vaultGoalCtrl.dispose();
-    _vaultTargetCtrl.dispose();
     _customSkillCtrl.dispose();
     _customInterestCtrl.dispose();
     super.dispose();
@@ -76,22 +71,15 @@ class _ProfileScreenState extends State<ProfileScreen> {
     if (_hydrated || state.profile == null) return;
     final p = state.profile!;
     _nameCtrl.text = p.name;
-    _schoolCtrl.text = p.school ?? '';
     _locationCtrl.text = p.location ?? '';
     _bioCtrl.text = p.bio ?? '';
     _ageCtrl.text = p.age?.toString() ?? '';
-    _vaultGoalCtrl.text = p.vaultGoal ?? '';
-    _vaultTargetCtrl.text =
-        p.vaultTargetAmount != null ? p.vaultTargetAmount!.toStringAsFixed(0) : '';
     _skills = Set<String>.from(p.skills);
     _interests = Set<String>.from(p.interests);
     if (!_modeInitialized) {
-      final hasSavedDetails = (p.school?.trim().isNotEmpty ?? false) ||
-          (p.location?.trim().isNotEmpty ?? false) ||
+      final hasSavedDetails = (p.location?.trim().isNotEmpty ?? false) ||
           (p.bio?.trim().isNotEmpty ?? false) ||
           (p.age != null) ||
-          (p.vaultGoal?.trim().isNotEmpty ?? false) ||
-          ((p.vaultTargetAmount ?? 0) > 0) ||
           p.skills.isNotEmpty ||
           p.interests.isNotEmpty;
       _editing = !hasSavedDetails;
@@ -102,27 +90,49 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   Future<void> _save(AppState state) async {
     if (!(_formKey.currentState?.validate() ?? false)) return;
+    for (final tag in _skills) {
+      final check = ModerationService.validateProfileField('skill', tag);
+      if (!check.approved) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(check.reason ?? 'That skill is not allowed.')),
+        );
+        return;
+      }
+    }
+    for (final tag in _interests) {
+      final check = ModerationService.validateProfileField('interest', tag);
+      if (!check.approved) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(check.reason ?? 'That interest is not allowed.')),
+        );
+        return;
+      }
+    }
     setState(() => _saving = true);
-    await state.updateProfile(
-      name: _nameCtrl.text.trim(),
-      school: _schoolCtrl.text.trim(),
-      location: _locationCtrl.text.trim(),
-      bio: _bioCtrl.text.trim(),
-      age: int.tryParse(_ageCtrl.text.trim()),
-      vaultGoal: _vaultGoalCtrl.text.trim(),
-      vaultTargetAmount:
-          _vaultTargetCtrl.text.trim().isEmpty ? 0 : double.tryParse(_vaultTargetCtrl.text.trim()),
-      skills: _skills,
-      interests: _interests,
-    );
-    if (!mounted) return;
-    setState(() {
-      _saving = false;
-      _editing = false;
-    });
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Profile saved.')),
-    );
+    try {
+      await state.updateProfile(
+        name: _nameCtrl.text.trim(),
+        location: _locationCtrl.text.trim(),
+        bio: _bioCtrl.text.trim(),
+        age: int.tryParse(_ageCtrl.text.trim()),
+        skills: _skills,
+        interests: _interests,
+      );
+      if (!mounted) return;
+      setState(() {
+        _saving = false;
+        _editing = false;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Profile saved.')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _saving = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('$e')),
+      );
+    }
   }
 
   @override
@@ -130,6 +140,47 @@ class _ProfileScreenState extends State<ProfileScreen> {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     return Consumer<AppState>(
       builder: (context, state, _) {
+        if (!state.isLoggedIn) {
+          return Scaffold(
+            appBar: TwAppBar(
+              leading: Builder(
+                builder: (ctx) => IconButton(
+                  icon: const Icon(Icons.menu_rounded),
+                  onPressed: () => Scaffold.of(ctx).openDrawer(),
+                ),
+              ),
+              onLogoTap: () => Navigator.of(context).pushAndRemoveUntil(
+                SmoothPageRoute(builder: (_) => const HomeScreen()),
+                (_) => false,
+              ),
+            ),
+            drawer: const AppDrawer(),
+            body: Center(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    'You are logged out.',
+                    style: GoogleFonts.plusJakartaSans(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w700,
+                      color: isDark ? Colors.white : AppColors.slate900,
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  FilledButton(
+                    onPressed: () => Navigator.of(context).pushAndRemoveUntil(
+                      SmoothPageRoute(builder: (_) => const HomeScreen()),
+                      (_) => false,
+                    ),
+                    child: const Text('Go to Home'),
+                  ),
+                ],
+              ),
+            ),
+          );
+        }
+
         final p = state.profile;
         if (p == null) {
           if (!_requestedProfileLoad) {
@@ -181,6 +232,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
           );
         }
         _hydrate(state);
+        final ageValue = int.tryParse(_ageCtrl.text.trim()) ?? p.age ?? 16;
+        final isUnder16 = ageValue < 16;
+        final postedCount = state.myPostedJobs.length;
+        final appliedCount = state.myAppliedJobs.length;
+        final locationLocked = (p.location ?? '').trim().isNotEmpty;
 
         return Scaffold(
           appBar: TwAppBar(
@@ -216,7 +272,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
                           ),
                           const SizedBox(height: 8),
                           Text(
-                            'Update your full name, school, skills, likes, vault goal, and more.',
+                            isUnder16
+                                ? 'Under 16 profile: focus on skills, interests, and community.'
+                                : '16+ profile: focus on work, hiring, and building trust.',
                             style: GoogleFonts.plusJakartaSans(
                               fontSize: 13,
                               fontWeight: FontWeight.w500,
@@ -229,13 +287,27 @@ class _ProfileScreenState extends State<ProfileScreen> {
                             if (v.trim().split(RegExp(r'\s+')).length < 2) return 'Enter first + last name';
                             return null;
                           }),
-                          _field(_schoolCtrl, 'School'),
-                          _field(_locationCtrl, 'Location'),
+                          _field(
+                            _locationCtrl,
+                            'Location',
+                            readOnly: locationLocked,
+                            helperText: locationLocked
+                                ? 'Locked after map location is set. Change it from the map.'
+                                : null,
+                          ),
                           _field(_ageCtrl, 'Age', keyboardType: TextInputType.number),
+                          Padding(
+                            padding: const EdgeInsets.only(bottom: 10),
+                            child: Text(
+                              'Age can only go up by 1, once every 12 months.',
+                              style: GoogleFonts.plusJakartaSans(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w600,
+                                color: const Color(0xFF94A3B8),
+                              ),
+                            ),
+                          ),
                           _field(_bioCtrl, 'Bio / About you', maxLines: 3),
-                          _field(_vaultGoalCtrl, 'Vault Goal (what are you saving for?)'),
-                          _field(_vaultTargetCtrl, 'Vault Target Amount (\$)',
-                              keyboardType: const TextInputType.numberWithOptions(decimal: true)),
                           const SizedBox(height: 12),
                           _chipSection(
                             title: 'Skills',
@@ -298,23 +370,21 @@ class _ProfileScreenState extends State<ProfileScreen> {
                           ),
                         ),
                         const SizedBox(height: 20),
+                        _profileTypeCard(
+                          isDark: isDark,
+                          under16: isUnder16,
+                          postedCount: postedCount,
+                          appliedCount: appliedCount,
+                        ),
+                        const SizedBox(height: 12),
                         _profileCard(
                           'Full Name',
                           _nameCtrl.text.trim(),
                           isDark,
                         ),
-                        _profileCard('School', _schoolCtrl.text.trim(), isDark),
                         _profileCard('Location', _locationCtrl.text.trim(), isDark),
                         _profileCard('Age', _ageCtrl.text.trim(), isDark),
                         _profileCard('About', _bioCtrl.text.trim(), isDark),
-                        _profileCard('Vault Goal', _vaultGoalCtrl.text.trim(), isDark),
-                        _profileCard(
-                          'Vault Target',
-                          _vaultTargetCtrl.text.trim().isEmpty
-                              ? ''
-                              : '\$${_vaultTargetCtrl.text.trim()}',
-                          isDark,
-                        ),
                         _chipsPreview('Skills', _skills, isDark),
                         const SizedBox(height: 10),
                         _chipsPreview('What you like doing', _interests, isDark),
@@ -376,6 +446,63 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
+  Widget _profileTypeCard({
+    required bool isDark,
+    required bool under16,
+    required int postedCount,
+    required int appliedCount,
+  }) {
+    final title = under16 ? 'Under 16 Profile' : '16+ Work Profile';
+    final subtitle = under16
+        ? 'Community-first mode. You can build skills and apply for jobs.'
+        : 'Work-and-hiring mode. You can post jobs and manage applicants.';
+    final stat = under16
+        ? 'Applied jobs: $appliedCount'
+        : 'Posted jobs: $postedCount';
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: isDark ? const Color(0xFF1E293B) : Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: isDark ? const Color(0xFF334155) : AppColors.slate200,
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            title,
+            style: GoogleFonts.plusJakartaSans(
+              fontSize: 14,
+              fontWeight: FontWeight.w800,
+              color: isDark ? Colors.white : AppColors.slate900,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            subtitle,
+            style: GoogleFonts.plusJakartaSans(
+              fontSize: 12,
+              fontWeight: FontWeight.w500,
+              color: const Color(0xFF94A3B8),
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            stat,
+            style: GoogleFonts.plusJakartaSans(
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+              color: AppColors.indigo600,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _chipsPreview(String title, Set<String> values, bool isDark) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -431,15 +558,24 @@ class _ProfileScreenState extends State<ProfileScreen> {
     int maxLines = 1,
     TextInputType? keyboardType,
     String? Function(String?)? validator,
+    bool readOnly = false,
+    String? helperText,
   }) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
       child: TextFormField(
         controller: ctrl,
         maxLines: maxLines,
+        readOnly: readOnly,
         keyboardType: keyboardType,
         validator: validator,
-        decoration: InputDecoration(labelText: label),
+        decoration: InputDecoration(
+          labelText: label,
+          helperText: helperText,
+          suffixIcon: readOnly
+              ? const Icon(Icons.lock_rounded, size: 18, color: Color(0xFF94A3B8))
+              : null,
+        ),
       ),
     );
   }
@@ -489,6 +625,21 @@ class _ProfileScreenState extends State<ProfileScreen> {
               onPressed: () {
                 final text = customController.text.trim();
                 if (text.isEmpty) return;
+                final check = ModerationService.validateProfileField(
+                  title.toLowerCase(),
+                  text,
+                );
+                if (!check.approved) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text(
+                        check.reason ??
+                            'That tag is not allowed. Please keep it appropriate.',
+                      ),
+                    ),
+                  );
+                  return;
+                }
                 setState(() => selected.add(text));
                 customController.clear();
               },

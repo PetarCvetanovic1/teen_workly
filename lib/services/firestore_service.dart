@@ -31,6 +31,9 @@ class FirestoreService {
       'interests': profile.interests.toList(),
       'school': profile.school,
       'age': profile.age,
+      'ageLastUpdatedAt': profile.ageLastUpdatedAt != null
+          ? Timestamp.fromDate(profile.ageLastUpdatedAt!)
+          : null,
       'vaultGoal': profile.vaultGoal,
       'vaultTargetAmount': profile.vaultTargetAmount,
       'updatedAt': FieldValue.serverTimestamp(),
@@ -58,6 +61,7 @@ class FirestoreService {
       interests: Set<String>.from(d['interests'] ?? []),
       school: d['school'],
       age: d['age'],
+      ageLastUpdatedAt: (d['ageLastUpdatedAt'] as Timestamp?)?.toDate(),
       vaultGoal: d['vaultGoal'],
       vaultTargetAmount: (d['vaultTargetAmount'] as num?)?.toDouble(),
     );
@@ -323,15 +327,21 @@ class FirestoreService {
     required String otherUserId,
     required String otherUserName,
     String? contextLabel,
+    String? scopeKey,
   }) async {
     final existing = await _conversationsCol
         .where('participants', arrayContains: myId)
         .get();
 
     for (final doc in existing.docs) {
-      final participants = List<String>.from(doc.data()['participants'] ?? []);
+      final d = doc.data();
+      final participants = List<String>.from(d['participants'] ?? []);
       if (participants.contains(otherUserId)) {
-        final d = doc.data();
+        final existingScope = (d['scopeKey'] ?? '').toString();
+        final requestedScope = (scopeKey ?? '').trim();
+        if (requestedScope.isNotEmpty && existingScope != requestedScope) {
+          continue;
+        }
         return Conversation(
           id: doc.id,
           otherUserId: otherUserId,
@@ -346,6 +356,7 @@ class FirestoreService {
       'participants': [myId, otherUserId],
       'participantNames': {myId: myName, otherUserId: otherUserName},
       'contextLabel': contextLabel,
+      'scopeKey': scopeKey,
       'lastMessageAt': Timestamp.now(),
       'lastMessageText': '',
     });
@@ -399,14 +410,25 @@ class FirestoreService {
     await batch.commit();
   }
 
+  static Future<void> deleteConversation(String conversationId) async {
+    final messagesRef = _conversationsCol.doc(conversationId).collection('messages');
+    final messagesSnap = await messagesRef.get();
+    final batch = _db.batch();
+    for (final doc in messagesSnap.docs) {
+      batch.delete(doc.reference);
+    }
+    batch.delete(_conversationsCol.doc(conversationId));
+    await batch.commit();
+  }
+
   // ── The Huddle ──
 
   static Stream<List<HuddlePost>> huddleStream(HuddleAgeGroup ageGroup) {
     return _huddleCol
         .where('ageGroup', isEqualTo: ageGroup.name)
-        .orderBy('createdAt', descending: true)
         .snapshots()
-        .map((snap) => snap.docs.map((doc) {
+        .map((snap) {
+          final posts = snap.docs.map((doc) {
               final d = doc.data();
               return HuddlePost(
                 id: doc.id,
@@ -421,7 +443,10 @@ class FirestoreService {
                 createdAt: (d['createdAt'] as Timestamp?)?.toDate() ??
                     DateTime.now(),
               );
-            }).toList());
+            }).toList();
+          posts.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+          return posts;
+        });
   }
 
   static Future<void> addHuddlePost(HuddlePost post) async {

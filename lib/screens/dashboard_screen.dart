@@ -20,7 +20,7 @@ class DashboardScreen extends StatefulWidget {
 }
 
 class _DashboardScreenState extends State<DashboardScreen> {
-  bool _hideCompletedAppliedJobs = false;
+  bool _hideCompletedItems = false;
 
   @override
   Widget build(BuildContext context) {
@@ -42,13 +42,15 @@ class _DashboardScreenState extends State<DashboardScreen> {
       drawer: const AppDrawer(),
       body: Consumer<AppState>(
         builder: (context, state, _) {
-          final posted = state.myPostedJobs;
+          final posted = _hideCompletedItems
+              ? state.myPostedJobs.where((j) => j.status != JobStatus.completed).toList()
+              : state.myPostedJobs;
           final applied = state.myAppliedJobs;
-          final visibleApplied = _hideCompletedAppliedJobs
+          final visibleApplied = _hideCompletedItems
               ? applied.where((j) => j.status != JobStatus.completed).toList()
               : applied;
           final current = state.myCurrentJobs;
-          final completed = state.myCompletedJobs;
+          final completed = _hideCompletedItems ? <Job>[] : state.myCompletedJobs;
           final myServices = state.myServices;
 
           return SingleChildScrollView(
@@ -76,6 +78,30 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     color: isDark
                         ? const Color(0xFF94A3B8)
                         : const Color(0xFF64748B),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: TextButton.icon(
+                    onPressed: () => setState(() {
+                      _hideCompletedItems = !_hideCompletedItems;
+                    }),
+                    icon: Icon(
+                      _hideCompletedItems
+                          ? Icons.visibility_rounded
+                          : Icons.visibility_off_rounded,
+                      size: 16,
+                      color: AppColors.indigo600,
+                    ),
+                    label: Text(
+                      _hideCompletedItems ? 'Show Completed Items' : 'Hide Completed Items',
+                      style: GoogleFonts.plusJakartaSans(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                        color: AppColors.indigo600,
+                      ),
+                    ),
                   ),
                 ),
                 if (state.hasVaultGoal) ...[
@@ -486,29 +512,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       count: visibleApplied.length,
                       isDark: isDark,
                     ),
-                    const Spacer(),
-                    TextButton.icon(
-                      onPressed: () => setState(() {
-                        _hideCompletedAppliedJobs = !_hideCompletedAppliedJobs;
-                      }),
-                      icon: Icon(
-                        _hideCompletedAppliedJobs
-                            ? Icons.visibility_rounded
-                            : Icons.visibility_off_rounded,
-                        size: 16,
-                        color: AppColors.indigo600,
-                      ),
-                      label: Text(
-                        _hideCompletedAppliedJobs
-                            ? 'Show Completed'
-                            : 'Hide Completed',
-                        style: GoogleFonts.plusJakartaSans(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w700,
-                          color: AppColors.indigo600,
-                        ),
-                      ),
-                    ),
                   ],
                 ),
                 const SizedBox(height: 12),
@@ -634,6 +637,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
                               preview: conv.lastMessagePreview,
                               time: conv.lastMessageTime,
                               isDark: isDark,
+                              onDelete: () => _confirmDeleteConversation(
+                                context,
+                                state: state,
+                                conversationId: conv.id,
+                                isDark: isDark,
+                              ),
                               onTap: () => Navigator.of(context).push(
                                 SmoothPageRoute(
                                   builder: (_) => ChatScreen(
@@ -1415,6 +1424,7 @@ class _ConvoCard extends StatelessWidget {
   final String preview;
   final DateTime? time;
   final bool isDark;
+  final VoidCallback? onDelete;
   final VoidCallback onTap;
 
   const _ConvoCard({
@@ -1423,6 +1433,7 @@ class _ConvoCard extends StatelessWidget {
     required this.preview,
     this.time,
     required this.isDark,
+    this.onDelete,
     required this.onTap,
   });
 
@@ -1525,6 +1536,16 @@ class _ConvoCard extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(width: 8),
+                if (onDelete != null)
+                  IconButton(
+                    onPressed: onDelete,
+                    icon: const Icon(
+                      Icons.delete_outline_rounded,
+                      size: 18,
+                      color: Color(0xFFDC2626),
+                    ),
+                    tooltip: 'Delete conversation',
+                  ),
                 Icon(
                   Icons.chevron_right_rounded,
                   color: isDark
@@ -1546,6 +1567,52 @@ class _ConvoCard extends StatelessWidget {
     if (diff.inHours < 24) return '${diff.inHours}h';
     return '${diff.inDays}d';
   }
+}
+
+void _confirmDeleteConversation(
+  BuildContext context, {
+  required AppState state,
+  required String conversationId,
+  required bool isDark,
+}) {
+  showDialog(
+    context: context,
+    builder: (ctx) => AlertDialog(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      backgroundColor: isDark ? const Color(0xFF1E293B) : Colors.white,
+      title: Text(
+        'Delete conversation?',
+        style: GoogleFonts.plusJakartaSans(
+          fontWeight: FontWeight.w800,
+          color: isDark ? Colors.white : AppColors.slate900,
+        ),
+      ),
+      content: Text(
+        'This removes the conversation and messages for both people.',
+        style: GoogleFonts.plusJakartaSans(
+          fontSize: 13,
+          fontWeight: FontWeight.w500,
+          color: const Color(0xFF94A3B8),
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(ctx),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          onPressed: () async {
+            Navigator.pop(ctx);
+            await state.deleteConversation(conversationId);
+          },
+          style: FilledButton.styleFrom(
+            backgroundColor: const Color(0xFFDC2626),
+          ),
+          child: const Text('Delete'),
+        ),
+      ],
+    ),
+  );
 }
 
 class _LimitIndicator extends StatelessWidget {

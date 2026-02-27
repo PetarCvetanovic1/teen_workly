@@ -95,6 +95,11 @@ class ConversationsScreen extends StatelessWidget {
                             preview: conv.lastMessagePreview,
                             time: conv.lastMessageTime,
                             isDark: isDark,
+                            onDelete: () => _confirmDeleteConversation(
+                              context,
+                              conversationId: conv.id,
+                              isDark: isDark,
+                            ),
                             onTap: () => Navigator.of(context).push(
                               SmoothPageRoute(
                                 builder: (_) =>
@@ -118,12 +123,55 @@ class ConversationsScreen extends StatelessWidget {
   }
 }
 
+Future<void> _confirmDeleteConversation(
+  BuildContext context, {
+  required String conversationId,
+  required bool isDark,
+}) async {
+  final approved = await showDialog<bool>(
+    context: context,
+    builder: (ctx) => AlertDialog(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+      backgroundColor: isDark ? const Color(0xFF1E293B) : Colors.white,
+      title: Text(
+        'Delete conversation?',
+        style: GoogleFonts.plusJakartaSans(
+          fontWeight: FontWeight.w800,
+          color: isDark ? Colors.white : AppColors.slate900,
+        ),
+      ),
+      content: Text(
+        'This removes the conversation and messages for both people.',
+        style: GoogleFonts.plusJakartaSans(
+          fontSize: 13,
+          fontWeight: FontWeight.w500,
+          color: const Color(0xFF94A3B8),
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(ctx, false),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          onPressed: () => Navigator.pop(ctx, true),
+          style: FilledButton.styleFrom(backgroundColor: const Color(0xFFDC2626)),
+          child: const Text('Delete'),
+        ),
+      ],
+    ),
+  );
+  if (approved != true || !context.mounted) return;
+  await context.read<AppState>().deleteConversation(conversationId);
+}
+
 class _ConversationTile extends StatelessWidget {
   final String name;
   final String? context;
   final String preview;
   final DateTime? time;
   final bool isDark;
+  final VoidCallback onDelete;
   final VoidCallback onTap;
 
   const _ConversationTile({
@@ -132,6 +180,7 @@ class _ConversationTile extends StatelessWidget {
     required this.preview,
     this.time,
     required this.isDark,
+    required this.onDelete,
     required this.onTap,
   });
 
@@ -234,6 +283,15 @@ class _ConversationTile extends StatelessWidget {
                 ),
               ),
               const SizedBox(width: 8),
+              IconButton(
+                onPressed: onDelete,
+                icon: const Icon(
+                  Icons.delete_outline_rounded,
+                  size: 18,
+                  color: Color(0xFFDC2626),
+                ),
+                tooltip: 'Delete conversation',
+              ),
               Icon(
                 Icons.chevron_right_rounded,
                 color: isDark ? const Color(0xFF334155) : AppColors.slate200,

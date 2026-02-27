@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import '../app_colors.dart';
 import '../models/models.dart';
 import '../state/app_state.dart';
+import '../services/location_service.dart';
 import '../services/moderation.dart';
 import '../widgets/app_drawer.dart';
 import '../widgets/tw_app_bar.dart';
@@ -82,7 +83,6 @@ class _PostServiceScreenState extends State<PostServiceScreen> {
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final state = context.watch<AppState>();
-    final neighborhoodLocked = state.userLocationText.isNotEmpty;
 
     return Scaffold(
       appBar: TwAppBar(
@@ -171,19 +171,16 @@ class _PostServiceScreenState extends State<PostServiceScreen> {
                         controller: _locationCtrl,
                         hint: 'e.g. Waterloo, ON',
                         isDark: isDark,
-                        readOnly: neighborhoodLocked,
                       ),
-                      if (neighborhoodLocked) ...[
-                        const SizedBox(height: 6),
-                        Text(
-                          'Neighborhood is locked to your selected work location.',
-                          style: GoogleFonts.plusJakartaSans(
-                            fontSize: 11,
-                            fontWeight: FontWeight.w600,
-                            color: const Color(0xFF94A3B8),
-                          ),
+                      const SizedBox(height: 6),
+                      Text(
+                        'You can offer service at nearby places (like a library), up to 10 km from your map home location.',
+                        style: GoogleFonts.plusJakartaSans(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                          color: const Color(0xFF94A3B8),
                         ),
-                      ],
+                      ),
                       const SizedBox(height: 24),
                       _label('WHAT CAN YOU DO?'),
                       const SizedBox(height: 8),
@@ -703,6 +700,19 @@ class _PostServiceScreenState extends State<PostServiceScreen> {
           ],
         ),
       );
+      return;
+    }
+
+    final homeLocation = appState.userLocationText.isNotEmpty
+        ? appState.userLocationText
+        : (appState.profile?.location ?? '');
+    final locationValidation = await LocationService.validateWithinHomeRadius(
+      homeLocation: homeLocation,
+      postingLocation: _locationCtrl.text.trim(),
+    );
+    if (locationValidation != null) {
+      if (!mounted) return;
+      _showModerationWarning(locationValidation);
       return;
     }
 
