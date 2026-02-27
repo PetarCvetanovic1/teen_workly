@@ -482,7 +482,12 @@ class AppState extends ChangeNotifier {
         await googleSignIn.initialize();
         // Keep last Google session on device so returning users don't need
         // to re-enter email/password every time.
-        final account = googleSignIn.currentUser ?? await googleSignIn.authenticate();
+        GoogleSignInAccount? account;
+        final lightAuth = googleSignIn.attemptLightweightAuthentication();
+        if (lightAuth != null) {
+          account = await lightAuth;
+        }
+        account ??= await googleSignIn.authenticate();
         final auth = account.authentication;
         final credential = GoogleAuthProvider.credential(
           idToken: auth.idToken,
