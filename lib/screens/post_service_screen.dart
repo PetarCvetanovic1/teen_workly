@@ -68,17 +68,29 @@ class _PostServiceScreenState extends State<PostServiceScreen> {
   void didChangeDependencies() {
     super.didChangeDependencies();
     if (!_prefilled) {
+      _prefilled = true;
       final state = context.read<AppState>();
-      final loc = state.userLocationText.isNotEmpty
-          ? state.userLocationText
-          : state.profile?.location ?? '';
-      if (loc.isNotEmpty && _locationCtrl.text.isEmpty) {
-        _locationCtrl.text = loc;
-      }
       if (state.isLoggedIn && _nameCtrl.text.isEmpty) {
         _nameCtrl.text = state.currentUserName;
       }
-      _prefilled = true;
+      Future.microtask(_prefillLocationField);
+    }
+  }
+
+  Future<void> _prefillLocationField() async {
+    if (_locationCtrl.text.isNotEmpty) return;
+    final postal = await LocationService.fetchCurrentPostalCode();
+    if (!mounted) return;
+    if (postal != null && postal.isNotEmpty) {
+      _locationCtrl.text = postal;
+      return;
+    }
+    final state = context.read<AppState>();
+    final loc = state.userLocationText.isNotEmpty
+        ? state.userLocationText
+        : state.profile?.location ?? '';
+    if (loc.isNotEmpty && _locationCtrl.text.isEmpty) {
+      _locationCtrl.text = loc;
     }
   }
 

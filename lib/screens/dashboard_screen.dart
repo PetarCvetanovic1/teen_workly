@@ -21,7 +21,7 @@ class DashboardScreen extends StatefulWidget {
 }
 
 class _DashboardScreenState extends State<DashboardScreen> {
-  bool _hideCompletedItems = false;
+  bool _hideCompletedItems = true;
   bool _loginRedirectQueued = false;
 
   void _queueLoginRedirectIfNeeded(AppState state) {

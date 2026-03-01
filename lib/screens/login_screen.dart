@@ -16,7 +16,8 @@ import 'terms_screen.dart';
 
 bool _shouldRetryGoogleWithPicker(String error) {
   final e = error.toLowerCase();
-  if (e.contains('canceled')) return false;
+  // Don't auto-retry on canceled, it causes double account-picker prompts.
+  if (e.contains('canceled') || e.contains('cancelled')) return false;
   return e.contains('mismatch') ||
       e.contains('interrupted') ||
       e.contains('temporary') ||

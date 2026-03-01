@@ -40,6 +40,8 @@ const _categories = [
   'Other',
 ];
 
+enum _BrowseContentType { all, jobs, services }
+
 class _PlaceSuggestion {
   final String label;
   final LatLng point;
@@ -155,6 +157,7 @@ class JobsScreen extends StatefulWidget {
 
 class _JobsScreenState extends State<JobsScreen> {
   int _selectedCategory = 0;
+  _BrowseContentType _contentType = _BrowseContentType.all;
   bool _isMapView = false;
   double _radiusKm = 5.0;
   LatLng? _userLocation;
@@ -427,12 +430,15 @@ class _JobsScreenState extends State<JobsScreen> {
           final isAll = filter == 'All';
 
           final myId = state.currentUserId;
-          final openJobs = state.jobs
-              .where((j) => j.status == JobStatus.open && j.posterId != myId)
+          final openOrInProgressJobs = state.jobs
+              .where(
+                (j) =>
+                    j.status != JobStatus.completed && j.posterId != myId,
+              )
               .toList();
           final filteredJobs = isAll
-              ? openJobs
-              : openJobs.where((j) => j.services.any(
+              ? openOrInProgressJobs
+              : openOrInProgressJobs.where((j) => j.services.any(
                     (s) => s.toLowerCase().contains(filter.toLowerCase()),
                   )).toList();
 
@@ -445,10 +451,23 @@ class _JobsScreenState extends State<JobsScreen> {
                         (sk) => sk.toLowerCase().contains(filter.toLowerCase()),
                       ) && s.providerId != myId).toList();
 
-          final totalCount = filteredJobs.length + filteredServices.length;
+          final showJobs = _contentType != _BrowseContentType.services;
+          final showServices = _contentType != _BrowseContentType.jobs;
+          final visibleJobs = showJobs ? filteredJobs : const <Job>[];
+          final visibleServices = showServices ? filteredServices : const <Service>[];
+
+          final openOpportunities = visibleJobs
+              .where(
+                (j) =>
+                    j.status == JobStatus.open &&
+                    !j.applicantIds.contains(myId) &&
+                    j.hiredId != myId,
+              )
+              .length;
+          final totalCount = openOpportunities + visibleServices.length;
           final workLocation = state.userLocationText;
           if (_isMapView) {
-            Future.microtask(() => _syncJobMarkers(filteredJobs));
+            Future.microtask(() => _syncJobMarkers(visibleJobs));
           }
           return Column(
             children: [
@@ -457,6 +476,15 @@ class _JobsScreenState extends State<JobsScreen> {
                 isDark,
                 totalCount,
                 workLocation: workLocation,
+                contentType: _contentType,
+                onContentTypeChanged: (next) {
+                  setState(() {
+                    _contentType = next;
+                    if (_contentType == _BrowseContentType.services) {
+                      _isMapView = false;
+                    }
+                  });
+                },
               ),
               Expanded(
                 child: _isMapView
@@ -464,18 +492,19 @@ class _JobsScreenState extends State<JobsScreen> {
                         isDark: isDark,
                         radiusKm: _radiusKm,
                         userLocation: _userLocation,
-                        jobs: filteredJobs,
+                        jobs: visibleJobs,
                         jobMarkers: _jobMarkers,
                         onRadiusChanged: (v) => setState(() => _radiusKm = v),
                         onDetectLocation: _detectGPS,
                         locationLoading: _locationLoading,
                       )
-                    : (filteredJobs.isEmpty && filteredServices.isEmpty)
+                    : (visibleJobs.isEmpty && visibleServices.isEmpty)
                         ? const _EmptyState()
                         : _ListingsView(
-                            jobs: filteredJobs,
-                            services: filteredServices,
+                            jobs: visibleJobs,
+                            services: visibleServices,
                             isDark: isDark,
+                            currentUserId: myId,
                           ),
               ),
             ],
@@ -490,6 +519,8 @@ class _JobsScreenState extends State<JobsScreen> {
     bool isDark,
     int totalCount, {
     required String workLocation,
+    required _BrowseContentType contentType,
+    required ValueChanged<_BrowseContentType> onContentTypeChanged,
   }) {
     return Container(
       color: isDark ? AppColors.slate950 : Colors.white,
@@ -586,6 +617,31 @@ class _JobsScreenState extends State<JobsScreen> {
                       ],
                     ),
                   ),
+              ],
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(24, 0, 24, 8),
+            child: Wrap(
+              spacing: 10,
+              runSpacing: 8,
+              children: [
+                ChoiceChip(
+                  label: const Text('All'),
+                  selected: contentType == _BrowseContentType.all,
+                  onSelected: (_) => onContentTypeChanged(_BrowseContentType.all),
+                ),
+                ChoiceChip(
+                  label: const Text('Jobs'),
+                  selected: contentType == _BrowseContentType.jobs,
+                  onSelected: (_) => onContentTypeChanged(_BrowseContentType.jobs),
+                ),
+                ChoiceChip(
+                  label: const Text('Services'),
+                  selected: contentType == _BrowseContentType.services,
+                  onSelected: (_) =>
+                      onContentTypeChanged(_BrowseContentType.services),
+                ),
               ],
             ),
           ),
@@ -1424,11 +1480,13 @@ class _ListingsView extends StatelessWidget {
   final List<Job> jobs;
   final List<Service> services;
   final bool isDark;
+  final String currentUserId;
 
   const _ListingsView({
     required this.jobs,
     required this.services,
     required this.isDark,
+    required this.currentUserId,
   });
 
   @override
@@ -1452,7 +1510,7 @@ class _ListingsView extends StatelessWidget {
         ],
         if (jobs.isNotEmpty) ...[
           Text(
-            'OPEN JOBS',
+            'JOB LISTINGS',
             style: GoogleFonts.plusJakartaSans(
               fontSize: 10,
               fontWeight: FontWeight.w800,
@@ -1461,7 +1519,13 @@ class _ListingsView extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 10),
-          ...jobs.map((j) => _JobListTile(job: j, isDark: isDark)),
+          ...jobs.map(
+            (j) => _JobListTile(
+              job: j,
+              isDark: isDark,
+              currentUserId: currentUserId,
+            ),
+          ),
         ],
       ],
     );
@@ -1608,7 +1672,28 @@ class _ServiceListTile extends StatelessWidget {
 class _JobListTile extends StatelessWidget {
   final Job job;
   final bool isDark;
-  const _JobListTile({required this.job, required this.isDark});
+  final String currentUserId;
+  const _JobListTile({
+    required this.job,
+    required this.isDark,
+    required this.currentUserId,
+  });
+
+  String _statusLabel() {
+    if (job.status == JobStatus.inProgress) {
+      return job.hiredId == currentUserId ? 'You are hired' : 'In progress';
+    }
+    if (job.status == JobStatus.pendingCompletion) return 'Pending completion';
+    if (job.applicantIds.contains(currentUserId)) return 'Applied';
+    return 'Open';
+  }
+
+  Color _statusColor() {
+    if (job.status == JobStatus.inProgress) return const Color(0xFF7C3AED);
+    if (job.status == JobStatus.pendingCompletion) return const Color(0xFFF59E0B);
+    if (job.applicantIds.contains(currentUserId)) return const Color(0xFF2563EB);
+    return const Color(0xFF059669);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -1717,6 +1802,22 @@ class _JobListTile extends StatelessWidget {
                                 ),
                               ),
                             ),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 8, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: _statusColor().withValues(alpha: 0.12),
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                            child: Text(
+                              _statusLabel(),
+                              style: GoogleFonts.plusJakartaSans(
+                                fontSize: 10,
+                                fontWeight: FontWeight.w700,
+                                color: _statusColor(),
+                              ),
+                            ),
+                          ),
                         ],
                       ),
                     ],

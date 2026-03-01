@@ -576,25 +576,30 @@ class AppState extends ChangeNotifier {
   }
 
   Future<String?> loginWithGoogle({bool forceAccountPicker = false}) async {
+    final googleSignIn = GoogleSignIn.instance;
     try {
       UserCredential cred;
       if (kIsWeb) {
         final provider = GoogleAuthProvider();
         cred = await _auth.signInWithPopup(provider);
       } else {
-        final googleSignIn = GoogleSignIn.instance;
         await googleSignIn.initialize(
           serverClientId: _googleServerClientId,
         );
         // Keep last Google session on device so returning users don't need
         // to re-enter email/password every time.
-        GoogleSignInAccount account;
+        GoogleSignInAccount? account;
         if (forceAccountPicker) {
           try {
             await googleSignIn.signOut();
           } catch (_) {}
         }
-        account = await googleSignIn.authenticate();
+        if (!forceAccountPicker) {
+          try {
+            account = await googleSignIn.attemptLightweightAuthentication();
+          } catch (_) {}
+        }
+        account ??= await googleSignIn.authenticate();
         final auth = account.authentication;
         if (auth.idToken == null || auth.idToken!.isEmpty) {
           return 'Google sign-in did not return a valid ID token. '
@@ -609,15 +614,71 @@ class AppState extends ChangeNotifier {
       final user = cred.user;
       if (user == null) return 'Google sign in failed: no user returned.';
 
-      await _syncProfileForCurrentUser(
+      return await _finalizeAuthSession(
+        credential: cred,
         preferredName: user.displayName,
         authProvider: 'google.com',
         touchLogin: true,
       );
-      return null;
     } on GoogleSignInException catch (e) {
       switch (e.code) {
         case GoogleSignInExceptionCode.canceled:
+          // Some Android builds report "canceled" even though account selection
+          // just succeeded. Give Firebase a brief moment to settle currentUser.
+          for (var i = 0; i < 5; i++) {
+            await Future<void>.delayed(const Duration(milliseconds: 180));
+            final settled = _auth.currentUser;
+            if (settled == null) continue;
+            final hasGoogleProvider = settled.providerData.any(
+              (p) => p.providerId == 'google.com',
+            );
+            if (!hasGoogleProvider) continue;
+            await _syncProfileForCurrentUser(
+              preferredName: settled.displayName,
+              authProvider: 'google.com',
+              touchLogin: true,
+            );
+            return null;
+          }
+          // If plugin reports canceled but Firebase already has a Google session,
+          // continue and treat this as successful sign-in.
+          final active = _auth.currentUser;
+          if (active != null) {
+            final hasGoogleProvider = active.providerData.any(
+              (p) => p.providerId == 'google.com',
+            );
+            if (hasGoogleProvider) {
+              await _syncProfileForCurrentUser(
+                preferredName: active.displayName,
+                authProvider: 'google.com',
+                touchLogin: true,
+              );
+              return null;
+            }
+          }
+          // Some Android devices can return "canceled" after account selection.
+          // If a lightweight session exists, continue sign-in instead of failing.
+          try {
+            final recovered = await googleSignIn.attemptLightweightAuthentication();
+            if (recovered != null) {
+              final auth = recovered.authentication;
+              if (auth.idToken != null && auth.idToken!.isNotEmpty) {
+                final credential = GoogleAuthProvider.credential(
+                  idToken: auth.idToken,
+                );
+                final cred = await _auth.signInWithCredential(credential);
+                final user = cred.user;
+                if (user != null) {
+                  return await _finalizeAuthSession(
+                    credential: cred,
+                    preferredName: user.displayName,
+                    authProvider: 'google.com',
+                    touchLogin: true,
+                  );
+                }
+              }
+            }
+          } catch (_) {}
           return 'Google sign-in was canceled.';
         case GoogleSignInExceptionCode.interrupted:
           return 'Google sign-in was interrupted. Try again.';

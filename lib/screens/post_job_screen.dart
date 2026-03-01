@@ -64,14 +64,25 @@ class _PostJobScreenState extends State<PostJobScreen> {
   void didChangeDependencies() {
     super.didChangeDependencies();
     if (!_locationPrefilled) {
-      final state = context.read<AppState>();
-      final loc = state.userLocationText.isNotEmpty
-          ? state.userLocationText
-          : state.profile?.location ?? '';
-      if (loc.isNotEmpty && _locationCtrl.text.isEmpty) {
-        _locationCtrl.text = loc;
-      }
       _locationPrefilled = true;
+      Future.microtask(_prefillLocationField);
+    }
+  }
+
+  Future<void> _prefillLocationField() async {
+    if (_locationCtrl.text.isNotEmpty) return;
+    final postal = await LocationService.fetchCurrentPostalCode();
+    if (!mounted) return;
+    if (postal != null && postal.isNotEmpty) {
+      _locationCtrl.text = postal;
+      return;
+    }
+    final state = context.read<AppState>();
+    final loc = state.userLocationText.isNotEmpty
+        ? state.userLocationText
+        : state.profile?.location ?? '';
+    if (loc.isNotEmpty && _locationCtrl.text.isEmpty) {
+      _locationCtrl.text = loc;
     }
   }
 
