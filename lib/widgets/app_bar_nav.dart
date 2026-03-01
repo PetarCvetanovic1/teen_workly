@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import '../utils/smooth_route.dart';
+import '../utils/auth_navigation.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../app_colors.dart';
 import '../screens/jobs_screen.dart';
@@ -7,6 +7,7 @@ import '../screens/post_job_screen.dart';
 import '../screens/post_service_screen.dart';
 import '../screens/dashboard_screen.dart';
 import '../screens/huddle_screen.dart';
+import '../screens/conversations_screen.dart';
 
 DateTime? _lastNavTapAt;
 
@@ -35,12 +36,12 @@ class AppBarNav extends StatelessWidget implements PreferredSizeWidget {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final compact = MediaQuery.of(context).size.width < 600;
+    final compact = MediaQuery.of(context).size.width < 750;
 
-    void replaceTopLevel(Widget page) {
+    void replaceTopLevel(Widget page, {bool requiresAuth = false}) {
       if (!_canNavigateFromTopNav()) return;
       Navigator.of(context).pushReplacement(
-        SmoothPageRoute(builder: (_) => page),
+        appRoute(builder: (_) => page, requiresAuth: requiresAuth),
       );
     }
 
@@ -69,7 +70,10 @@ class AppBarNav extends StatelessWidget implements PreferredSizeWidget {
               icon: Icons.add_rounded,
               color: AppColors.indigo600,
               compact: compact,
-              onTap: () => replaceTopLevel(const PostJobScreen()),
+              onTap: () => replaceTopLevel(
+                const PostJobScreen(),
+                requiresAuth: true,
+              ),
               isDark: isDark,
             ),
             const SizedBox(width: 4),
@@ -78,7 +82,10 @@ class AppBarNav extends StatelessWidget implements PreferredSizeWidget {
               icon: Icons.groups_rounded,
               color: const Color(0xFFF59E0B),
               compact: compact,
-              onTap: () => replaceTopLevel(const HuddleScreen()),
+              onTap: () => replaceTopLevel(
+                const HuddleScreen(),
+                requiresAuth: true,
+              ),
               isDark: isDark,
             ),
             const SizedBox(width: 4),
@@ -87,7 +94,10 @@ class AppBarNav extends StatelessWidget implements PreferredSizeWidget {
               icon: Icons.handyman_rounded,
               color: const Color(0xFF059669),
               compact: compact,
-              onTap: () => replaceTopLevel(const PostServiceScreen()),
+              onTap: () => replaceTopLevel(
+                const PostServiceScreen(),
+                requiresAuth: true,
+              ),
               isDark: isDark,
             ),
             const SizedBox(width: 4),
@@ -105,7 +115,22 @@ class AppBarNav extends StatelessWidget implements PreferredSizeWidget {
               icon: Icons.dashboard_rounded,
               color: const Color(0xFFEA580C),
               compact: compact,
-              onTap: () => replaceTopLevel(const DashboardScreen()),
+              onTap: () => replaceTopLevel(
+                const DashboardScreen(),
+                requiresAuth: true,
+              ),
+              isDark: isDark,
+            ),
+            const SizedBox(width: 4),
+            _NavChip(
+              label: 'Messages',
+              icon: Icons.chat_rounded,
+              color: const Color(0xFF0EA5E9),
+              compact: compact,
+              onTap: () => replaceTopLevel(
+                const ConversationsScreen(),
+                requiresAuth: true,
+              ),
               isDark: isDark,
             ),
           ],

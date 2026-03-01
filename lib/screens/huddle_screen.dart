@@ -11,6 +11,7 @@ import '../widgets/app_drawer.dart';
 import '../widgets/tw_app_bar.dart';
 import '../utils/smooth_route.dart';
 import 'home_screen.dart';
+import 'login_screen.dart';
 
 class HuddleScreen extends StatefulWidget {
   const HuddleScreen({super.key});
@@ -22,12 +23,32 @@ class HuddleScreen extends StatefulWidget {
 class _HuddleScreenState extends State<HuddleScreen> {
   HuddleTag? _filterTag;
   bool _newPostSheetOpen = false;
+  bool _loginRedirectQueued = false;
+
+  void _queueLoginRedirectIfNeeded(AppState state) {
+    if (_loginRedirectQueued || state.isLoggedIn) return;
+    _loginRedirectQueued = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      Navigator.of(context).pushAndRemoveUntil(
+        SmoothPageRoute(builder: (_) => const LoginScreen()),
+        (_) => false,
+      );
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final theme = Theme.of(context);
     final keyboardOpen = MediaQuery.of(context).viewInsets.bottom > 0;
+    final state = context.watch<AppState>();
+    _queueLoginRedirectIfNeeded(state);
+    if (!state.isLoggedIn) {
+      return const Scaffold(
+        body: Center(child: CircularProgressIndicator()),
+      );
+    }
 
     return Scaffold(
       appBar: TwAppBar(
@@ -888,10 +909,10 @@ class _NewPostSheetState extends State<_NewPostSheet> {
           tag: _selectedTag,
           ageGroup: widget.ageGroup,
         );
-    if (!context.mounted) return;
+    if (!mounted) return;
     Navigator.pop(context);
 
-    if (wasCleaned && context.mounted) {
+    if (wasCleaned) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(

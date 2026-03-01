@@ -122,6 +122,38 @@ async function runGeminiSafetyCheck(text, apiKey) {
   };
 }
 
+async function validateSafetyOrThrow(text) {
+  const normalized = String(text || "").trim();
+  if (!normalized) {
+    throw new HttpsError("invalid-argument", "Text is required.");
+  }
+  if (normalized.length > 8000) {
+    throw new HttpsError("invalid-argument", "Text is too long.");
+  }
+
+  const openAiKey = openAiApiKey.value();
+  const geminiKey = geminiApiKey.value();
+  if (!openAiKey || !geminiKey) {
+    throw new HttpsError(
+        "failed-precondition",
+        "Safety keys are not configured on backend.",
+    );
+  }
+
+  const openAiResult = await runOpenAiModeration(normalized, openAiKey);
+  if (!openAiResult.safe) {
+    throw new HttpsError("permission-denied", openAiResult.reason);
+  }
+
+  const geminiResult = await runGeminiSafetyCheck(normalized, geminiKey);
+  if (!geminiResult.safe) {
+    throw new HttpsError(
+        "permission-denied",
+        geminiResult.reason || "Blocked by TeenWorkly safety policy.",
+    );
+  }
+}
+
 exports.validatePost = onCall(
     {secrets: [openAiApiKey, geminiApiKey]},
     async (request) => {
@@ -170,6 +202,278 @@ exports.validatePost = onCall(
             `Safety validation failed: ${e?.message || String(e)}`,
         );
       }
+    },
+);
+
+exports.createJob = onCall(
+    {secrets: [openAiApiKey, geminiApiKey]},
+    async (request) => {
+      if (!request.auth) {
+        throw new HttpsError("unauthenticated", "Sign in required.");
+      }
+      const uid = request.auth.uid;
+      const job = request.data?.job || {};
+      const id = String(job.id || "").trim();
+      const title = String(job.title || "").trim();
+      const type = String(job.type || "").trim();
+      const location = String(job.location || "").trim();
+      const description = String(job.description || "").trim();
+      const posterId = String(job.posterId || "").trim();
+      const posterName = String(job.posterName || "").trim();
+      const services = Array.isArray(job.services) ? job.services : [];
+      const otherService = job.otherService == null ? null :
+        String(job.otherService).trim();
+      const payment = Number(job.payment || 0);
+      const createdAtMs = Number(job.createdAtMs || Date.now());
+
+      if (!id || !title || !type || !location || !description || !posterName) {
+        throw new HttpsError("invalid-argument", "Missing required job fields.");
+      }
+      if (posterId !== uid) {
+        throw new HttpsError("permission-denied", "Poster mismatch.");
+      }
+      if (description.length < 8) {
+        throw new HttpsError("invalid-argument", "Description is too short.");
+      }
+      if (!Number.isFinite(payment) || payment < 5 || payment > 5000) {
+        throw new HttpsError("invalid-argument", "Invalid payment amount.");
+      }
+
+      const moderationText = [
+        `Title: ${title}`,
+        `Type: ${type}`,
+        `Location: ${location}`,
+        `Description: ${description}`,
+        `Services: ${services.join(", ")}`,
+        otherService ? `Other Service: ${otherService}` : "",
+      ].filter(Boolean).join("\n");
+      await validateSafetyOrThrow(moderationText);
+
+      await db.collection("jobs").doc(id).set({
+        title,
+        type,
+        location,
+        description,
+        services: services.map((s) => String(s)),
+        otherService,
+        posterId: uid,
+        posterName,
+        createdAt: admin.firestore.Timestamp.fromMillis(createdAtMs),
+        applicantIds: [],
+        applicantNames: [],
+        hiredId: null,
+        hiredName: null,
+        status: "open",
+        payment,
+      }, {merge: false});
+
+      return {ok: true};
+    },
+);
+
+exports.createService = onCall(
+    {secrets: [openAiApiKey, geminiApiKey]},
+    async (request) => {
+      if (!request.auth) {
+        throw new HttpsError("unauthenticated", "Sign in required.");
+      }
+      const uid = request.auth.uid;
+      const service = request.data?.service || {};
+      const id = String(service.id || "").trim();
+      const providerName = String(service.providerName || "").trim();
+      const location = String(service.location || "").trim();
+      const skills = Array.isArray(service.skills) ? service.skills : [];
+      const otherSkill = service.otherSkill == null ? null :
+        String(service.otherSkill).trim();
+      const availableDays = Array.isArray(service.availableDays) ?
+        service.availableDays : [];
+      const startHour = Number(service.startHour ?? 9);
+      const startMinute = Number(service.startMinute ?? 0);
+      const endHour = Number(service.endHour ?? 17);
+      const endMinute = Number(service.endMinute ?? 0);
+      const bio = String(service.bio || "").trim();
+      const providerId = String(service.providerId || "").trim();
+      const createdAtMs = Number(service.createdAtMs || Date.now());
+      const minPrice = Number(service.minPrice || 0);
+      const maxPrice = Number(service.maxPrice || 0);
+
+      if (!id || !providerName || !location || !bio) {
+        throw new HttpsError("invalid-argument", "Missing required service fields.");
+      }
+      if (providerId !== uid) {
+        throw new HttpsError("permission-denied", "Provider mismatch.");
+      }
+      if (bio.length < 8) {
+        throw new HttpsError("invalid-argument", "Bio is too short.");
+      }
+      if (!Number.isFinite(minPrice) || !Number.isFinite(maxPrice) ||
+          minPrice < 0 || maxPrice < minPrice) {
+        throw new HttpsError("invalid-argument", "Invalid price range.");
+      }
+
+      const moderationText = [
+        `Name: ${providerName}`,
+        `Location: ${location}`,
+        `Skills: ${skills.join(", ")}`,
+        otherSkill ? `Other skill: ${otherSkill}` : "",
+        `Bio: ${bio}`,
+      ].filter(Boolean).join("\n");
+      await validateSafetyOrThrow(moderationText);
+
+      await db.collection("services").doc(id).set({
+        providerName,
+        location,
+        skills: skills.map((s) => String(s)),
+        otherSkill,
+        availableDays: availableDays.map((d) => String(d)),
+        startHour,
+        startMinute,
+        endHour,
+        endMinute,
+        bio,
+        providerId: uid,
+        createdAt: admin.firestore.Timestamp.fromMillis(createdAtMs),
+        minPrice,
+        maxPrice,
+      }, {merge: false});
+
+      return {ok: true};
+    },
+);
+
+exports.sendConversationMessage = onCall(
+    {secrets: [openAiApiKey, geminiApiKey]},
+    async (request) => {
+      if (!request.auth) {
+        throw new HttpsError("unauthenticated", "Sign in required.");
+      }
+      const uid = request.auth.uid;
+      const conversationId = String(request.data?.conversationId || "").trim();
+      const message = request.data?.message || {};
+      const id = String(message.id || "").trim();
+      const senderId = String(message.senderId || "").trim();
+      const senderName = String(message.senderName || "").trim();
+      const text = String(message.text || "").trim();
+      const timestampMs = Number(message.timestampMs || Date.now());
+
+      if (!conversationId || !id || !senderName || !text) {
+        throw new HttpsError("invalid-argument", "Missing required message fields.");
+      }
+      if (senderId !== uid) {
+        throw new HttpsError("permission-denied", "Sender mismatch.");
+      }
+      await validateSafetyOrThrow(text);
+
+      const convRef = db.collection("conversations").doc(conversationId);
+      const convSnap = await convRef.get();
+      if (!convSnap.exists) {
+        throw new HttpsError("not-found", "Conversation not found.");
+      }
+      const conv = convSnap.data() || {};
+      const participants = Array.isArray(conv.participants) ?
+        conv.participants.map((p) => String(p)) : [];
+      if (!participants.includes(uid)) {
+        throw new HttpsError("permission-denied", "Not a participant.");
+      }
+
+      const ts = admin.firestore.Timestamp.fromMillis(timestampMs);
+      const batch = db.batch();
+      const msgRef = convRef.collection("messages").doc(id);
+      batch.set(msgRef, {
+        senderId: uid,
+        senderName,
+        text,
+        timestamp: ts,
+      });
+      batch.update(convRef, {
+        lastMessageAt: ts,
+        lastMessageText: text,
+        [`typingBy.${uid}`]: false,
+        [`lastSeenBy.${uid}`]: ts,
+      });
+      await batch.commit();
+      return {ok: true};
+    },
+);
+
+exports.createHuddlePost = onCall(
+    {secrets: [openAiApiKey, geminiApiKey]},
+    async (request) => {
+      if (!request.auth) {
+        throw new HttpsError("unauthenticated", "Sign in required.");
+      }
+      const uid = request.auth.uid;
+      const post = request.data?.post || {};
+      const id = String(post.id || "").trim();
+      const authorId = String(post.authorId || "").trim();
+      const authorName = String(post.authorName || "").trim();
+      const text = String(post.text || "").trim();
+      const tag = String(post.tag || "justChatting").trim();
+      const ageGroup = String(post.ageGroup || "").trim();
+      const createdAtMs = Number(post.createdAtMs || Date.now());
+
+      if (!id || !authorName || !text || !ageGroup) {
+        throw new HttpsError("invalid-argument", "Missing required post fields.");
+      }
+      if (authorId !== uid) {
+        throw new HttpsError("permission-denied", "Author mismatch.");
+      }
+      await validateSafetyOrThrow(`${tag}\n${text}`);
+
+      await db.collection("huddle_posts").doc(id).set({
+        authorId: uid,
+        authorName,
+        text,
+        tag,
+        ageGroup,
+        createdAt: admin.firestore.Timestamp.fromMillis(createdAtMs),
+        lastReplyAt: null,
+        lastReplyAuthorId: null,
+        replyCount: 0,
+      }, {merge: false});
+      return {ok: true};
+    },
+);
+
+exports.createHuddleReply = onCall(
+    {secrets: [openAiApiKey, geminiApiKey]},
+    async (request) => {
+      if (!request.auth) {
+        throw new HttpsError("unauthenticated", "Sign in required.");
+      }
+      const uid = request.auth.uid;
+      const postId = String(request.data?.postId || "").trim();
+      const reply = request.data?.reply || {};
+      const id = String(reply.id || "").trim();
+      const authorId = String(reply.authorId || "").trim();
+      const authorName = String(reply.authorName || "").trim();
+      const text = String(reply.text || "").trim();
+      const createdAtMs = Number(reply.createdAtMs || Date.now());
+
+      if (!postId || !id || !authorName || !text) {
+        throw new HttpsError("invalid-argument", "Missing required reply fields.");
+      }
+      if (authorId !== uid) {
+        throw new HttpsError("permission-denied", "Author mismatch.");
+      }
+      await validateSafetyOrThrow(text);
+
+      await db.collection("huddle_posts")
+          .doc(postId)
+          .collection("replies")
+          .doc(id)
+          .set({
+            authorId: uid,
+            authorName,
+            text,
+            createdAt: admin.firestore.Timestamp.fromMillis(createdAtMs),
+          }, {merge: false});
+      await db.collection("huddle_posts").doc(postId).set({
+        lastReplyAt: admin.firestore.Timestamp.fromMillis(createdAtMs),
+        lastReplyAuthorId: uid,
+        replyCount: admin.firestore.FieldValue.increment(1),
+      }, {merge: true});
+      return {ok: true};
     },
 );
 

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../utils/smooth_route.dart';
@@ -6,12 +8,40 @@ import 'package:provider/provider.dart';
 import '../app_colors.dart';
 import '../state/app_state.dart';
 import '../widgets/content_wrap.dart';
+import '../services/firestore_service.dart';
 import '../services/moderation.dart';
 import '../services/email_verification.dart';
 import 'jobs_screen.dart';
+import 'terms_screen.dart';
+
+bool _shouldRetryGoogleWithPicker(String error) {
+  final e = error.toLowerCase();
+  if (e.contains('canceled')) return false;
+  return e.contains('mismatch') ||
+      e.contains('interrupted') ||
+      e.contains('temporary') ||
+      e.contains('internal') ||
+      e.contains('network');
+}
+
+Future<void> _routeAfterAuth(BuildContext context) async {
+  final state = context.read<AppState>();
+  try {
+    await state.ensureProfileLoaded();
+  } catch (_) {}
+  if (!context.mounted) return;
+  final next = state.hasAcceptedTerms
+      ? const JobsScreen()
+      : const TermsScreen();
+  Navigator.of(context).pushAndRemoveUntil(
+    SmoothPageRoute(builder: (_) => next),
+    (_) => false,
+  );
+}
 
 class LoginScreen extends StatefulWidget {
-  const LoginScreen({super.key});
+  final bool lockBackUntilAuth;
+  const LoginScreen({super.key, this.lockBackUntilAuth = false});
 
   @override
   State<LoginScreen> createState() => _LoginScreenState();
@@ -21,6 +51,7 @@ class _LoginScreenState extends State<LoginScreen> {
   final _formKey = GlobalKey<FormState>();
   final _emailCtrl = TextEditingController();
   final _passCtrl = TextEditingController();
+  final _passFocusNode = FocusNode();
   bool _obscure = true;
 
   @override
@@ -29,10 +60,7 @@ class _LoginScreenState extends State<LoginScreen> {
     Future.microtask(() {
       if (!mounted) return;
       if (FirebaseAuth.instance.currentUser != null) {
-        Navigator.of(context).pushAndRemoveUntil(
-          SmoothPageRoute(builder: (_) => const JobsScreen()),
-          (_) => false,
-        );
+        unawaited(_routeAfterAuth(context));
       }
     });
   }
@@ -41,6 +69,7 @@ class _LoginScreenState extends State<LoginScreen> {
   void dispose() {
     _emailCtrl.dispose();
     _passCtrl.dispose();
+    _passFocusNode.dispose();
     super.dispose();
   }
 
@@ -48,21 +77,25 @@ class _LoginScreenState extends State<LoginScreen> {
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
-    return Scaffold(
-      appBar: AppBar(
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back_rounded),
-          onPressed: () => Navigator.pop(context),
+    return PopScope(
+      canPop: !widget.lockBackUntilAuth,
+      child: Scaffold(
+        appBar: AppBar(
+          backgroundColor: Colors.transparent,
+          elevation: 0,
+          leading: widget.lockBackUntilAuth
+              ? null
+              : IconButton(
+                  icon: const Icon(Icons.arrow_back_rounded),
+                  onPressed: () => Navigator.pop(context),
+                ),
         ),
-      ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.symmetric(horizontal: 24),
-        child: ContentWrap(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: [
+        body: SingleChildScrollView(
+          padding: const EdgeInsets.symmetric(horizontal: 24),
+          child: ContentWrap(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
               const SizedBox(height: 32),
               Container(
                 width: 72,
@@ -131,6 +164,10 @@ class _LoginScreenState extends State<LoginScreen> {
                       isDark: isDark,
                       keyboardType: TextInputType.emailAddress,
                       icon: Icons.email_outlined,
+                      autofocus: true,
+                      textInputAction: TextInputAction.next,
+                      onFieldSubmitted: (_) =>
+                          FocusScope.of(context).requestFocus(_passFocusNode),
                       validator: _validateEmail,
                     ),
                     const SizedBox(height: 20),
@@ -138,7 +175,10 @@ class _LoginScreenState extends State<LoginScreen> {
                     const SizedBox(height: 8),
                     TextFormField(
                       controller: _passCtrl,
+                      focusNode: _passFocusNode,
                       obscureText: _obscure,
+                      textInputAction: TextInputAction.done,
+                      onFieldSubmitted: (_) => _submit(),
                       style: GoogleFonts.plusJakartaSans(
                         fontWeight: FontWeight.w600,
                         color: isDark ? Colors.white : AppColors.slate900,
@@ -309,7 +349,8 @@ class _LoginScreenState extends State<LoginScreen> {
               ],
             ),
             const SizedBox(height: 48),
-          ],
+              ],
+            ),
         ),
         ),
       ),
@@ -339,11 +380,17 @@ class _LoginScreenState extends State<LoginScreen> {
     required bool isDark,
     TextInputType? keyboardType,
     IconData? icon,
+    bool autofocus = false,
+    TextInputAction? textInputAction,
+    ValueChanged<String>? onFieldSubmitted,
     String? Function(String?)? validator,
   }) {
     return TextFormField(
       controller: controller,
       keyboardType: keyboardType,
+      autofocus: autofocus,
+      textInputAction: textInputAction,
+      onFieldSubmitted: onFieldSubmitted,
       style: GoogleFonts.plusJakartaSans(
         fontWeight: FontWeight.w600,
         color: isDark ? Colors.white : AppColors.slate900,
@@ -391,48 +438,19 @@ class _LoginScreenState extends State<LoginScreen> {
     if (!(_formKey.currentState?.validate() ?? false)) return;
 
     final email = _emailCtrl.text.trim().toLowerCase();
-    try {
-      await FirebaseAuth.instance.signInWithEmailAndPassword(
-        email: email,
-        password: _passCtrl.text,
-      );
-    } on FirebaseAuthException catch (e) {
-      if (!mounted) return;
-      String msg;
-      switch (e.code) {
-        case 'user-not-found':
-        case 'wrong-password':
-        case 'invalid-credential':
-        case 'invalid-login-credentials':
-          msg = 'Email or password is incorrect.';
-          break;
-        case 'network-request-failed':
-          msg = 'Network error. Check internet and try again.';
-          break;
-        case 'too-many-requests':
-          msg = 'Too many attempts. Please wait and try again.';
-          break;
-        default:
-          msg = 'Login failed (${e.code}).';
-      }
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(msg), backgroundColor: Colors.red),
-      );
-      return;
-    } catch (e) {
+    final error = await context.read<AppState>().login(email, _passCtrl.text);
+    if (error != null) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Login failed: $e'), backgroundColor: Colors.red),
+        SnackBar(content: Text(error), backgroundColor: Colors.red),
       );
       return;
     }
 
     if (!mounted) return;
 
-    Navigator.of(context).pushAndRemoveUntil(
-      SmoothPageRoute(builder: (_) => const JobsScreen()),
-      (_) => false,
-    );
+    await _routeAfterAuth(context);
+    if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: const Text('Welcome back!'),
@@ -457,58 +475,31 @@ class _LoginScreenState extends State<LoginScreen> {
     }
 
     try {
-      // Send Firebase email-link sign-in (no paid backend needed).
+      // Optional provider hint. If Firestore rules block unauthenticated reads,
+      // skip this check and continue with Firebase Auth reset email.
       try {
-        await FirebaseAuth.instance.sendSignInLinkToEmail(
-          email: email,
-          actionCodeSettings: ActionCodeSettings(
-            url: 'https://teenworkly.firebaseapp.com',
-            handleCodeInApp: true,
-            androidPackageName: 'com.teenworkly.app',
-            androidInstallApp: true,
-            iOSBundleId: 'com.example.teenWorkly',
-          ),
-        );
-      } on FirebaseAuthException catch (e) {
-        // Fallback without action settings if configured domains reject it.
-        if (e.code == 'invalid-continue-uri' ||
-            e.code == 'unauthorized-continue-uri' ||
-            e.code == 'missing-continue-uri') {
-          await FirebaseAuth.instance.sendSignInLinkToEmail(
-            email: email,
-            actionCodeSettings: ActionCodeSettings(
-              url: 'https://teenworkly.firebaseapp.com',
-              handleCodeInApp: true,
-              androidPackageName: 'com.teenworkly.app',
-              androidInstallApp: true,
-              iOSBundleId: 'com.example.teenWorkly',
+        final userDoc = await FirestoreService.getUserByEmail(email);
+        final provider = (userDoc?['authProvider'] ?? '').toString();
+        if (provider == 'google.com') {
+          if (!mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text(
+                'This account uses Google sign-in. Tap "Continue with Google" instead.',
+              ),
+              backgroundColor: Colors.red,
             ),
           );
-        } else {
-          rethrow;
+          return;
         }
-      }
+      } catch (_) {}
 
-      // Always send backup EmailJS mail too (this path is known working).
-      final backupCode = EmailVerificationService.generateCode();
-      await EmailVerificationService.sendVerificationEmail(
-        toEmail: email,
-        toName: 'TeenWorkly User',
-        code: backupCode,
-      );
+      await FirebaseAuth.instance.sendPasswordResetEmail(email: email);
 
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Email sent. Check inbox and spam.'),
-        ),
-      );
-      Navigator.of(context).push(
-        SmoothPageRoute(
-          builder: (_) => ResetPasswordScreen(
-            initialEmail: email,
-            codeJustSent: true,
-          ),
+          content: Text('Password reset email sent. Check inbox and spam.'),
         ),
       );
     } on FirebaseAuthException catch (e) {
@@ -552,7 +543,12 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   Future<void> _signInWithGoogle() async {
-    final error = await context.read<AppState>().loginWithGoogle();
+    final state = context.read<AppState>();
+    String? error = await state.loginWithGoogle();
+    // Recovery pass: if cached Google session is wrong/stale, force picker once.
+    if (error != null && _shouldRetryGoogleWithPicker(error)) {
+      error = await state.loginWithGoogle(forceAccountPicker: true);
+    }
     if (!mounted) return;
     final messenger = ScaffoldMessenger.of(context);
     if (error != null) {
@@ -564,10 +560,7 @@ class _LoginScreenState extends State<LoginScreen> {
     messenger.showSnackBar(
       const SnackBar(content: Text('Signed in with Google!')),
     );
-    Navigator.of(context).pushAndRemoveUntil(
-      SmoothPageRoute(builder: (_) => const JobsScreen()),
-      (_) => false,
-    );
+    await _routeAfterAuth(context);
   }
 }
 
@@ -594,10 +587,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
     Future.microtask(() {
       if (!mounted) return;
       if (FirebaseAuth.instance.currentUser != null) {
-        Navigator.of(context).pushAndRemoveUntil(
-          SmoothPageRoute(builder: (_) => const JobsScreen()),
-          (_) => false,
-        );
+        unawaited(_routeAfterAuth(context));
       }
     });
   }
@@ -1149,10 +1139,8 @@ class _SignUpScreenState extends State<SignUpScreen> {
       return;
     }
 
-    Navigator.of(context).pushAndRemoveUntil(
-      SmoothPageRoute(builder: (_) => const JobsScreen()),
-      (_) => false,
-    );
+    await _routeAfterAuth(context);
+    if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: const Text('Email verified! Welcome to TeenWorkly!'),
@@ -1164,7 +1152,11 @@ class _SignUpScreenState extends State<SignUpScreen> {
   }
 
   Future<void> _signUpWithGoogle() async {
-    final error = await context.read<AppState>().loginWithGoogle();
+    final state = context.read<AppState>();
+    String? error = await state.loginWithGoogle();
+    if (error != null && _shouldRetryGoogleWithPicker(error)) {
+      error = await state.loginWithGoogle(forceAccountPicker: true);
+    }
     if (!mounted) return;
     final messenger = ScaffoldMessenger.of(context);
     if (error != null) {
@@ -1176,10 +1168,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
     messenger.showSnackBar(
       const SnackBar(content: Text('Signed in with Google!')),
     );
-    Navigator.of(context).pushAndRemoveUntil(
-      SmoothPageRoute(builder: (_) => const JobsScreen()),
-      (_) => false,
-    );
+    await _routeAfterAuth(context);
   }
 
 }
@@ -1496,10 +1485,7 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Code accepted. You are logged in.')),
       );
-      Navigator.of(context).pushAndRemoveUntil(
-        SmoothPageRoute(builder: (_) => const JobsScreen()),
-        (_) => false,
-      );
+      await _routeAfterAuth(context);
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(

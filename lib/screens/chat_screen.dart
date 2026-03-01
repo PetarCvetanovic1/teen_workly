@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
@@ -6,6 +8,8 @@ import '../models/models.dart';
 import '../state/app_state.dart';
 import '../services/moderation.dart';
 import '../widgets/content_wrap.dart';
+import '../utils/smooth_route.dart';
+import 'login_screen.dart';
 
 class ChatScreen extends StatefulWidget {
   final String conversationId;
@@ -24,13 +28,73 @@ class ChatScreen extends StatefulWidget {
 
 class _ChatScreenState extends State<ChatScreen> {
   final _msgCtrl = TextEditingController();
+  final _msgFocusNode = FocusNode();
   final _scrollCtrl = ScrollController();
+  bool _typingSent = false;
+  DateTime? _lastSeenMarkedAt;
+  String? _lastRenderedMessageId;
+  bool _loginRedirectQueued = false;
+
+  void _queueLoginRedirectIfNeeded(AppState state) {
+    if (_loginRedirectQueued || state.isLoggedIn) return;
+    _loginRedirectQueued = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      Navigator.of(context).pushAndRemoveUntil(
+        SmoothPageRoute(builder: (_) => const LoginScreen()),
+        (_) => false,
+      );
+    });
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _msgCtrl.addListener(_onInputChanged);
+  }
 
   @override
   void dispose() {
+    _msgCtrl.removeListener(_onInputChanged);
+    unawaited(_setTyping(false));
     _msgCtrl.dispose();
+    _msgFocusNode.dispose();
     _scrollCtrl.dispose();
     super.dispose();
+  }
+
+  void _onInputChanged() {
+    final hasText = _msgCtrl.text.trim().isNotEmpty;
+    if (!hasText) {
+      unawaited(_setTyping(false));
+      return;
+    }
+    unawaited(_setTyping(true));
+  }
+
+  Future<void> _setTyping(bool isTyping) async {
+    if (_typingSent == isTyping) return;
+    _typingSent = isTyping;
+    try {
+      await context.read<AppState>().setConversationTyping(
+            widget.conversationId,
+            isTyping,
+          );
+    } catch (_) {}
+  }
+
+  void _scrollToBottom({bool animated = true}) {
+    if (!_scrollCtrl.hasClients) return;
+    final target = _scrollCtrl.position.maxScrollExtent;
+    if (!animated) {
+      _scrollCtrl.jumpTo(target);
+      return;
+    }
+    _scrollCtrl.animateTo(
+      target,
+      duration: const Duration(milliseconds: 220),
+      curve: Curves.easeOut,
+    );
   }
 
   void _send() async {
@@ -54,8 +118,13 @@ class _ChatScreenState extends State<ChatScreen> {
       return;
     }
 
+    await _setTyping(false);
+    if (!mounted) return;
     await context.read<AppState>().sendMessage(widget.conversationId, text);
     _msgCtrl.clear();
+    if (mounted) {
+      _msgFocusNode.requestFocus();
+    }
     Future.delayed(const Duration(milliseconds: 100), () {
       if (_scrollCtrl.hasClients) {
         _scrollCtrl.animateTo(
@@ -70,6 +139,13 @@ class _ChatScreenState extends State<ChatScreen> {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final authState = context.watch<AppState>();
+    _queueLoginRedirectIfNeeded(authState);
+    if (!authState.isLoggedIn) {
+      return const Scaffold(
+        body: Center(child: CircularProgressIndicator()),
+      );
+    }
 
     final state = context.read<AppState>();
     final initials = widget.otherUserName
@@ -79,72 +155,93 @@ class _ChatScreenState extends State<ChatScreen> {
         .join()
         .toUpperCase();
 
-    return Scaffold(
-      appBar: AppBar(
-        backgroundColor: isDark ? const Color(0xFF1E293B) : Colors.white,
-        elevation: 1,
-        shadowColor: Colors.black.withValues(alpha: 0.06),
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back_rounded),
-          onPressed: () => Navigator.of(context).pop(),
-        ),
-        title: Row(
-          children: [
-            Container(
-              width: 36,
-              height: 36,
-              decoration: BoxDecoration(
-                gradient: const LinearGradient(
-                  colors: [AppColors.indigo600, Color(0xFF7C3AED)],
-                ),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Center(
-                child: Text(
-                  initials,
-                  style: GoogleFonts.plusJakartaSans(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w800,
-                    color: Colors.white,
-                  ),
-                ),
-              ),
+    return StreamBuilder<Conversation?>(
+      stream: state.conversationStream(widget.conversationId),
+      builder: (context, conversationSnap) {
+        final conversation = conversationSnap.data;
+        final otherTyping = conversation != null &&
+            conversation.typingBy.entries.any(
+              (e) => e.key != state.currentUserId && e.value == true,
+            );
+        final otherSeenAt = conversation == null
+            ? null
+            : conversation.lastSeenBy[conversation.otherUserId];
+
+        return Scaffold(
+          appBar: AppBar(
+            backgroundColor: isDark ? const Color(0xFF1E293B) : Colors.white,
+            elevation: 1,
+            shadowColor: Colors.black.withValues(alpha: 0.06),
+            leading: IconButton(
+              icon: const Icon(Icons.arrow_back_rounded),
+              onPressed: () => Navigator.of(context).pop(),
             ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    widget.otherUserName,
-                    style: GoogleFonts.plusJakartaSans(
-                      fontSize: 15,
-                      fontWeight: FontWeight.w700,
-                      color: isDark ? Colors.white : AppColors.slate900,
+            title: Row(
+              children: [
+                Container(
+                  width: 36,
+                  height: 36,
+                  decoration: BoxDecoration(
+                    gradient: const LinearGradient(
+                      colors: [AppColors.indigo600, Color(0xFF7C3AED)],
                     ),
+                    borderRadius: BorderRadius.circular(12),
                   ),
-                  if (widget.contextLabel != null)
-                    Text(
-                      widget.contextLabel!,
+                  child: Center(
+                    child: Text(
+                      initials,
                       style: GoogleFonts.plusJakartaSans(
-                        fontSize: 11,
-                        fontWeight: FontWeight.w600,
-                        color: AppColors.indigo600,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w800,
+                        color: Colors.white,
                       ),
                     ),
-                ],
-              ),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        widget.otherUserName,
+                        style: GoogleFonts.plusJakartaSans(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w700,
+                          color: isDark ? Colors.white : AppColors.slate900,
+                        ),
+                      ),
+                      if (otherTyping)
+                        Text(
+                          'typing...',
+                          style: GoogleFonts.plusJakartaSans(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w700,
+                            color: const Color(0xFF7C3AED),
+                          ),
+                        )
+                      else if (widget.contextLabel != null)
+                        Text(
+                          widget.contextLabel!,
+                          style: GoogleFonts.plusJakartaSans(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
+                            color: AppColors.indigo600,
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+              ],
             ),
-          ],
-        ),
-      ),
-      body: ContentWrap(
-        child: Column(
-          children: [
-            Expanded(
-              child: StreamBuilder<List<ChatMessage>>(
-                stream: state.messagesStream(widget.conversationId),
-                builder: (context, snapshot) {
+          ),
+          body: ContentWrap(
+            child: Column(
+              children: [
+                Expanded(
+                  child: StreamBuilder<List<ChatMessage>>(
+                    stream: state.messagesStream(widget.conversationId),
+                    builder: (context, snapshot) {
                   if (snapshot.hasError) {
                     return Center(
                       child: Padding(
@@ -162,6 +259,35 @@ class _ChatScreenState extends State<ChatScreen> {
                     );
                   }
                   final messages = snapshot.data ?? [];
+                  final latestMessageId =
+                      messages.isEmpty ? null : messages.last.id;
+                  final hasNewMessage = latestMessageId != null &&
+                      latestMessageId != _lastRenderedMessageId;
+                  if (hasNewMessage) {
+                    _lastRenderedMessageId = latestMessageId;
+                    WidgetsBinding.instance.addPostFrameCallback((_) {
+                      if (!mounted) return;
+                      _scrollToBottom(
+                        animated: messages.length > 1,
+                      );
+                    });
+                  }
+                  ChatMessage? latestIncoming;
+                  for (final m in messages.reversed) {
+                    if (m.senderId != state.currentUserId) {
+                      latestIncoming = m;
+                      break;
+                    }
+                  }
+                  if (latestIncoming != null &&
+                      (_lastSeenMarkedAt == null ||
+                          latestIncoming.timestamp.isAfter(_lastSeenMarkedAt!))) {
+                    _lastSeenMarkedAt = latestIncoming.timestamp;
+                    WidgetsBinding.instance.addPostFrameCallback((_) {
+                      if (!mounted) return;
+                      unawaited(state.markConversationSeen(widget.conversationId));
+                    });
+                  }
                   if (messages.isEmpty) {
                     return Center(
                       child: Column(
@@ -192,95 +318,135 @@ class _ChatScreenState extends State<ChatScreen> {
                     itemBuilder: (context, index) {
                       final msg = messages[index];
                       final isMe = msg.senderId == state.currentUserId;
+                      final seenByOther = isMe &&
+                          otherSeenAt != null &&
+                          !msg.timestamp.isAfter(otherSeenAt);
                       return _ChatBubble(
                         text: msg.text,
                         senderName: msg.senderName,
                         isMe: isMe,
                         isDark: isDark,
                         timestamp: msg.timestamp,
+                        seenByOther: seenByOther,
                       );
                     },
                   );
                 },
               ),
             ),
-              // Input bar
-              Container(
-                padding: EdgeInsets.only(
-                  left: 16,
-                  right: 8,
-                  top: 12,
-                  bottom: 12,
-                ),
-                decoration: BoxDecoration(
-                  color: isDark ? const Color(0xFF1E293B) : Colors.white,
-                  border: Border(
-                    top: BorderSide(
-                      color: isDark
-                          ? const Color(0xFF334155)
-                          : AppColors.slate200,
+                if (otherTyping)
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                    child: Align(
+                      alignment: Alignment.centerLeft,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 8,
+                        ),
+                        decoration: BoxDecoration(
+                          color: isDark
+                              ? const Color(0xFF1E293B)
+                              : Colors.white,
+                          borderRadius: BorderRadius.circular(14),
+                          border: Border.all(
+                            color: isDark
+                                ? const Color(0xFF334155)
+                                : AppColors.slate200,
+                          ),
+                        ),
+                        child: Text(
+                          '${widget.otherUserName} is typing...',
+                          style: GoogleFonts.plusJakartaSans(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w700,
+                            color: const Color(0xFF7C3AED),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                // Input bar
+                Container(
+                  padding: EdgeInsets.only(
+                    left: 16,
+                    right: 8,
+                    top: 12,
+                    bottom: 12,
+                  ),
+                  decoration: BoxDecoration(
+                    color: isDark ? const Color(0xFF1E293B) : Colors.white,
+                    border: Border(
+                      top: BorderSide(
+                        color: isDark
+                            ? const Color(0xFF334155)
+                            : AppColors.slate200,
+                      ),
+                    ),
+                  ),
+                  child: SafeArea(
+                    top: false,
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: TextField(
+                            controller: _msgCtrl,
+                            focusNode: _msgFocusNode,
+                            style: GoogleFonts.plusJakartaSans(
+                              fontWeight: FontWeight.w500,
+                              color: isDark ? Colors.white : AppColors.slate900,
+                            ),
+                            decoration: InputDecoration(
+                              hintText: 'Type a message...',
+                              hintStyle: GoogleFonts.plusJakartaSans(
+                                fontWeight: FontWeight.w500,
+                                color: const Color(0xFF94A3B8),
+                              ),
+                              filled: true,
+                              fillColor: isDark
+                                  ? const Color(0xFF0F172A)
+                                      .withValues(alpha: 0.5)
+                                  : AppColors.slate100,
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(16),
+                                borderSide: BorderSide.none,
+                              ),
+                              contentPadding: const EdgeInsets.symmetric(
+                                horizontal: 16,
+                                vertical: 12,
+                              ),
+                            ),
+                            onChanged: (_) => _onInputChanged(),
+                            onSubmitted: (_) => _send(),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Material(
+                          color: AppColors.indigo600,
+                          borderRadius: BorderRadius.circular(14),
+                          child: InkWell(
+                            onTap: _send,
+                            borderRadius: BorderRadius.circular(14),
+                            child: const Padding(
+                              padding: EdgeInsets.all(12),
+                              child: Icon(
+                                Icons.send_rounded,
+                                color: Colors.white,
+                                size: 20,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                 ),
-                child: SafeArea(
-                  top: false,
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: TextField(
-                          controller: _msgCtrl,
-                          style: GoogleFonts.plusJakartaSans(
-                            fontWeight: FontWeight.w500,
-                            color: isDark ? Colors.white : AppColors.slate900,
-                          ),
-                          decoration: InputDecoration(
-                            hintText: 'Type a message...',
-                            hintStyle: GoogleFonts.plusJakartaSans(
-                              fontWeight: FontWeight.w500,
-                              color: const Color(0xFF94A3B8),
-                            ),
-                            filled: true,
-                            fillColor: isDark
-                                ? const Color(0xFF0F172A)
-                                    .withValues(alpha: 0.5)
-                                : AppColors.slate100,
-                            border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(16),
-                              borderSide: BorderSide.none,
-                            ),
-                            contentPadding: const EdgeInsets.symmetric(
-                              horizontal: 16,
-                              vertical: 12,
-                            ),
-                          ),
-                          onSubmitted: (_) => _send(),
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Material(
-                        color: AppColors.indigo600,
-                        borderRadius: BorderRadius.circular(14),
-                        child: InkWell(
-                          onTap: _send,
-                          borderRadius: BorderRadius.circular(14),
-                          child: const Padding(
-                            padding: EdgeInsets.all(12),
-                            child: Icon(
-                              Icons.send_rounded,
-                              color: Colors.white,
-                              size: 20,
-                            ),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ],
+              ],
+            ),
           ),
-        ),
-      );
+        );
+      },
+    );
   }
 }
 
@@ -290,6 +456,7 @@ class _ChatBubble extends StatelessWidget {
   final bool isMe;
   final bool isDark;
   final DateTime timestamp;
+  final bool seenByOther;
 
   const _ChatBubble({
     required this.text,
@@ -297,6 +464,7 @@ class _ChatBubble extends StatelessWidget {
     required this.isMe,
     required this.isDark,
     required this.timestamp,
+    this.seenByOther = false,
   });
 
   @override
@@ -367,15 +535,32 @@ class _ChatBubble extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(height: 4),
-                Text(
-                  _formatTime(timestamp),
-                  style: GoogleFonts.plusJakartaSans(
-                    fontSize: 10,
-                    fontWeight: FontWeight.w500,
-                    color: isMe
-                        ? Colors.white.withValues(alpha: 0.6)
-                        : const Color(0xFF94A3B8),
-                  ),
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      _formatTime(timestamp),
+                      style: GoogleFonts.plusJakartaSans(
+                        fontSize: 10,
+                        fontWeight: FontWeight.w500,
+                        color: isMe
+                            ? Colors.white.withValues(alpha: 0.6)
+                            : const Color(0xFF94A3B8),
+                      ),
+                    ),
+                    if (isMe) ...[
+                      const SizedBox(width: 6),
+                      Icon(
+                        seenByOther
+                            ? Icons.done_all_rounded
+                            : Icons.done_rounded,
+                        size: 14,
+                        color: seenByOther
+                            ? const Color(0xFF22C55E)
+                            : Colors.white.withValues(alpha: 0.85),
+                      ),
+                    ],
+                  ],
                 ),
               ],
             ),
@@ -386,8 +571,24 @@ class _ChatBubble extends StatelessWidget {
   }
 
   String _formatTime(DateTime dt) {
-    final h = dt.hour.toString().padLeft(2, '0');
-    final m = dt.minute.toString().padLeft(2, '0');
-    return '$h:$m';
+    const months = <String>[
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec',
+    ];
+    final month = months[dt.month - 1];
+    final day = dt.day.toString();
+    final hour = dt.hour.toString().padLeft(2, '0');
+    final minute = dt.minute.toString().padLeft(2, '0');
+    return '$month $day, $hour:$minute';
   }
 }

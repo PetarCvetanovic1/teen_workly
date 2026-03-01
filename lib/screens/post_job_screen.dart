@@ -13,6 +13,7 @@ import '../services/location_service.dart';
 import '../services/moderation.dart';
 import 'home_screen.dart';
 import 'jobs_screen.dart';
+import 'login_screen.dart';
 
 const _jobTypes = ['Part-time', 'Seasonal', 'One-time'];
 
@@ -45,6 +46,19 @@ class _PostJobScreenState extends State<PostJobScreen> {
   String _selectedType = _jobTypes.first;
   final Set<String> _selectedServices = {};
   bool _locationPrefilled = false;
+  bool _loginRedirectQueued = false;
+
+  void _queueLoginRedirectIfNeeded(AppState state) {
+    if (_loginRedirectQueued || state.isLoggedIn) return;
+    _loginRedirectQueued = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      Navigator.of(context).pushAndRemoveUntil(
+        SmoothPageRoute(builder: (_) => const LoginScreen()),
+        (_) => false,
+      );
+    });
+  }
 
   @override
   void didChangeDependencies() {
@@ -76,6 +90,13 @@ class _PostJobScreenState extends State<PostJobScreen> {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
     final state = context.watch<AppState>();
+    _queueLoginRedirectIfNeeded(state);
+
+    if (!state.isLoggedIn) {
+      return const Scaffold(
+        body: Center(child: CircularProgressIndicator()),
+      );
+    }
 
     return Scaffold(
       appBar: TwAppBar(

@@ -15,6 +15,12 @@ class UserProfile {
   DateTime? ageLastUpdatedAt;
   String? vaultGoal;
   double? vaultTargetAmount;
+  DateTime? termsAcceptedAt;
+  String? termsAcceptedVersion;
+  DateTime? liabilityWaiverAcceptedAt;
+  DateTime? riskAcknowledgedAt;
+  DateTime? guardianConsentAt;
+  DateTime? huddleRepliesSeenAt;
 
   UserProfile({
     required this.id,
@@ -29,6 +35,12 @@ class UserProfile {
     this.ageLastUpdatedAt,
     this.vaultGoal,
     this.vaultTargetAmount,
+    this.termsAcceptedAt,
+    this.termsAcceptedVersion,
+    this.liabilityWaiverAcceptedAt,
+    this.riskAcknowledgedAt,
+    this.guardianConsentAt,
+    this.huddleRepliesSeenAt,
   })  : skills = skills ?? {},
         interests = interests ?? {};
 
@@ -235,6 +247,9 @@ class HuddlePost {
   final HuddleTag tag;
   final HuddleAgeGroup ageGroup;
   final DateTime createdAt;
+  final DateTime? lastReplyAt;
+  final String? lastReplyAuthorId;
+  final int replyCount;
   final List<HuddleReply> replies;
 
   HuddlePost({
@@ -245,6 +260,9 @@ class HuddlePost {
     required this.tag,
     required this.ageGroup,
     required this.createdAt,
+    this.lastReplyAt,
+    this.lastReplyAuthorId,
+    this.replyCount = 0,
     List<HuddleReply>? replies,
   }) : replies = replies ?? [];
 }
@@ -256,6 +274,8 @@ class Conversation {
   final String? contextLabel;
   final String? lastMessageText;
   final DateTime? lastMessageAt;
+  final Map<String, bool> typingBy;
+  final Map<String, DateTime> lastSeenBy;
   final List<ChatMessage> messages;
 
   Conversation({
@@ -265,8 +285,12 @@ class Conversation {
     this.contextLabel,
     this.lastMessageText,
     this.lastMessageAt,
+    Map<String, bool>? typingBy,
+    Map<String, DateTime>? lastSeenBy,
     List<ChatMessage>? messages,
-  }) : messages = messages ?? [];
+  })  : typingBy = typingBy ?? const {},
+        lastSeenBy = lastSeenBy ?? const {},
+        messages = messages ?? [];
 
   String get lastMessagePreview {
     if (lastMessageText != null && lastMessageText!.trim().isNotEmpty) {

@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import '../utils/smooth_route.dart';
+import '../utils/auth_navigation.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import '../app_colors.dart';
@@ -38,13 +38,13 @@ class AppDrawer extends StatelessWidget {
       builder: (context, state, _) {
         final loggedIn = state.isLoggedIn;
         final profile = state.profile;
-        void replaceAfterClose(Widget page) {
+        void replaceAfterClose(Widget page, {bool requiresAuth = false}) {
           if (!_canNavigateFromDrawer()) return;
           Navigator.pop(context);
           Future.microtask(() {
             if (!context.mounted) return;
             Navigator.of(context).pushReplacement(
-              SmoothPageRoute(builder: (_) => page),
+              appRoute(builder: (_) => page, requiresAuth: requiresAuth),
             );
           });
         }
@@ -132,7 +132,7 @@ class AppDrawer extends StatelessWidget {
                   onTap: () {
                     Navigator.pop(context);
                     Navigator.of(context).pushAndRemoveUntil(
-                      SmoothPageRoute(builder: (_) => const HomeScreen()),
+                      appRoute(builder: (_) => const HomeScreen()),
                       (_) => false,
                     );
                   },
@@ -140,17 +140,26 @@ class AppDrawer extends StatelessWidget {
                 _DrawerTile(
                   icon: Icons.add_circle_outline_rounded,
                   label: 'Post a Job',
-                  onTap: () => replaceAfterClose(const PostJobScreen()),
+                  onTap: () => replaceAfterClose(
+                    const PostJobScreen(),
+                    requiresAuth: true,
+                  ),
                 ),
                 _DrawerTile(
                   icon: Icons.groups_rounded,
                   label: 'The Huddle',
-                  onTap: () => replaceAfterClose(const HuddleScreen()),
+                  onTap: () => replaceAfterClose(
+                    const HuddleScreen(),
+                    requiresAuth: true,
+                  ),
                 ),
                 _DrawerTile(
                   icon: Icons.handyman_rounded,
                   label: 'Post a Service',
-                  onTap: () => replaceAfterClose(const PostServiceScreen()),
+                  onTap: () => replaceAfterClose(
+                    const PostServiceScreen(),
+                    requiresAuth: true,
+                  ),
                 ),
                 _DrawerTile(
                   icon: Icons.search_rounded,
@@ -160,18 +169,27 @@ class AppDrawer extends StatelessWidget {
                 _DrawerTile(
                   icon: Icons.dashboard_rounded,
                   label: 'Dashboard',
-                  onTap: () => replaceAfterClose(const DashboardScreen()),
+                  onTap: () => replaceAfterClose(
+                    const DashboardScreen(),
+                    requiresAuth: true,
+                  ),
                 ),
                 _DrawerTile(
                   icon: Icons.chat_rounded,
                   label: 'Messages',
-                  onTap: () => replaceAfterClose(const ConversationsScreen()),
+                  onTap: () => replaceAfterClose(
+                    const ConversationsScreen(),
+                    requiresAuth: true,
+                  ),
                 ),
                 if (loggedIn)
                   _DrawerTile(
                     icon: Icons.person_rounded,
                     label: 'My Profile',
-                    onTap: () => replaceAfterClose(const ProfileScreen()),
+                    onTap: () => replaceAfterClose(
+                      const ProfileScreen(),
+                      requiresAuth: true,
+                    ),
                   ),
                 const Divider(height: 24),
                 _DrawerTile(
@@ -184,12 +202,12 @@ class AppDrawer extends StatelessWidget {
                   _DrawerTile(
                     icon: Icons.login_rounded,
                     label: 'Log in',
-                    onTap: () => replaceAfterClose(const LoginScreen()),
+                  onTap: () => replaceAfterClose(const LoginScreen()),
                   ),
                   _DrawerTile(
                     icon: Icons.person_add_rounded,
                     label: 'Join now',
-                    onTap: () => replaceAfterClose(const SignUpScreen()),
+                  onTap: () => replaceAfterClose(const SignUpScreen()),
                   ),
                 ],
                 if (loggedIn) ...[
@@ -204,7 +222,7 @@ class AppDrawer extends StatelessWidget {
                       await context.read<AppState>().logout();
                       if (!context.mounted) return;
                       Navigator.of(context).pushAndRemoveUntil(
-                        SmoothPageRoute(builder: (_) => const HomeScreen()),
+                        appRoute(builder: (_) => const HomeScreen()),
                         (_) => false,
                       );
                       ScaffoldMessenger.of(context).showSnackBar(

@@ -356,6 +356,15 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
                                   color: const Color(0xFFEA580C),
                                 ),
                               ),
+                              const SizedBox(height: 4),
+                              Text(
+                                'Posted price: \$${job.payment.toStringAsFixed(0)}',
+                                style: GoogleFonts.plusJakartaSans(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w700,
+                                  color: const Color(0xFFEA580C),
+                                ),
+                              ),
                             ],
                           ),
                         ),
@@ -668,6 +677,8 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
   }
 
   void _showCompleteDialog(BuildContext context, AppState state, Job job) {
+    _paymentCtrl.text =
+        job.payment > 0 ? job.payment.toStringAsFixed(0) : _paymentCtrl.text;
     showDialog(
       context: context,
       builder: (ctx) {
@@ -692,6 +703,24 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
                 style: GoogleFonts.plusJakartaSans(
                   fontSize: 14,
                   fontWeight: FontWeight.w500,
+                  color: const Color(0xFF94A3B8),
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Posted price: \$${job.payment.toStringAsFixed(0)}',
+                style: GoogleFonts.plusJakartaSans(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
+                  color: isDark ? Colors.white : AppColors.slate900,
+                ),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                'You can confirm a different final amount if needed.',
+                style: GoogleFonts.plusJakartaSans(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
                   color: const Color(0xFF94A3B8),
                 ),
               ),

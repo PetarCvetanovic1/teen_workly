@@ -11,6 +11,7 @@ import '../widgets/app_drawer.dart';
 import '../widgets/tw_app_bar.dart';
 import '../widgets/content_wrap.dart';
 import 'home_screen.dart';
+import 'login_screen.dart';
 
 const _skills = [
   'Lawn Care',
@@ -49,6 +50,19 @@ class _PostServiceScreenState extends State<PostServiceScreen> {
   TimeOfDay _startTime = const TimeOfDay(hour: 9, minute: 0);
   TimeOfDay _endTime = const TimeOfDay(hour: 17, minute: 0);
   bool _prefilled = false;
+  bool _loginRedirectQueued = false;
+
+  void _queueLoginRedirectIfNeeded(AppState state) {
+    if (_loginRedirectQueued || state.isLoggedIn) return;
+    _loginRedirectQueued = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      Navigator.of(context).pushAndRemoveUntil(
+        SmoothPageRoute(builder: (_) => const LoginScreen()),
+        (_) => false,
+      );
+    });
+  }
 
   @override
   void didChangeDependencies() {
@@ -83,6 +97,13 @@ class _PostServiceScreenState extends State<PostServiceScreen> {
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final state = context.watch<AppState>();
+    _queueLoginRedirectIfNeeded(state);
+
+    if (!state.isLoggedIn) {
+      return const Scaffold(
+        body: Center(child: CircularProgressIndicator()),
+      );
+    }
 
     return Scaffold(
       appBar: TwAppBar(

@@ -9,6 +9,7 @@ import '../widgets/tw_app_bar.dart';
 import '../widgets/content_wrap.dart';
 import '../services/moderation.dart';
 import 'home_screen.dart';
+import 'login_screen.dart';
 
 const _allSkills = [
   'Lawn Care',
@@ -63,6 +64,19 @@ class _ProfileScreenState extends State<ProfileScreen> {
   bool _aiGenerating = false;
   bool _hydratedFromProfile = false;
   bool _requestedProfileLoad = false;
+  bool _loginRedirectQueued = false;
+
+  void _queueLoginRedirectIfNeeded(AppState state) {
+    if (_loginRedirectQueued || state.isLoggedIn) return;
+    _loginRedirectQueued = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      Navigator.of(context).pushAndRemoveUntil(
+        SmoothPageRoute(builder: (_) => const LoginScreen()),
+        (_) => false,
+      );
+    });
+  }
 
   @override
   void initState() {
@@ -96,44 +110,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
     return Consumer<AppState>(
       builder: (context, state, _) {
+        _queueLoginRedirectIfNeeded(state);
         if (!state.isLoggedIn) {
-          return Scaffold(
-            appBar: TwAppBar(
-              leading: Builder(
-                builder: (ctx) => IconButton(
-                  icon: const Icon(Icons.menu_rounded),
-                  onPressed: () => Scaffold.of(ctx).openDrawer(),
-                ),
-              ),
-              onLogoTap: () => Navigator.of(context).pushAndRemoveUntil(
-                SmoothPageRoute(builder: (_) => const HomeScreen()),
-                (_) => false,
-              ),
-            ),
-            drawer: const AppDrawer(),
-            body: Center(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    'You are logged out.',
-                    style: GoogleFonts.plusJakartaSans(
-                      fontSize: 15,
-                      fontWeight: FontWeight.w700,
-                      color: isDark ? Colors.white : AppColors.slate900,
-                    ),
-                  ),
-                  const SizedBox(height: 10),
-                  FilledButton(
-                    onPressed: () => Navigator.of(context).pushAndRemoveUntil(
-                      SmoothPageRoute(builder: (_) => const HomeScreen()),
-                      (_) => false,
-                    ),
-                    child: const Text('Go to Home'),
-                  ),
-                ],
-              ),
-            ),
+          return const Scaffold(
+            body: Center(child: CircularProgressIndicator()),
           );
         }
 

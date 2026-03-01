@@ -1,8 +1,13 @@
 import 'dart:async';
+import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import '../utils/auth_navigation.dart';
+import '../screens/chat_screen.dart';
+import '../screens/dashboard_screen.dart';
+import '../screens/jobs_screen.dart';
 
 class NotificationService {
   NotificationService._();
@@ -38,7 +43,12 @@ class NotificationService {
       macOS: darwinInit,
       linux: linuxInit,
     );
-    await _plugin.initialize(settings);
+    await _plugin.initialize(
+      settings,
+      onDidReceiveNotificationResponse: (response) {
+        unawaited(_handleNotificationTap(response.payload));
+      },
+    );
 
     final androidImpl =
         _plugin.resolvePlatformSpecificImplementation<
@@ -73,7 +83,9 @@ class NotificationService {
   Future<void> showMessageNotification({
     required String title,
     required String body,
+    Map<String, dynamic>? payload,
   }) async {
+    final payloadString = payload == null ? null : jsonEncode(payload);
     if (_initialized && !kIsWeb) {
     const androidDetails = AndroidNotificationDetails(
       _messagesChannelId,
@@ -97,14 +109,25 @@ class NotificationService {
       macOS: darwinDetails,
       linux: linuxDetails,
     );
-    await _plugin.show(_nextId++, title, body, details);
+    await _plugin.show(
+      _nextId++,
+      title,
+      body,
+      details,
+      payload: payloadString,
+    );
     }
-    _showInAppTopBanner(title: title, body: body);
+    _showInAppTopBanner(
+      title: title,
+      body: body,
+      payload: payloadString,
+    );
   }
 
   void _showInAppTopBanner({
     required String title,
     required String body,
+    String? payload,
   }) {
     // Add an explicit in-app sound cue for foreground notifications.
     unawaited(SystemSound.play(SystemSoundType.alert));
@@ -148,6 +171,20 @@ class NotificationService {
         ),
         backgroundColor: const Color(0xFFEFF6FF),
         actions: [
+          if (payload != null)
+            TextButton(
+              onPressed: () {
+                messenger.hideCurrentMaterialBanner();
+                unawaited(_handleNotificationTap(payload));
+              },
+              child: const Text(
+                'Open',
+                style: TextStyle(
+                  color: Color(0xFF4F46E5),
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ),
           TextButton(
             onPressed: messenger.hideCurrentMaterialBanner,
             child: const Text(
@@ -164,5 +201,55 @@ class NotificationService {
     Future<void>.delayed(const Duration(seconds: 4), () {
       messenger.hideCurrentMaterialBanner();
     });
+  }
+
+  Future<void> _handleNotificationTap(String? payload) async {
+    if (payload == null || payload.isEmpty) return;
+    final nav = _navigatorKey?.currentState;
+    if (nav == null) return;
+
+    Map<String, dynamic> data;
+    try {
+      final decoded = jsonDecode(payload);
+      if (decoded is! Map<String, dynamic>) return;
+      data = decoded;
+    } catch (_) {
+      return;
+    }
+
+    final type = data['type']?.toString() ?? '';
+    switch (type) {
+      case 'conversation':
+        final conversationId = data['conversationId']?.toString();
+        if (conversationId == null || conversationId.isEmpty) return;
+        final otherUserName = data['otherUserName']?.toString() ?? 'Chat';
+        final contextLabel = data['contextLabel']?.toString();
+        nav.push(
+          appRoute(
+            builder: (_) => ChatScreen(
+              conversationId: conversationId,
+              otherUserName: otherUserName,
+              contextLabel: (contextLabel == null || contextLabel.isEmpty)
+                  ? null
+                  : contextLabel,
+            ),
+            requiresAuth: true,
+          ),
+        );
+        break;
+      case 'dashboard':
+        nav.push(
+          appRoute(
+            builder: (_) => const DashboardScreen(),
+            requiresAuth: true,
+          ),
+        );
+        break;
+      case 'jobs':
+        nav.push(appRoute(builder: (_) => const JobsScreen()));
+        break;
+      default:
+        break;
+    }
   }
 }

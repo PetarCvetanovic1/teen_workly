@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import '../utils/smooth_route.dart';
+import '../utils/auth_navigation.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import '../app_colors.dart';
@@ -52,7 +52,10 @@ class AuthButton extends StatelessWidget {
               onTap: profile == null
                   ? null
                   : () => Navigator.of(context).push(
-                        SmoothPageRoute(builder: (_) => const ProfileScreen()),
+                        appRoute(
+                          builder: (_) => const ProfileScreen(),
+                          requiresAuth: true,
+                        ),
                       ),
               child: Container(
                 width: 36,
@@ -89,7 +92,7 @@ class AuthButton extends StatelessWidget {
                 filled: false,
                 isDark: isDark,
                 onTap: () => Navigator.of(context).push(
-                  SmoothPageRoute(builder: (_) => const LoginScreen()),
+                  appRoute(builder: (_) => const LoginScreen()),
                 ),
               ),
               const SizedBox(width: 6),
@@ -98,7 +101,7 @@ class AuthButton extends StatelessWidget {
                 filled: true,
                 isDark: isDark,
                 onTap: () => Navigator.of(context).push(
-                  SmoothPageRoute(builder: (_) => const SignUpScreen()),
+                  appRoute(builder: (_) => const SignUpScreen()),
                 ),
               ),
             ],

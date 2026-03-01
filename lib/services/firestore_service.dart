@@ -1,10 +1,12 @@
 import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 import 'package:flutter/material.dart';
 import '../models/models.dart';
 
 class FirestoreService {
   static final _db = FirebaseFirestore.instance;
+  static final _functions = FirebaseFunctions.instance;
 
   // ── Collections ──
   static final _usersCol = _db.collection('users');
@@ -14,6 +16,19 @@ class FirestoreService {
   static final _reportsCol = _db.collection('reports');
   static final _reviewsCol = _db.collection('reviews');
   static final _huddleCol = _db.collection('huddle_posts');
+
+  static bool _isFunctionsUnavailable(Object error) {
+    if (error is! FirebaseFunctionsException) return false;
+    const fallbackCodes = {
+      'not-found',
+      'unavailable',
+      'deadline-exceeded',
+      'failed-precondition',
+      'internal',
+      'resource-exhausted',
+    };
+    return fallbackCodes.contains(error.code);
+  }
 
   // ── Users ──
 
@@ -36,6 +51,22 @@ class FirestoreService {
           : null,
       'vaultGoal': profile.vaultGoal,
       'vaultTargetAmount': profile.vaultTargetAmount,
+      'termsAcceptedAt': profile.termsAcceptedAt != null
+          ? Timestamp.fromDate(profile.termsAcceptedAt!)
+          : null,
+      'termsAcceptedVersion': profile.termsAcceptedVersion,
+      'liabilityWaiverAcceptedAt': profile.liabilityWaiverAcceptedAt != null
+          ? Timestamp.fromDate(profile.liabilityWaiverAcceptedAt!)
+          : null,
+      'riskAcknowledgedAt': profile.riskAcknowledgedAt != null
+          ? Timestamp.fromDate(profile.riskAcknowledgedAt!)
+          : null,
+      'guardianConsentAt': profile.guardianConsentAt != null
+          ? Timestamp.fromDate(profile.guardianConsentAt!)
+          : null,
+      'huddleRepliesSeenAt': profile.huddleRepliesSeenAt != null
+          ? Timestamp.fromDate(profile.huddleRepliesSeenAt!)
+          : null,
       'updatedAt': FieldValue.serverTimestamp(),
     };
     if (authProvider != null && authProvider.isNotEmpty) {
@@ -64,7 +95,31 @@ class FirestoreService {
       ageLastUpdatedAt: (d['ageLastUpdatedAt'] as Timestamp?)?.toDate(),
       vaultGoal: d['vaultGoal'],
       vaultTargetAmount: (d['vaultTargetAmount'] as num?)?.toDouble(),
+      termsAcceptedAt: (d['termsAcceptedAt'] as Timestamp?)?.toDate(),
+      termsAcceptedVersion: d['termsAcceptedVersion'],
+      liabilityWaiverAcceptedAt:
+          (d['liabilityWaiverAcceptedAt'] as Timestamp?)?.toDate(),
+      riskAcknowledgedAt: (d['riskAcknowledgedAt'] as Timestamp?)?.toDate(),
+      guardianConsentAt: (d['guardianConsentAt'] as Timestamp?)?.toDate(),
+      huddleRepliesSeenAt: (d['huddleRepliesSeenAt'] as Timestamp?)?.toDate(),
     );
+  }
+
+  static Future<Map<String, dynamic>?> getUserByEmail(String email) async {
+    final normalized = email.trim().toLowerCase();
+    if (normalized.isEmpty) return null;
+    final snap = await _usersCol
+        .where('email', isEqualTo: normalized)
+        .limit(1)
+        .get();
+    if (snap.docs.isEmpty) return null;
+    final d = snap.docs.first.data();
+    return {
+      'id': snap.docs.first.id,
+      'authProvider': d['authProvider'],
+      'email': d['email'],
+      'name': d['name'],
+    };
   }
 
   // ── Jobs ──
@@ -77,6 +132,31 @@ class FirestoreService {
   }
 
   static Future<void> addJob(Job job) async {
+    final callable = _functions.httpsCallable('createJob');
+    try {
+      await callable.call({
+        'job': {
+          'id': job.id,
+          'title': job.title,
+          'type': job.type,
+          'location': job.location,
+          'description': job.description,
+          'services': job.services.toList(),
+          'otherService': job.otherService,
+          'posterId': job.posterId,
+          'posterName': job.posterName,
+          'createdAtMs': job.createdAt.millisecondsSinceEpoch,
+          'payment': job.payment,
+        },
+      }).timeout(const Duration(seconds: 12));
+      return;
+    } catch (e) {
+      if (!_isFunctionsUnavailable(e)) rethrow;
+    }
+    await _addJobDirect(job);
+  }
+
+  static Future<void> _addJobDirect(Job job) async {
     const maxAttempts = 3;
     for (var attempt = 1; attempt <= maxAttempts; attempt++) {
       try {
@@ -175,29 +255,52 @@ class FirestoreService {
   }
 
   static Future<void> addService(Service service) async {
-    await _servicesCol.doc(service.id).set(_serviceToMap(service));
+    final callable = _functions.httpsCallable('createService');
+    try {
+      await callable.call({
+        'service': {
+          'id': service.id,
+          'providerName': service.providerName,
+          'location': service.location,
+          'skills': service.skills.toList(),
+          'otherSkill': service.otherSkill,
+          'availableDays': service.availableDays.toList(),
+          'startHour': service.startTime.hour,
+          'startMinute': service.startTime.minute,
+          'endHour': service.endTime.hour,
+          'endMinute': service.endTime.minute,
+          'bio': service.bio,
+          'providerId': service.providerId,
+          'createdAtMs': service.createdAt.millisecondsSinceEpoch,
+          'minPrice': service.minPrice,
+          'maxPrice': service.maxPrice,
+        },
+      });
+      return;
+    } catch (e) {
+      if (!_isFunctionsUnavailable(e)) rethrow;
+    }
+    await _servicesCol.doc(service.id).set({
+      'providerName': service.providerName,
+      'location': service.location,
+      'skills': service.skills.toList(),
+      'otherSkill': service.otherSkill,
+      'availableDays': service.availableDays.toList(),
+      'startHour': service.startTime.hour,
+      'startMinute': service.startTime.minute,
+      'endHour': service.endTime.hour,
+      'endMinute': service.endTime.minute,
+      'bio': service.bio,
+      'providerId': service.providerId,
+      'createdAt': Timestamp.fromDate(service.createdAt),
+      'minPrice': service.minPrice,
+      'maxPrice': service.maxPrice,
+    });
   }
 
   static Future<void> deleteService(String serviceId) async {
     await _servicesCol.doc(serviceId).delete();
   }
-
-  static Map<String, dynamic> _serviceToMap(Service service) => {
-        'providerName': service.providerName,
-        'location': service.location,
-        'skills': service.skills.toList(),
-        'otherSkill': service.otherSkill,
-        'availableDays': service.availableDays.toList(),
-        'startHour': service.startTime.hour,
-        'startMinute': service.startTime.minute,
-        'endHour': service.endTime.hour,
-        'endMinute': service.endTime.minute,
-        'bio': service.bio,
-        'providerId': service.providerId,
-        'createdAt': Timestamp.fromDate(service.createdAt),
-        'minPrice': service.minPrice,
-        'maxPrice': service.maxPrice,
-      };
 
   static Service _serviceFromDoc(QueryDocumentSnapshot doc) {
     final d = doc.data() as Map<String, dynamic>;
@@ -289,6 +392,33 @@ class FirestoreService {
 
   // ── Conversations ──
 
+  static Map<String, bool> _typingByFromMap(dynamic raw) {
+    if (raw is! Map) return const {};
+    final out = <String, bool>{};
+    for (final entry in raw.entries) {
+      final key = entry.key?.toString();
+      if (key == null || key.isEmpty) continue;
+      out[key] = entry.value == true;
+    }
+    return out;
+  }
+
+  static Map<String, DateTime> _lastSeenByFromMap(dynamic raw) {
+    if (raw is! Map) return const {};
+    final out = <String, DateTime>{};
+    for (final entry in raw.entries) {
+      final key = entry.key?.toString();
+      if (key == null || key.isEmpty) continue;
+      final value = entry.value;
+      if (value is Timestamp) {
+        out[key] = value.toDate();
+      } else if (value is DateTime) {
+        out[key] = value;
+      }
+    }
+    return out;
+  }
+
   static Stream<List<Conversation>> conversationsStream(String userId) {
     return _conversationsCol
         .where('participants', arrayContains: userId)
@@ -310,6 +440,8 @@ class FirestoreService {
                 contextLabel: d['contextLabel'],
                 lastMessageText: d['lastMessageText'],
                 lastMessageAt: ts?.toDate(),
+                typingBy: _typingByFromMap(d['typingBy']),
+                lastSeenBy: _lastSeenByFromMap(d['lastSeenBy']),
               );
             }).toList();
           items.sort((a, b) {
@@ -347,6 +479,8 @@ class FirestoreService {
           otherUserId: otherUserId,
           otherUserName: otherUserName,
           contextLabel: d['contextLabel'],
+          typingBy: _typingByFromMap(d['typingBy']),
+          lastSeenBy: _lastSeenByFromMap(d['lastSeenBy']),
         );
       }
     }
@@ -359,6 +493,8 @@ class FirestoreService {
       'scopeKey': scopeKey,
       'lastMessageAt': Timestamp.now(),
       'lastMessageText': '',
+      'typingBy': {myId: false, otherUserId: false},
+      'lastSeenBy': {myId: Timestamp.now(), otherUserId: Timestamp.now()},
     });
 
     return Conversation(
@@ -366,7 +502,36 @@ class FirestoreService {
       otherUserId: otherUserId,
       otherUserName: otherUserName,
       contextLabel: contextLabel,
+      typingBy: {myId: false, otherUserId: false},
+      lastSeenBy: {myId: DateTime.now(), otherUserId: DateTime.now()},
     );
+  }
+
+  static Stream<Conversation?> conversationStream(
+    String conversationId,
+    String myUserId,
+  ) {
+    return _conversationsCol.doc(conversationId).snapshots().map((doc) {
+      if (!doc.exists) return null;
+      final d = doc.data()!;
+      final participants = List<String>.from(d['participants'] ?? []);
+      final names = Map<String, String>.from(d['participantNames'] ?? {});
+      final otherId = participants.firstWhere(
+        (id) => id != myUserId,
+        orElse: () => '',
+      );
+      final ts = d['lastMessageAt'] as Timestamp?;
+      return Conversation(
+        id: doc.id,
+        otherUserId: otherId,
+        otherUserName: names[otherId] ?? 'Unknown',
+        contextLabel: d['contextLabel'],
+        lastMessageText: d['lastMessageText'],
+        lastMessageAt: ts?.toDate(),
+        typingBy: _typingByFromMap(d['typingBy']),
+        lastSeenBy: _lastSeenByFromMap(d['lastSeenBy']),
+      );
+    });
   }
 
   static Stream<List<ChatMessage>> messagesStream(String conversationId) {
@@ -392,6 +557,23 @@ class FirestoreService {
     required String conversationId,
     required ChatMessage message,
   }) async {
+    final callable = _functions.httpsCallable('sendConversationMessage');
+    try {
+      await callable.call({
+        'conversationId': conversationId,
+        'message': {
+          'id': message.id,
+          'senderId': message.senderId,
+          'senderName': message.senderName,
+          'text': message.text,
+          'timestampMs': message.timestamp.millisecondsSinceEpoch,
+        },
+      });
+      return;
+    } catch (e) {
+      if (!_isFunctionsUnavailable(e)) rethrow;
+    }
+
     final batch = _db.batch();
     final msgRef = _conversationsCol
         .doc(conversationId)
@@ -406,8 +588,48 @@ class FirestoreService {
     batch.update(_conversationsCol.doc(conversationId), {
       'lastMessageAt': Timestamp.fromDate(message.timestamp),
       'lastMessageText': message.text,
+      'typingBy.${message.senderId}': false,
+      'lastSeenBy.${message.senderId}': Timestamp.fromDate(message.timestamp),
     });
     await batch.commit();
+  }
+
+  static Future<void> setConversationTyping({
+    required String conversationId,
+    required String userId,
+    required bool isTyping,
+  }) async {
+    final ref = _conversationsCol.doc(conversationId);
+    try {
+      await ref.update({
+        'typingBy.$userId': isTyping,
+      });
+    } on FirebaseException catch (e) {
+      if (e.code != 'not-found') rethrow;
+      await ref.set({
+        'typingBy': {userId: isTyping},
+      }, SetOptions(merge: true));
+    }
+  }
+
+  static Future<void> markConversationSeen({
+    required String conversationId,
+    required String userId,
+    required DateTime seenAt,
+  }) async {
+    final ref = _conversationsCol.doc(conversationId);
+    try {
+      await ref.update({
+        'lastSeenBy.$userId': Timestamp.fromDate(seenAt),
+        'typingBy.$userId': false,
+      });
+    } on FirebaseException catch (e) {
+      if (e.code != 'not-found') rethrow;
+      await ref.set({
+        'lastSeenBy': {userId: Timestamp.fromDate(seenAt)},
+        'typingBy': {userId: false},
+      }, SetOptions(merge: true));
+    }
   }
 
   static Future<void> deleteConversation(String conversationId) async {
@@ -442,6 +664,9 @@ class FirestoreService {
                 ageGroup: ageGroup,
                 createdAt: (d['createdAt'] as Timestamp?)?.toDate() ??
                     DateTime.now(),
+                lastReplyAt: (d['lastReplyAt'] as Timestamp?)?.toDate(),
+                lastReplyAuthorId: d['lastReplyAuthorId'],
+                replyCount: d['replyCount'] ?? 0,
               );
             }).toList();
           posts.sort((a, b) => b.createdAt.compareTo(a.createdAt));
@@ -450,6 +675,23 @@ class FirestoreService {
   }
 
   static Future<void> addHuddlePost(HuddlePost post) async {
+    final callable = _functions.httpsCallable('createHuddlePost');
+    try {
+      await callable.call({
+        'post': {
+          'id': post.id,
+          'authorId': post.authorId,
+          'authorName': post.authorName,
+          'text': post.text,
+          'tag': post.tag.name,
+          'ageGroup': post.ageGroup.name,
+          'createdAtMs': post.createdAt.millisecondsSinceEpoch,
+        },
+      });
+      return;
+    } catch (e) {
+      if (!_isFunctionsUnavailable(e)) rethrow;
+    }
     await _huddleCol.doc(post.id).set({
       'authorId': post.authorId,
       'authorName': post.authorName,
@@ -457,6 +699,9 @@ class FirestoreService {
       'tag': post.tag.name,
       'ageGroup': post.ageGroup.name,
       'createdAt': Timestamp.fromDate(post.createdAt),
+      'lastReplyAt': null,
+      'lastReplyAuthorId': null,
+      'replyCount': 0,
     });
   }
 
@@ -484,12 +729,33 @@ class FirestoreService {
   }
 
   static Future<void> addHuddleReply(String postId, HuddleReply reply) async {
+    final callable = _functions.httpsCallable('createHuddleReply');
+    try {
+      await callable.call({
+        'postId': postId,
+        'reply': {
+          'id': reply.id,
+          'authorId': reply.authorId,
+          'authorName': reply.authorName,
+          'text': reply.text,
+          'createdAtMs': reply.createdAt.millisecondsSinceEpoch,
+        },
+      });
+      return;
+    } catch (e) {
+      if (!_isFunctionsUnavailable(e)) rethrow;
+    }
     await _huddleCol.doc(postId).collection('replies').doc(reply.id).set({
       'authorId': reply.authorId,
       'authorName': reply.authorName,
       'text': reply.text,
       'createdAt': Timestamp.fromDate(reply.createdAt),
     });
+    await _huddleCol.doc(postId).set({
+      'lastReplyAt': Timestamp.fromDate(reply.createdAt),
+      'lastReplyAuthorId': reply.authorId,
+      'replyCount': FieldValue.increment(1),
+    }, SetOptions(merge: true));
   }
 
   // ── User suspension data ──

@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import '../utils/smooth_route.dart';
+import '../utils/auth_navigation.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
@@ -425,7 +426,10 @@ class _JobsScreenState extends State<JobsScreen> {
           final filter = _categories[_selectedCategory];
           final isAll = filter == 'All';
 
-          final openJobs = state.jobs.where((j) => j.status == JobStatus.open).toList();
+          final myId = state.currentUserId;
+          final openJobs = state.jobs
+              .where((j) => j.status == JobStatus.open && j.posterId != myId)
+              .toList();
           final filteredJobs = isAll
               ? openJobs
               : openJobs.where((j) => j.services.any(
@@ -436,10 +440,10 @@ class _JobsScreenState extends State<JobsScreen> {
           final filteredServices = !canHire
               ? <Service>[]
               : isAll
-                  ? state.services
+                  ? state.services.where((s) => s.providerId != myId).toList()
                   : state.services.where((s) => s.skills.any(
                         (sk) => sk.toLowerCase().contains(filter.toLowerCase()),
-                      )).toList();
+                      ) && s.providerId != myId).toList();
 
           final totalCount = filteredJobs.length + filteredServices.length;
           final workLocation = state.userLocationText;
@@ -1778,7 +1782,10 @@ class _EmptyState extends StatelessWidget {
             const SizedBox(height: 28),
             FilledButton.icon(
               onPressed: () => Navigator.of(context).push(
-                SmoothPageRoute(builder: (_) => const PostJobScreen()),
+                appRoute(
+                  builder: (_) => const PostJobScreen(),
+                  requiresAuth: true,
+                ),
               ),
               icon: const Icon(Icons.add_rounded, size: 20),
               label: const Text('Post a Job'),

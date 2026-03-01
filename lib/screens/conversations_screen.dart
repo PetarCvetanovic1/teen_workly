@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import '../utils/smooth_route.dart';
+import '../utils/auth_navigation.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import '../app_colors.dart';
@@ -10,13 +10,40 @@ import '../widgets/tw_app_bar.dart';
 import '../widgets/content_wrap.dart';
 import 'home_screen.dart';
 import 'chat_screen.dart';
+import 'login_screen.dart';
 
-class ConversationsScreen extends StatelessWidget {
+class ConversationsScreen extends StatefulWidget {
   const ConversationsScreen({super.key});
+
+  @override
+  State<ConversationsScreen> createState() => _ConversationsScreenState();
+}
+
+class _ConversationsScreenState extends State<ConversationsScreen> {
+  bool _loginRedirectQueued = false;
+
+  void _queueLoginRedirectIfNeeded(AppState state) {
+    if (_loginRedirectQueued || state.isLoggedIn) return;
+    _loginRedirectQueued = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      Navigator.of(context).pushAndRemoveUntil(
+        appRoute(builder: (_) => const LoginScreen()),
+        (_) => false,
+      );
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final authState = context.watch<AppState>();
+    _queueLoginRedirectIfNeeded(authState);
+    if (!authState.isLoggedIn) {
+      return const Scaffold(
+        body: Center(child: CircularProgressIndicator()),
+      );
+    }
 
     return Scaffold(
       appBar: TwAppBar(
@@ -27,7 +54,7 @@ class ConversationsScreen extends StatelessWidget {
           ),
         ),
         onLogoTap: () => Navigator.of(context).pushAndRemoveUntil(
-          SmoothPageRoute(builder: (_) => const HomeScreen()),
+          appRoute(builder: (_) => const HomeScreen()),
           (_) => false,
         ),
       ),
@@ -101,13 +128,14 @@ class ConversationsScreen extends StatelessWidget {
                               isDark: isDark,
                             ),
                             onTap: () => Navigator.of(context).push(
-                              SmoothPageRoute(
+                              appRoute(
                                 builder: (_) =>
                                     ChatScreen(
                                       conversationId: conv.id,
                                       otherUserName: conv.otherUserName,
                                       contextLabel: conv.contextLabel,
                                     ),
+                                requiresAuth: true,
                               ),
                             ),
                           );
@@ -185,12 +213,25 @@ class _ConversationTile extends StatelessWidget {
   });
 
   String _formatTime(DateTime dt) {
-    final now = DateTime.now();
-    final diff = now.difference(dt);
-    if (diff.inMinutes < 1) return 'now';
-    if (diff.inMinutes < 60) return '${diff.inMinutes}m';
-    if (diff.inHours < 24) return '${diff.inHours}h';
-    return '${diff.inDays}d';
+    const months = <String>[
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec',
+    ];
+    final month = months[dt.month - 1];
+    final day = dt.day.toString();
+    final hour = dt.hour.toString().padLeft(2, '0');
+    final minute = dt.minute.toString().padLeft(2, '0');
+    return '$month $day, $hour:$minute';
   }
 
   @override

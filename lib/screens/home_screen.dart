@@ -1,17 +1,23 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import '../utils/smooth_route.dart';
+import '../utils/auth_navigation.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import '../app_colors.dart';
 import '../models/models.dart';
 import '../state/app_state.dart';
+import '../services/firestore_service.dart';
 import 'jobs_screen.dart';
 import 'post_job_screen.dart';
 import 'post_service_screen.dart';
 import 'job_detail_screen.dart';
 import 'service_detail_screen.dart';
+import 'chat_screen.dart';
 import 'huddle_screen.dart';
 import 'dashboard_screen.dart';
+import 'conversations_screen.dart';
 import 'profile_editor_screen.dart';
 import '../widgets/app_drawer.dart';
 import '../widgets/tw_app_bar.dart';
@@ -62,7 +68,7 @@ class HomeScreen extends StatelessWidget {
                     padding: const EdgeInsets.symmetric(horizontal: 20),
                     child: _SignedInHomeHeader(state: appState, isDark: isDark),
                   ),
-                  const SizedBox(height: 28),
+                  const SizedBox(height: 24),
                 ] else ...[
                   const SizedBox(height: 48),
                   // Live badge
@@ -184,8 +190,9 @@ class HomeScreen extends StatelessWidget {
                         _HeroButton(
                           label: 'Hire Talent',
                           onTap: () => Navigator.of(context).push(
-                            SmoothPageRoute(
+                            appRoute(
                               builder: (_) => const PostJobScreen(),
+                              requiresAuth: true,
                             ),
                           ),
                           filled: false,
@@ -287,7 +294,7 @@ class HomeScreen extends StatelessWidget {
                           ],
                         ),
                       ),
-                      TextButton.icon(
+                      FilledButton.icon(
                         onPressed: () => Navigator.of(context).push(
                           SmoothPageRoute(
                             builder: (_) => const JobsScreen(),
@@ -296,13 +303,23 @@ class HomeScreen extends StatelessWidget {
                         icon: const Icon(
                           Icons.arrow_forward_rounded,
                           size: 18,
-                          color: AppColors.indigo600,
                         ),
                         label: const Text(
                           'See All',
-                          style: TextStyle(
-                            fontWeight: FontWeight.w700,
-                            color: AppColors.indigo600,
+                        ),
+                        style: FilledButton.styleFrom(
+                          backgroundColor: AppColors.indigo600,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 16,
+                            vertical: 10,
+                          ),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          textStyle: GoogleFonts.plusJakartaSans(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w800,
                           ),
                         ),
                       ),
@@ -310,73 +327,15 @@ class HomeScreen extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(height: 16),
-                Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 24),
-                    child: GestureDetector(
-                      onTap: () => Navigator.of(context).push(
-                        SmoothPageRoute(builder: (_) => const HuddleScreen()),
-                      ),
-                      child: Container(
-                        padding: const EdgeInsets.all(16),
-                        decoration: BoxDecoration(
-                          gradient: const LinearGradient(
-                            colors: [Color(0xFFF59E0B), Color(0xFFF97316)],
-                            begin: Alignment.topLeft,
-                            end: Alignment.bottomRight,
-                          ),
-                          borderRadius: BorderRadius.circular(18),
-                          boxShadow: [
-                            BoxShadow(
-                              color: const Color(0xFFF59E0B).withValues(alpha: 0.3),
-                              blurRadius: 16,
-                              offset: const Offset(0, 6),
-                            ),
-                          ],
-                        ),
-                        child: Row(
-                          children: [
-                            const Icon(Icons.groups_rounded,
-                                color: Colors.white, size: 32),
-                            const SizedBox(width: 14),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    'The Huddle',
-                                    style: GoogleFonts.plusJakartaSans(
-                                      fontSize: 16,
-                                      fontWeight: FontWeight.w800,
-                                      color: Colors.white,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 2),
-                                  Text(
-                                    'Chat, ask for help & collab with other teens',
-                                    style: GoogleFonts.plusJakartaSans(
-                                      fontSize: 12,
-                                      fontWeight: FontWeight.w500,
-                                      color: Colors.white.withValues(alpha: 0.85),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                            const Icon(Icons.arrow_forward_rounded,
-                                color: Colors.white),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ),
-                const SizedBox(height: 16),
                 Consumer<AppState>(
                   builder: (context, state, _) {
                     final myId = state.currentUserId;
                     final jobs = state.jobs
                         .where((j) =>
                             j.status != JobStatus.completed &&
-                            j.posterId != myId)
+                            j.posterId != myId &&
+                            !j.applicantIds.contains(myId) &&
+                            j.hiredId != myId)
                         .toList();
                     final canHire = state.canPostJobs;
                     final services = canHire
@@ -408,6 +367,76 @@ class HomeScreen extends StatelessWidget {
                       ),
                     );
                   },
+                ),
+                if (isLoggedIn && profile != null) ...[
+                  const SizedBox(height: 8),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 20),
+                    child: _HomeActivityPanel(state: appState, isDark: isDark),
+                  ),
+                ],
+                const SizedBox(height: 16),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 24),
+                  child: GestureDetector(
+                    onTap: () => Navigator.of(context).push(
+                      appRoute(
+                        builder: (_) => const HuddleScreen(),
+                        requiresAuth: true,
+                      ),
+                    ),
+                    child: Container(
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        gradient: const LinearGradient(
+                          colors: [Color(0xFFF59E0B), Color(0xFFF97316)],
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                        ),
+                        borderRadius: BorderRadius.circular(18),
+                        boxShadow: [
+                          BoxShadow(
+                            color: const Color(0xFFF59E0B).withValues(alpha: 0.3),
+                            blurRadius: 16,
+                            offset: const Offset(0, 6),
+                          ),
+                        ],
+                      ),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.groups_rounded,
+                              color: Colors.white, size: 32),
+                          const SizedBox(width: 14),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'The Huddle',
+                                  style: GoogleFonts.plusJakartaSans(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.w800,
+                                    color: Colors.white,
+                                  ),
+                                ),
+                                const SizedBox(height: 2),
+                                Text(
+                                  'Chat, ask for help & collab with other teens',
+                                  style: GoogleFonts.plusJakartaSans(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w500,
+                                    color: Colors.white.withValues(alpha: 0.85),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          const Icon(Icons.arrow_forward_rounded,
+                              color: Colors.white),
+                        ],
+                      ),
+                    ),
+                  ),
                 ),
                 const SizedBox(height: 48),
               ],
@@ -595,7 +624,10 @@ class _SignedInHomeHeader extends StatelessWidget {
                 _HeroButton(
                   label: 'My Profile',
                   onTap: () => Navigator.of(context).push(
-                    SmoothPageRoute(builder: (_) => const ProfileScreen()),
+                    appRoute(
+                      builder: (_) => const ProfileScreen(),
+                      requiresAuth: true,
+                    ),
                   ),
                   filled: true,
                   isDark: isDark,
@@ -603,7 +635,10 @@ class _SignedInHomeHeader extends StatelessWidget {
                 _HeroButton(
                   label: 'Dashboard',
                   onTap: () => Navigator.of(context).push(
-                    SmoothPageRoute(builder: (_) => const DashboardScreen()),
+                    appRoute(
+                      builder: (_) => const DashboardScreen(),
+                      requiresAuth: true,
+                    ),
                   ),
                   filled: false,
                   isDark: isDark,
@@ -612,6 +647,480 @@ class _SignedInHomeHeader extends StatelessWidget {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _HomeActivityPanel extends StatelessWidget {
+  final AppState state;
+  final bool isDark;
+
+  const _HomeActivityPanel({
+    required this.state,
+    required this.isDark,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final applied = state.myAppliedJobs
+        .where((j) => j.status != JobStatus.completed)
+        .toList();
+    final posted = state.myPostedJobs
+        .where((j) => j.status != JobStatus.completed)
+        .toList();
+
+    return StreamBuilder<List<Conversation>>(
+      stream: state.conversationsStream,
+      builder: (context, snapshot) {
+        final convos = snapshot.data ?? const <Conversation>[];
+        return StreamBuilder<List<HuddlePost>>(
+          stream: FirestoreService.huddleStream(state.myAgeGroup),
+          builder: (context, huddleSnap) {
+            final huddlePosts = huddleSnap.data ?? const <HuddlePost>[];
+            final huddleSeenAt = state.profile?.huddleRepliesSeenAt ??
+                DateTime.fromMillisecondsSinceEpoch(0);
+            final hasHuddleReplyAlert = huddlePosts.any(
+              (p) =>
+                  p.authorId == state.currentUserId &&
+                  (p.replyCount > 0) &&
+                  (p.lastReplyAuthorId ?? '').isNotEmpty &&
+                  p.lastReplyAuthorId != state.currentUserId &&
+                  p.lastReplyAt != null &&
+                  p.lastReplyAt!.isAfter(huddleSeenAt),
+            );
+            final hasAnything = applied.isNotEmpty ||
+                posted.isNotEmpty ||
+                convos.isNotEmpty ||
+                hasHuddleReplyAlert;
+
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                  Text(
+                    'Your activity',
+                    style: GoogleFonts.plusJakartaSans(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w800,
+                      color: isDark ? Colors.white : AppColors.slate900,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'Applied jobs, posted jobs, messages, and Huddle updates.',
+                    style: GoogleFonts.plusJakartaSans(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: const Color(0xFF94A3B8),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  if (!hasAnything) _activityEmpty(context),
+                  if (applied.isNotEmpty)
+                    _activitySection(
+                      context: context,
+                      title: 'Jobs you applied to',
+                      tint: const Color(0xFFDBEAFE),
+                      border: const Color(0xFF93C5FD),
+                      isDark: isDark,
+                      child: Column(
+                        children: applied.take(2).map((job) {
+                          return Padding(
+                            padding: const EdgeInsets.only(bottom: 8),
+                            child: _jobStateTile(
+                              context: context,
+                              icon: Icons.send_rounded,
+                              title: job.title,
+                              subtitle: job.location,
+                              detailText: 'Your application is active',
+                              detailColor: const Color(0xFF2563EB),
+                              statusText: _appliedStatusLabel(job),
+                              statusColor: _appliedStatusColor(job),
+                              onTap: () => Navigator.of(context).push(
+                                SmoothPageRoute(
+                                  builder: (_) => JobDetailScreen(job: job),
+                                ),
+                              ),
+                              isDark: isDark,
+                            ),
+                          );
+                        }).toList(),
+                      ),
+                    ),
+                  if (posted.isNotEmpty)
+                    _activitySection(
+                      context: context,
+                      title: 'Jobs you posted',
+                      tint: const Color(0xFFFFEDD5),
+                      border: const Color(0xFFFDBA74),
+                      isDark: isDark,
+                      child: Column(
+                        children: posted.take(2).map((job) {
+                          return Padding(
+                            padding: const EdgeInsets.only(bottom: 8),
+                            child: _jobStateTile(
+                              context: context,
+                              icon: Icons.inventory_2_rounded,
+                              title: job.title,
+                              subtitle: job.location,
+                              detailText:
+                                  'Applicants: ${job.applicantIds.length}',
+                              detailColor: _applicantCountColor(job),
+                              statusText: _postedStatusLabel(job),
+                              statusColor: _postedStatusColor(job),
+                              onTap: () => Navigator.of(context).push(
+                                SmoothPageRoute(
+                                  builder: (_) => JobDetailScreen(job: job),
+                                ),
+                              ),
+                              isDark: isDark,
+                            ),
+                          );
+                        }).toList(),
+                      ),
+                    ),
+                  if (hasHuddleReplyAlert)
+                    _activityTile(
+                      context: context,
+                      icon: Icons.mark_chat_unread_rounded,
+                      title: 'New Huddle replies',
+                      subtitle: 'Someone replied to a Huddle post you started.',
+                      onTap: () => Navigator.of(context).push(
+                        appRoute(
+                          builder: (_) => const HuddleScreen(),
+                          requiresAuth: true,
+                        ),
+                      ),
+                      beforeTap: () => unawaited(state.markHuddleRepliesSeen()),
+                    ),
+                  if (convos.isNotEmpty)
+                    _activityTile(
+                      context: context,
+                      icon: Icons.chat_bubble_rounded,
+                      title: 'Message: ${convos.first.otherUserName}',
+                      subtitle: convos.first.lastMessagePreview,
+                      onTap: () => Navigator.of(context).push(
+                        appRoute(
+                          builder: (_) => ChatScreen(
+                            conversationId: convos.first.id,
+                            otherUserName: convos.first.otherUserName,
+                            contextLabel: convos.first.contextLabel,
+                          ),
+                          requiresAuth: true,
+                        ),
+                      ),
+                    ),
+                  const SizedBox(height: 10),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      _miniAction(
+                        context: context,
+                        icon: Icons.dashboard_rounded,
+                        label: 'Dashboard',
+                        onTap: () => Navigator.of(context).push(
+                          appRoute(
+                            builder: (_) => const DashboardScreen(),
+                            requiresAuth: true,
+                          ),
+                        ),
+                      ),
+                      _miniAction(
+                        context: context,
+                        icon: Icons.forum_rounded,
+                        label: 'Messages',
+                        onTap: () => Navigator.of(context).push(
+                          appRoute(
+                            builder: (_) => const ConversationsScreen(),
+                            requiresAuth: true,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+  String _appliedStatusLabel(Job job) {
+    if (job.status == JobStatus.open) return 'Applied';
+    if (job.status == JobStatus.inProgress) return 'Accepted';
+    if (job.status == JobStatus.pendingCompletion) return 'Pending completion';
+    return 'Finished';
+  }
+
+  String _postedStatusLabel(Job job) {
+    if (job.status == JobStatus.open) return 'Posted';
+    if (job.status == JobStatus.inProgress) return 'In progress';
+    if (job.status == JobStatus.pendingCompletion) return 'Pending confirmation';
+    return 'Finished';
+  }
+
+  Color _appliedStatusColor(Job job) {
+    if (job.status == JobStatus.open) return const Color(0xFF2563EB); // Applied
+    if (job.status == JobStatus.inProgress) return const Color(0xFF059669); // Accepted
+    if (job.status == JobStatus.pendingCompletion) {
+      return const Color(0xFFF59E0B); // Pending completion
+    }
+    return const Color(0xFF16A34A); // Finished
+  }
+
+  Color _postedStatusColor(Job job) {
+    if (job.status == JobStatus.open) return const Color(0xFFEA580C); // Posted
+    if (job.status == JobStatus.inProgress) return const Color(0xFF7C3AED); // In progress
+    if (job.status == JobStatus.pendingCompletion) {
+      return const Color(0xFFF59E0B); // Pending confirmation
+    }
+    return const Color(0xFF16A34A); // Finished
+  }
+
+  Color _applicantCountColor(Job job) {
+    final count = job.applicantIds.length;
+    if (count <= 0) return const Color(0xFF94A3B8);
+    if (count <= 2) return const Color(0xFFF59E0B);
+    return const Color(0xFF16A34A);
+  }
+
+  Widget _activityEmpty(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: isDark
+            ? const Color(0xFF0F172A).withValues(alpha: 0.55)
+            : AppColors.slate50,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: isDark ? const Color(0xFF334155) : AppColors.slate200,
+        ),
+      ),
+      child: Text(
+        'No active applications or messages yet. Apply to a job or message a service provider and it will show here.',
+        style: GoogleFonts.plusJakartaSans(
+          fontSize: 12,
+          fontWeight: FontWeight.w600,
+          color: const Color(0xFF94A3B8),
+        ),
+      ),
+    );
+  }
+
+  Widget _activityTile({
+    required BuildContext context,
+    required IconData icon,
+    required String title,
+    required String subtitle,
+    required VoidCallback onTap,
+    VoidCallback? beforeTap,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: InkWell(
+        onTap: () {
+          beforeTap?.call();
+          onTap();
+        },
+        borderRadius: BorderRadius.circular(12),
+        child: Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: isDark
+                ? const Color(0xFF0F172A).withValues(alpha: 0.55)
+                : AppColors.slate50,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: isDark ? const Color(0xFF334155) : AppColors.slate200,
+            ),
+          ),
+          child: Row(
+            children: [
+              Icon(icon, color: AppColors.indigo600, size: 18),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: GoogleFonts.plusJakartaSans(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                        color: isDark ? Colors.white : AppColors.slate900,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      subtitle,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: GoogleFonts.plusJakartaSans(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                        color: const Color(0xFF94A3B8),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const Icon(Icons.chevron_right_rounded, color: Color(0xFF94A3B8)),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _activitySection({
+    required BuildContext context,
+    required String title,
+    required Color tint,
+    required Color border,
+    required bool isDark,
+    required Widget child,
+  }) {
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: isDark ? const Color(0xFF0F172A) : tint.withValues(alpha: 0.45),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: isDark ? const Color(0xFF334155) : border,
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            title,
+            style: GoogleFonts.plusJakartaSans(
+              fontSize: 12,
+              fontWeight: FontWeight.w800,
+              color: isDark ? Colors.white : AppColors.slate900,
+            ),
+          ),
+          const SizedBox(height: 8),
+          child,
+        ],
+      ),
+    );
+  }
+
+  Widget _jobStateTile({
+    required BuildContext context,
+    required IconData icon,
+    required String title,
+    required String subtitle,
+    required String detailText,
+    Color? detailColor,
+    required String statusText,
+    required Color statusColor,
+    required VoidCallback onTap,
+    required bool isDark,
+  }) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(10),
+      child: Container(
+        padding: const EdgeInsets.all(10),
+        decoration: BoxDecoration(
+          color: isDark
+              ? const Color(0xFF1E293B)
+              : Colors.white.withValues(alpha: 0.85),
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(
+            color: isDark ? const Color(0xFF334155) : AppColors.slate200,
+          ),
+        ),
+        child: Row(
+          children: [
+            Icon(icon, color: AppColors.indigo600, size: 18),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: GoogleFonts.plusJakartaSans(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                      color: isDark ? Colors.white : AppColors.slate900,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    subtitle,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: GoogleFonts.plusJakartaSans(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                      color: const Color(0xFF94A3B8),
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    detailText,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: GoogleFonts.plusJakartaSans(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700,
+                      color: detailColor ??
+                          (isDark
+                              ? const Color(0xFFCBD5E1)
+                              : const Color(0xFF64748B)),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 8),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(
+                color: statusColor.withValues(alpha: 0.14),
+                borderRadius: BorderRadius.circular(999),
+              ),
+              child: Text(
+                statusText,
+                style: GoogleFonts.plusJakartaSans(
+                  fontSize: 10,
+                  fontWeight: FontWeight.w800,
+                  color: statusColor,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _miniAction({
+    required BuildContext context,
+    required IconData icon,
+    required String label,
+    required VoidCallback onTap,
+  }) {
+    return OutlinedButton.icon(
+      onPressed: onTap,
+      icon: Icon(icon, size: 16),
+      label: Text(label),
+      style: OutlinedButton.styleFrom(
+        visualDensity: VisualDensity.compact,
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       ),
     );
   }
@@ -675,7 +1184,10 @@ class _LatestJobsEmpty extends StatelessWidget {
                 _HeroButton(
                   label: 'Post a Job',
                   onTap: () => Navigator.of(context).push(
-                    SmoothPageRoute(builder: (_) => const PostJobScreen()),
+                    appRoute(
+                      builder: (_) => const PostJobScreen(),
+                      requiresAuth: true,
+                    ),
                   ),
                   filled: true,
                   isDark: isDark,
@@ -683,8 +1195,10 @@ class _LatestJobsEmpty extends StatelessWidget {
               _HeroButton(
                 label: 'Post a Service',
                 onTap: () => Navigator.of(context).push(
-                  SmoothPageRoute(
-                      builder: (_) => const PostServiceScreen()),
+                  appRoute(
+                    builder: (_) => const PostServiceScreen(),
+                    requiresAuth: true,
+                  ),
                 ),
                 filled: false,
                 isDark: isDark,

@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import '../utils/smooth_route.dart';
+import '../utils/auth_navigation.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import '../app_colors.dart';
@@ -11,6 +11,7 @@ import '../widgets/content_wrap.dart';
 import 'home_screen.dart';
 import 'job_detail_screen.dart';
 import 'chat_screen.dart';
+import 'login_screen.dart';
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
@@ -21,6 +22,19 @@ class DashboardScreen extends StatefulWidget {
 
 class _DashboardScreenState extends State<DashboardScreen> {
   bool _hideCompletedItems = false;
+  bool _loginRedirectQueued = false;
+
+  void _queueLoginRedirectIfNeeded(AppState state) {
+    if (_loginRedirectQueued || state.isLoggedIn) return;
+    _loginRedirectQueued = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      Navigator.of(context).pushAndRemoveUntil(
+        appRoute(builder: (_) => const LoginScreen()),
+        (_) => false,
+      );
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -35,13 +49,17 @@ class _DashboardScreenState extends State<DashboardScreen> {
           ),
         ),
         onLogoTap: () => Navigator.of(context).pushAndRemoveUntil(
-          SmoothPageRoute(builder: (_) => const HomeScreen()),
+          appRoute(builder: (_) => const HomeScreen()),
           (_) => false,
         ),
       ),
       drawer: const AppDrawer(),
       body: Consumer<AppState>(
         builder: (context, state, _) {
+          _queueLoginRedirectIfNeeded(state);
+          if (!state.isLoggedIn) {
+            return const Center(child: CircularProgressIndicator());
+          }
           final posted = _hideCompletedItems
               ? state.myPostedJobs.where((j) => j.status != JobStatus.completed).toList()
               : state.myPostedJobs;
@@ -644,12 +662,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                 isDark: isDark,
                               ),
                               onTap: () => Navigator.of(context).push(
-                                SmoothPageRoute(
+                                appRoute(
                                   builder: (_) => ChatScreen(
                                     conversationId: conv.id,
                                     otherUserName: conv.otherUserName,
                                     contextLabel: conv.contextLabel,
                                   ),
+                                  requiresAuth: true,
                                 ),
                               ),
                             ),
@@ -1171,7 +1190,10 @@ class _JobCard extends StatelessWidget {
         shadowColor: Colors.black.withValues(alpha: 0.06),
         child: InkWell(
           onTap: () => Navigator.of(context).push(
-            SmoothPageRoute(builder: (_) => JobDetailScreen(job: job)),
+            appRoute(
+              builder: (_) => JobDetailScreen(job: job),
+              requiresAuth: true,
+            ),
           ),
           borderRadius: BorderRadius.circular(18),
           child: Padding(
@@ -1211,33 +1233,48 @@ class _JobCard extends StatelessWidget {
                   ],
                 ),
                 const SizedBox(height: 6),
-                Row(
+                Wrap(
+                  spacing: 12,
+                  runSpacing: 8,
+                  crossAxisAlignment: WrapCrossAlignment.center,
                   children: [
-                    Icon(Icons.location_on_outlined,
-                        size: 14, color: const Color(0xFF94A3B8)),
-                    const SizedBox(width: 4),
-                    Text(
-                      job.location,
-                      style: GoogleFonts.plusJakartaSans(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w500,
-                        color: const Color(0xFF94A3B8),
-                      ),
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.location_on_outlined,
+                            size: 14, color: const Color(0xFF94A3B8)),
+                        const SizedBox(width: 4),
+                        ConstrainedBox(
+                          constraints: const BoxConstraints(maxWidth: 230),
+                          child: Text(
+                            job.location,
+                            softWrap: true,
+                            style: GoogleFonts.plusJakartaSans(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w500,
+                              color: const Color(0xFF94A3B8),
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
-                    const SizedBox(width: 12),
-                    Icon(Icons.work_outline_rounded,
-                        size: 14, color: const Color(0xFF94A3B8)),
-                    const SizedBox(width: 4),
-                    Text(
-                      job.type,
-                      style: GoogleFonts.plusJakartaSans(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w500,
-                        color: const Color(0xFF94A3B8),
-                      ),
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.work_outline_rounded,
+                            size: 14, color: const Color(0xFF94A3B8)),
+                        const SizedBox(width: 4),
+                        Text(
+                          job.type,
+                          style: GoogleFonts.plusJakartaSans(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w500,
+                            color: const Color(0xFF94A3B8),
+                          ),
+                        ),
+                      ],
                     ),
-                    if (onAction != null) ...[
-                      const Spacer(),
+                    if (onAction != null)
                       GestureDetector(
                         onTap: onAction,
                         child: Container(
@@ -1271,7 +1308,6 @@ class _JobCard extends StatelessWidget {
                           ),
                         ),
                       ),
-                    ],
                   ],
                 ),
               ],
@@ -1561,11 +1597,25 @@ class _ConvoCard extends StatelessWidget {
   }
 
   String _formatTime(DateTime dt) {
-    final diff = DateTime.now().difference(dt);
-    if (diff.inMinutes < 1) return 'now';
-    if (diff.inMinutes < 60) return '${diff.inMinutes}m';
-    if (diff.inHours < 24) return '${diff.inHours}h';
-    return '${diff.inDays}d';
+    const months = <String>[
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec',
+    ];
+    final month = months[dt.month - 1];
+    final day = dt.day.toString();
+    final hour = dt.hour.toString().padLeft(2, '0');
+    final minute = dt.minute.toString().padLeft(2, '0');
+    return '$month $day, $hour:$minute';
   }
 }
 

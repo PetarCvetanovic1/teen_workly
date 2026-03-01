@@ -20,6 +20,10 @@ class _JobSnapshot {
 }
 
 class AppState extends ChangeNotifier {
+  static const String _googleServerClientId =
+      '387879577336-qeh1hns71n3fd2rscd020d3e734ruglr.apps.googleusercontent.com';
+  static const String currentTermsVersion = '2026-03-01';
+
   final _auth = FirebaseAuth.instance;
 
   UserProfile? _profile;
@@ -69,6 +73,17 @@ class AppState extends ChangeNotifier {
   }
 
   bool get canPostJobs => isLoggedIn;
+  bool get hasAcceptedTerms {
+    final p = _profile;
+    if (p == null) return false;
+    final versionOk = (p.termsAcceptedVersion ?? '').trim() == currentTermsVersion;
+    final accepted = p.termsAcceptedAt != null;
+    final waiver = p.liabilityWaiverAcceptedAt != null;
+    final risk = p.riskAcknowledgedAt != null;
+    final guardianRequired = (p.age ?? 17) < 18;
+    final guardian = !guardianRequired || p.guardianConsentAt != null;
+    return accepted && versionOk && waiver && risk && guardian;
+  }
 
   AppState() {
     if (kIsWeb) {
@@ -175,6 +190,12 @@ class AppState extends ChangeNotifier {
                 ? 'New message'
                 : 'New message from ${conv.otherUserName}',
             body: conv.lastMessagePreview,
+            payload: {
+              'type': 'conversation',
+              'conversationId': conv.id,
+              'otherUserName': conv.otherUserName,
+              'contextLabel': conv.contextLabel,
+            },
           );
         }
       },
@@ -210,6 +231,11 @@ class AppState extends ChangeNotifier {
         await NotificationService.instance.showMessageNotification(
           title: 'New applicant',
           body: '$applicantDelta new applicant${applicantDelta == 1 ? '' : 's'} for "${j.title}"',
+          payload: {
+            'type': 'dashboard',
+            'jobId': j.id,
+            'source': 'new_applicant',
+          },
         );
       }
 
@@ -219,6 +245,11 @@ class AppState extends ChangeNotifier {
         await NotificationService.instance.showMessageNotification(
           title: 'You were hired',
           body: 'You were hired for "${j.title}".',
+          payload: {
+            'type': 'dashboard',
+            'jobId': j.id,
+            'source': 'hired',
+          },
         );
       }
 
@@ -230,6 +261,11 @@ class AppState extends ChangeNotifier {
         await NotificationService.instance.showMessageNotification(
           title: 'Job completed',
           body: '"${j.title}" was marked completed.',
+          payload: {
+            'type': 'dashboard',
+            'jobId': j.id,
+            'source': 'completed',
+          },
         );
       }
     }
@@ -340,6 +376,74 @@ class AppState extends ChangeNotifier {
   }
 
   Future<String?> login(String email, String password) async {
+    final normalizedEmail = email.trim().toLowerCase();
+    try {
+      final rawPassword = password;
+      final trimmedPassword = password.trim();
+
+      UserCredential cred;
+      try {
+        cred = await _auth.signInWithEmailAndPassword(
+          email: normalizedEmail,
+          password: rawPassword,
+        );
+      } on FirebaseAuthException catch (e) {
+        final canRetryTrimmed = (e.code == 'invalid-credential' ||
+                e.code == 'invalid-login-credentials' ||
+                e.code == 'wrong-password') &&
+            trimmedPassword.isNotEmpty &&
+            trimmedPassword != rawPassword;
+        if (!canRetryTrimmed) rethrow;
+        cred = await _auth.signInWithEmailAndPassword(
+          email: normalizedEmail,
+          password: trimmedPassword,
+        );
+      }
+
+      return await _finalizeAuthSession(
+        credential: cred,
+        authProvider: 'password',
+        touchLogin: true,
+      );
+    } on FirebaseAuthException catch (e) {
+      if (e.code == 'configuration-not-found' ||
+          e.code == 'operation-not-allowed') {
+        return 'Email/Password auth is not enabled in Firebase. '
+            'Open Firebase Console > Authentication > Sign-in method > enable Email/Password.';
+      }
+      if (e.code == 'user-not-found' ||
+          e.code == 'wrong-password' ||
+          e.code == 'invalid-credential' ||
+          e.code == 'invalid-login-credentials') {
+        try {
+          final userDoc = await FirestoreService.getUserByEmail(normalizedEmail);
+          final provider = (userDoc?['authProvider'] ?? '').toString();
+          if (provider == 'google.com') {
+            return 'This account is linked to Google sign-in. '
+                'Tap "Continue with Google" for this email.';
+          }
+          if (userDoc != null) {
+            return 'Password is incorrect for this account. '
+                'Use "Forgot password?" to reset it.';
+          }
+        } catch (_) {}
+        return 'Email or password is incorrect.';
+      }
+      if (e.code == 'network-request-failed') {
+        return 'Network error. Check your internet and try again.';
+      }
+      if (e.code == 'too-many-requests') {
+        return 'Too many attempts. Please wait a bit and try again.';
+      }
+      if (e.code == 'internal-error') {
+        // Firebase can occasionally return this transiently even with valid creds.
+        return 'Temporary login error. Please try again in a few seconds.';
+      }
+      return 'Login failed (${e.code}): ${e.message ?? 'Unknown auth error'}';
+    }
+  }
+
+  Future<String?> loginWithEmailPasswordDirect(String email, String password) async {
     final normalizedEmail = email.trim().toLowerCase();
     try {
       final cred = await _auth.signInWithEmailAndPassword(
@@ -471,7 +575,7 @@ class AppState extends ChangeNotifier {
     return null;
   }
 
-  Future<String?> loginWithGoogle() async {
+  Future<String?> loginWithGoogle({bool forceAccountPicker = false}) async {
     try {
       UserCredential cred;
       if (kIsWeb) {
@@ -479,16 +583,23 @@ class AppState extends ChangeNotifier {
         cred = await _auth.signInWithPopup(provider);
       } else {
         final googleSignIn = GoogleSignIn.instance;
-        await googleSignIn.initialize();
+        await googleSignIn.initialize(
+          serverClientId: _googleServerClientId,
+        );
         // Keep last Google session on device so returning users don't need
         // to re-enter email/password every time.
-        GoogleSignInAccount? account;
-        final lightAuth = googleSignIn.attemptLightweightAuthentication();
-        if (lightAuth != null) {
-          account = await lightAuth;
+        GoogleSignInAccount account;
+        if (forceAccountPicker) {
+          try {
+            await googleSignIn.signOut();
+          } catch (_) {}
         }
-        account ??= await googleSignIn.authenticate();
+        account = await googleSignIn.authenticate();
         final auth = account.authentication;
+        if (auth.idToken == null || auth.idToken!.isEmpty) {
+          return 'Google sign-in did not return a valid ID token. '
+              'Check your Firebase Google provider setup and SHA fingerprint.';
+        }
         final credential = GoogleAuthProvider.credential(
           idToken: auth.idToken,
         );
@@ -527,6 +638,12 @@ class AppState extends ChangeNotifier {
           return 'Google sign-in failed (unknown error).';
       }
     } on FirebaseAuthException catch (e) {
+      if (e.code == 'account-exists-with-different-credential' ||
+          e.code == 'credential-already-in-use' ||
+          e.code == 'email-already-in-use') {
+        return 'That email already has a different sign-in method. '
+            'Use your password (or "Forgot password?") first, then try Google again.';
+      }
       if (e.code == 'operation-not-allowed' ||
           e.code == 'configuration-not-found') {
         return 'Google sign-in is not enabled/configured in Firebase for this app.';
@@ -587,6 +704,30 @@ class AppState extends ChangeNotifier {
     }
     if (vaultGoal != null) _profile!.vaultGoal = vaultGoal;
     if (vaultTargetAmount != null) _profile!.vaultTargetAmount = vaultTargetAmount;
+    await FirestoreService.createOrUpdateUser(_profile!);
+    notifyListeners();
+  }
+
+  Future<void> acceptTerms({
+    required String version,
+    required bool guardianConsent,
+  }) async {
+    if (_profile == null) return;
+    final now = DateTime.now();
+    _profile!.termsAcceptedAt = now;
+    _profile!.termsAcceptedVersion = version.trim();
+    _profile!.liabilityWaiverAcceptedAt = now;
+    _profile!.riskAcknowledgedAt = now;
+    if ((_profile!.age ?? 17) < 18 && guardianConsent) {
+      _profile!.guardianConsentAt = now;
+    }
+    await FirestoreService.createOrUpdateUser(_profile!);
+    notifyListeners();
+  }
+
+  Future<void> markHuddleRepliesSeen() async {
+    if (_profile == null) return;
+    _profile!.huddleRepliesSeenAt = DateTime.now();
     await FirestoreService.createOrUpdateUser(_profile!);
     notifyListeners();
   }
@@ -1066,6 +1207,9 @@ class AppState extends ChangeNotifier {
   Stream<List<ChatMessage>> messagesStream(String conversationId) =>
       FirestoreService.messagesStream(conversationId);
 
+  Stream<Conversation?> conversationStream(String conversationId) =>
+      FirestoreService.conversationStream(conversationId, currentUserId);
+
   Future<Conversation> getOrCreateConversation({
     required String otherUserId,
     required String otherUserName,
@@ -1084,6 +1228,30 @@ class AppState extends ChangeNotifier {
 
   Future<void> deleteConversation(String conversationId) async {
     await FirestoreService.deleteConversation(conversationId);
+  }
+
+  Future<void> setConversationTyping(String conversationId, bool isTyping) async {
+    await FirestoreService.setConversationTyping(
+      conversationId: conversationId,
+      userId: currentUserId,
+      isTyping: isTyping,
+    );
+  }
+
+  Future<void> markConversationSeen(String conversationId) async {
+    final items = await FirestoreService.messagesStream(conversationId).first;
+    DateTime seenAt = DateTime.now();
+    for (final m in items.reversed) {
+      if (m.senderId != currentUserId) {
+        seenAt = m.timestamp;
+        break;
+      }
+    }
+    await FirestoreService.markConversationSeen(
+      conversationId: conversationId,
+      userId: currentUserId,
+      seenAt: seenAt,
+    );
   }
 
   Future<void> sendMessage(String conversationId, String text) async {
