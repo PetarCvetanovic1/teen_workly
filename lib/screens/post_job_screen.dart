@@ -693,11 +693,17 @@ class _PostJobScreenState extends State<PostJobScreen> {
               ? authDisplayName
               : (authUser.email?.split('@').first ?? 'User'))
           : state.currentUserName;
+      final isMinorPoster = (state.profile?.age ?? 18) < 18;
+      final rawLocation = _locationCtrl.text.trim();
+      final publicLocation = isMinorPoster
+          ? LocationService.approximatePublicLocation(rawLocation,
+              radiusMeters: 500)
+          : null;
       final job = Job(
         id: DateTime.now().microsecondsSinceEpoch.toString(),
         title: _titleCtrl.text.trim(),
         type: _selectedType,
-        location: _locationCtrl.text.trim(),
+        location: rawLocation,
         description: _descCtrl.text.trim(),
         services: Set.from(_selectedServices),
         otherService: _selectedServices.contains('Other')
@@ -706,6 +712,8 @@ class _PostJobScreenState extends State<PostJobScreen> {
         posterId: authUser.uid,
         posterName: effectivePosterName,
         createdAt: DateTime.now(),
+        isMinorPoster: isMinorPoster,
+        publicLocation: publicLocation,
         payment: double.tryParse(_payCtrl.text.trim()) ?? 0,
       );
       await state.addJob(job);

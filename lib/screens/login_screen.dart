@@ -1085,16 +1085,68 @@ class _SignUpScreenState extends State<SignUpScreen> {
     setState(() => _sendingCode = false);
 
     if (!emailResult.success) {
+      final continueWithoutCode = await showDialog<bool>(
+            context: context,
+            builder: (ctx) => AlertDialog(
+              title: const Text('Email verification unavailable'),
+              content: Text(
+                '${emailResult.error ?? 'Could not send verification email.'}\n\n'
+                'You can still create your account now and verify email later.',
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(ctx, false),
+                  child: const Text('Cancel'),
+                ),
+                FilledButton(
+                  onPressed: () => Navigator.pop(ctx, true),
+                  child: const Text('Continue'),
+                ),
+              ],
+            ),
+          ) ??
+          false;
+      if (!continueWithoutCode || !mounted) return;
+
+      final error = await context.read<AppState>().signUp(
+            name: _nameCtrl.text.trim(),
+            email: email,
+            password: _passCtrl.text,
+            age: int.tryParse(_ageCtrl.text.trim()),
+          );
+      if (!mounted) return;
+      if (error != null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(error), backgroundColor: Colors.red),
+        );
+        return;
+      }
+
+      try {
+        await FirebaseAuth.instance.currentUser?.sendEmailVerification();
+      } catch (_) {
+        // Non-blocking fallback: account is still created.
+      }
+
+      if (FirebaseAuth.instance.currentUser == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Account created. Please log in to continue.'),
+            backgroundColor: Colors.red,
+          ),
+        );
+        return;
+      }
+
+      await _routeAfterAuth(context);
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(
-            emailResult.error ??
-                'Could not send verification email. Check your email and try again.',
+          content: const Text(
+            'Account created! We could not send code right now, but you can verify email later.',
           ),
           behavior: SnackBarBehavior.floating,
-          backgroundColor: const Color(0xFFDC2626),
-          shape:
-              RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
         ),
       );
       return;

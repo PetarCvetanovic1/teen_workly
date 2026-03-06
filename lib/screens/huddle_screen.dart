@@ -7,6 +7,7 @@ import '../state/app_state.dart';
 import '../services/firestore_service.dart';
 import '../services/moderation.dart';
 import '../widgets/content_wrap.dart';
+import '../widgets/report_sheet.dart';
 import '../widgets/app_drawer.dart';
 import '../widgets/tw_app_bar.dart';
 import '../utils/smooth_route.dart';
@@ -266,9 +267,14 @@ class _HuddleFeed extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final state = context.watch<AppState>();
+    final visible = posts
+        .where((p) =>
+            !state.isBlocked(p.authorId) && !state.isHuddlePostHidden(p.id))
+        .toList();
     final filtered = filterTag == null
-        ? posts
-        : posts.where((p) => p.tag == filterTag).toList();
+        ? visible
+        : visible.where((p) => p.tag == filterTag).toList();
 
     if (filtered.isEmpty) return _EmptyHuddle(isDark: isDark);
 
@@ -480,41 +486,71 @@ class _HuddlePostCardState extends State<_HuddlePostCard> {
                 padding: const EdgeInsets.fromLTRB(16, 14, 12, 0),
                 child: Row(
                   children: [
-                    CircleAvatar(
-                      radius: 18,
-                      backgroundColor: _tagColor.withValues(alpha: 0.15),
-                      child: Text(
-                        initials,
-                        style: GoogleFonts.plusJakartaSans(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w800,
-                          color: _tagColor,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 10),
                     Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            post.authorName,
-                            style: GoogleFonts.plusJakartaSans(
-                              fontSize: 13,
-                              fontWeight: FontWeight.w700,
-                              color: isDark
-                                  ? Colors.white
-                                  : AppColors.slate900,
+                      child: GestureDetector(
+                        onLongPress: isOwner
+                            ? null
+                            : () => showSafetyActionsSheet(
+                                  context,
+                                  targetType: 'Huddle',
+                                  targetId: post.id,
+                                  userId: post.authorId,
+                                  userName: post.authorName,
+                                  onHide: () =>
+                                      context.read<AppState>().hideHuddlePost(post.id),
+                                ),
+                        onSecondaryTapUp: isOwner
+                            ? null
+                            : (_) => showSafetyActionsSheet(
+                                  context,
+                                  targetType: 'Huddle',
+                                  targetId: post.id,
+                                  userId: post.authorId,
+                                  userName: post.authorName,
+                                  onHide: () =>
+                                      context.read<AppState>().hideHuddlePost(post.id),
+                                ),
+                        child: Row(
+                          children: [
+                            CircleAvatar(
+                              radius: 18,
+                              backgroundColor: _tagColor.withValues(alpha: 0.15),
+                              child: Text(
+                                initials,
+                                style: GoogleFonts.plusJakartaSans(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w800,
+                                  color: _tagColor,
+                                ),
+                              ),
                             ),
-                          ),
-                          Text(
-                            _timeAgo(post.createdAt),
-                            style: GoogleFonts.plusJakartaSans(
-                              fontSize: 11,
-                              color: const Color(0xFF94A3B8),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    post.authorName,
+                                    style: GoogleFonts.plusJakartaSans(
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.w700,
+                                      color: isDark
+                                          ? Colors.white
+                                          : AppColors.slate900,
+                                    ),
+                                  ),
+                                  Text(
+                                    _timeAgo(post.createdAt),
+                                    style: GoogleFonts.plusJakartaSans(
+                                      fontSize: 11,
+                                      color: const Color(0xFF94A3B8),
+                                    ),
+                                  ),
+                                ],
+                              ),
                             ),
-                          ),
-                        ],
+                          ],
+                        ),
                       ),
                     ),
                     Container(
@@ -541,6 +577,22 @@ class _HuddlePostCardState extends State<_HuddlePostCard> {
                         ],
                       ),
                     ),
+                    if (!isOwner)
+                      IconButton(
+                        tooltip: 'Safety actions',
+                        icon: const Icon(Icons.shield_outlined,
+                            size: 18, color: Color(0xFFDC2626)),
+                        onPressed: () => showSafetyActionsSheet(
+                          context,
+                          targetType: 'Huddle',
+                          targetId: post.id,
+                          userId: post.authorId,
+                          userName: post.authorName,
+                          onHide: () =>
+                              context.read<AppState>().hideHuddlePost(post.id),
+                        ),
+                        visualDensity: VisualDensity.compact,
+                      ),
                     if (isOwner)
                       IconButton(
                         icon: Icon(Icons.delete_outline_rounded,

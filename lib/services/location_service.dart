@@ -9,6 +9,55 @@ class LocationService {
     r'(^\d{5}(-\d{4})?$)|(^[A-Z]\d[A-Z][ -]?\d[A-Z]\d$)',
     caseSensitive: false,
   );
+  static final RegExp _streetWords = RegExp(
+    r'\b(st|street|ave|avenue|rd|road|cres|crescent|blvd|boulevard|dr|drive|lane|ln|way|court|ct)\b',
+    caseSensitive: false,
+  );
+  static final RegExp _adminOrCountry = RegExp(
+    r'\b(region|county|district|state|province|canada|usa|united states|serbia)\b',
+    caseSensitive: false,
+  );
+
+  static String approximatePublicLocation(
+    String raw, {
+    int radiusMeters = 500,
+  }) {
+    final input = raw.trim();
+    if (input.isEmpty) return 'Approx. local area (~${radiusMeters}m)';
+    final parts = input
+        .split(',')
+        .map((p) => p.trim())
+        .where((p) => p.isNotEmpty)
+        .toList();
+
+    String city = '';
+    for (final p in parts.reversed) {
+      if (RegExp(r'\d').hasMatch(p)) continue;
+      if (_streetWords.hasMatch(p)) continue;
+      if (_postalLike.hasMatch(p)) continue;
+      if (_adminOrCountry.hasMatch(p)) continue;
+      city = p;
+      break;
+    }
+    if (city.isEmpty && parts.isNotEmpty) city = parts.last;
+
+    String postalHint = '';
+    for (final p in parts) {
+      if (_postalLike.hasMatch(p)) {
+        final compact = p.replaceAll(RegExp(r'\s+'), '').toUpperCase();
+        if (compact.length >= 3) {
+          postalHint = compact.substring(0, 3);
+        }
+        break;
+      }
+    }
+
+    final near = city.isNotEmpty ? 'Near $city' : 'Approx. local area';
+    if (postalHint.isNotEmpty) {
+      return '$near ($postalHint area, ~${radiusMeters}m)';
+    }
+    return '$near (~${radiusMeters}m)';
+  }
 
   static Future<String?> validateWithinHomeRadius({
     required String homeLocation,

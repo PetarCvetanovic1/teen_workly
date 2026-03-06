@@ -141,6 +141,11 @@ You agree to indemnify and hold harmless TeenWorkly and its operators from claim
 8. GOVERNING LAW
 These terms are governed by the laws of Ontario, Canada. You agree to resolve disputes in Ontario, unless applicable law requires otherwise.
 
+9. USER-SHARED INFORMATION & JOB HISTORY
+Users may choose to share personal details, work history, ratings, completed-job history, and other profile/job information through posts, chats, and profiles. You are responsible for what you share.
+- DO NOT post sensitive private information (exact home addresses, health data, government IDs, passwords, etc.).
+- TeenWorkly is not responsible for losses, harm, or disputes caused by information a user voluntarily discloses to others.
+
 BY CHECKING THE BOXES BELOW, YOU ACKNOWLEDGE THAT YOU HAVE READ THIS ENTIRE AGREEMENT, UNDERSTAND THAT YOU ARE GIVING UP LEGAL RIGHTS, AND AGREE TO BE BOUND BY THESE TERMS.''',
                         style: GoogleFonts.plusJakartaSans(
                           fontSize: 13,

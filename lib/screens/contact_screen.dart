@@ -5,6 +5,7 @@ import '../app_colors.dart';
 import '../widgets/app_drawer.dart';
 import '../widgets/tw_app_bar.dart';
 import '../widgets/content_wrap.dart';
+import '../services/contact_email_service.dart';
 import 'home_screen.dart';
 
 class ContactScreen extends StatefulWidget {
@@ -21,6 +22,7 @@ class _ContactScreenState extends State<ContactScreen> {
   final _subjectCtrl = TextEditingController();
   final _messageCtrl = TextEditingController();
   bool _sent = false;
+  bool _sending = false;
 
   @override
   void dispose() {
@@ -103,7 +105,7 @@ class _ContactScreenState extends State<ContactScreen> {
                     child: _ContactInfoCard(
                       icon: Icons.email_outlined,
                       title: 'Email',
-                      value: 'hello@teenworkly.com',
+                      value: ContactEmailService.supportEmail,
                       isDark: isDark,
                     ),
                   ),
@@ -251,25 +253,35 @@ class _ContactScreenState extends State<ContactScreen> {
               elevation: 4,
               shadowColor: Colors.black.withValues(alpha: 0.15),
               child: InkWell(
-                onTap: _submitForm,
+                onTap: _sending ? null : _submitForm,
                 borderRadius: BorderRadius.circular(16),
                 child: Padding(
                   padding: const EdgeInsets.symmetric(vertical: 18),
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      Icon(Icons.send_rounded,
-                          size: 18,
-                          color:
-                              isDark ? AppColors.slate900 : Colors.white),
-                      const SizedBox(width: 10),
+                      if (_sending) ...[
+                        SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: isDark ? AppColors.slate900 : Colors.white,
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                      ] else ...[
+                        Icon(Icons.send_rounded,
+                            size: 18,
+                            color: isDark ? AppColors.slate900 : Colors.white),
+                        const SizedBox(width: 10),
+                      ],
                       Text(
-                        'Send Message',
+                        _sending ? 'Sending...' : 'Send Message',
                         style: GoogleFonts.plusJakartaSans(
                           fontSize: 16,
                           fontWeight: FontWeight.w800,
-                          color:
-                              isDark ? AppColors.slate900 : Colors.white,
+                          color: isDark ? AppColors.slate900 : Colors.white,
                         ),
                       ),
                     ],
@@ -348,10 +360,47 @@ class _ContactScreenState extends State<ContactScreen> {
     );
   }
 
-  void _submitForm() {
-    if (_formKey.currentState?.validate() ?? false) {
-      setState(() => _sent = true);
+  Future<void> _submitForm() async {
+    if (!(_formKey.currentState?.validate() ?? false)) return;
+    final email = _emailCtrl.text.trim();
+    final emailRegex = RegExp(r'^[^\s@]+@[^\s@]+\.[^\s@]+$');
+    if (!emailRegex.hasMatch(email)) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Enter a valid email address.'),
+          behavior: SnackBarBehavior.floating,
+          backgroundColor: Color(0xFFDC2626),
+        ),
+      );
+      return;
     }
+
+    setState(() => _sending = true);
+    final result = await ContactEmailService.sendContactMessage(
+      fromName: _nameCtrl.text.trim(),
+      fromEmail: email,
+      subject: _subjectCtrl.text.trim(),
+      message: _messageCtrl.text.trim(),
+    );
+    if (!mounted) return;
+    setState(() => _sending = false);
+
+    if (!result.success) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            result.error ??
+                'Could not send message right now. Please try again shortly.',
+          ),
+          behavior: SnackBarBehavior.floating,
+          backgroundColor: const Color(0xFFDC2626),
+        ),
+      );
+      return;
+    }
+
+    setState(() => _sent = true);
   }
 }
 

@@ -14,6 +14,7 @@ import '../app_colors.dart';
 import '../models/models.dart';
 import '../state/app_state.dart';
 import '../widgets/app_drawer.dart';
+import '../widgets/report_sheet.dart';
 import '../widgets/tw_app_bar.dart';
 import 'home_screen.dart';
 import 'post_job_screen.dart';
@@ -340,6 +341,13 @@ class _JobsScreenState extends State<JobsScreen> {
       if (_jobMarkers.containsKey(job.id) || _resolvingJobIds.contains(job.id)) {
         continue;
       }
+      if (job.publicLat != null && job.publicLng != null) {
+        if (!mounted) return;
+        setState(() {
+          _jobMarkers[job.id] = LatLng(job.publicLat!, job.publicLng!);
+        });
+        continue;
+      }
       final query = job.location.trim();
       if (query.length < 2) continue;
       _resolvingJobIds.add(job.id);
@@ -433,7 +441,10 @@ class _JobsScreenState extends State<JobsScreen> {
           final openOrInProgressJobs = state.jobs
               .where(
                 (j) =>
-                    j.status != JobStatus.completed && j.posterId != myId,
+                    j.status != JobStatus.completed &&
+                    j.posterId != myId &&
+                    !state.isBlocked(j.posterId) &&
+                    !state.isJobHidden(j.id),
               )
               .toList();
           final filteredJobs = isAll
@@ -446,10 +457,18 @@ class _JobsScreenState extends State<JobsScreen> {
           final filteredServices = !canHire
               ? <Service>[]
               : isAll
-                  ? state.services.where((s) => s.providerId != myId).toList()
+                  ? state.services
+                      .where((s) =>
+                          s.providerId != myId &&
+                          !state.isBlocked(s.providerId) &&
+                          !state.isServiceHidden(s.id))
+                      .toList()
                   : state.services.where((s) => s.skills.any(
                         (sk) => sk.toLowerCase().contains(filter.toLowerCase()),
-                      ) && s.providerId != myId).toList();
+                      ) &&
+                          s.providerId != myId &&
+                          !state.isBlocked(s.providerId) &&
+                          !state.isServiceHidden(s.id)).toList();
 
           final showJobs = _contentType != _BrowseContentType.services;
           final showServices = _contentType != _BrowseContentType.jobs;
@@ -469,45 +488,52 @@ class _JobsScreenState extends State<JobsScreen> {
           if (_isMapView) {
             Future.microtask(() => _syncJobMarkers(visibleJobs));
           }
-          return Column(
-            children: [
-              _buildControls(
-                theme,
-                isDark,
-                totalCount,
-                workLocation: workLocation,
-                contentType: _contentType,
-                onContentTypeChanged: (next) {
-                  setState(() {
-                    _contentType = next;
-                    if (_contentType == _BrowseContentType.services) {
-                      _isMapView = false;
-                    }
-                  });
-                },
-              ),
-              Expanded(
-                child: _isMapView
-                    ? _MapView(
-                        isDark: isDark,
-                        radiusKm: _radiusKm,
-                        userLocation: _userLocation,
-                        jobs: visibleJobs,
-                        jobMarkers: _jobMarkers,
-                        onRadiusChanged: (v) => setState(() => _radiusKm = v),
-                        onDetectLocation: _detectGPS,
-                        locationLoading: _locationLoading,
-                      )
-                    : (visibleJobs.isEmpty && visibleServices.isEmpty)
-                        ? const _EmptyState()
-                        : _ListingsView(
-                            jobs: visibleJobs,
-                            services: visibleServices,
+          return Center(
+            child: FractionallySizedBox(
+              widthFactor: 0.8,
+              child: Column(
+                children: [
+                  _buildControls(
+                    theme,
+                    isDark,
+                    totalCount,
+                    workLocation: workLocation,
+                    contentType: _contentType,
+                    onContentTypeChanged: (next) {
+                      setState(() {
+                        _contentType = next;
+                        if (_contentType == _BrowseContentType.services) {
+                          _isMapView = false;
+                        }
+                      });
+                    },
+                  ),
+                  Expanded(
+                    child: _isMapView
+                        ? _MapView(
                             isDark: isDark,
-                            currentUserId: myId,
-                          ),
+                            radiusKm: _radiusKm,
+                            userLocation: _userLocation,
+                            jobs: visibleJobs,
+                            jobMarkers: _jobMarkers,
+                            showPrivacyBubble:
+                                context.read<AppState>().privacyBubbleEnabled,
+                            onRadiusChanged: (v) => setState(() => _radiusKm = v),
+                            onDetectLocation: _detectGPS,
+                            locationLoading: _locationLoading,
+                          )
+                        : (visibleJobs.isEmpty && visibleServices.isEmpty)
+                            ? const _EmptyState()
+                            : _ListingsView(
+                                jobs: visibleJobs,
+                                services: visibleServices,
+                                isDark: isDark,
+                                currentUserId: myId,
+                              ),
+                  ),
+                ],
               ),
-            ],
+            ),
           );
         },
       ),
@@ -751,6 +777,7 @@ class _MapView extends StatelessWidget {
   final LatLng? userLocation;
   final List<Job> jobs;
   final Map<String, LatLng> jobMarkers;
+  final bool showPrivacyBubble;
   final ValueChanged<double> onRadiusChanged;
   final VoidCallback onDetectLocation;
   final bool locationLoading;
@@ -761,6 +788,7 @@ class _MapView extends StatelessWidget {
     required this.userLocation,
     required this.jobs,
     required this.jobMarkers,
+    required this.showPrivacyBubble,
     required this.onRadiusChanged,
     required this.onDetectLocation,
     required this.locationLoading,
@@ -839,6 +867,24 @@ class _MapView extends StatelessWidget {
                     ],
                   ),
                 if (markersToRender.isNotEmpty)
+                  CircleLayer(
+                    circles: markersToRender.map((job) {
+                      final point = markerPoints[job.id] ?? jobMarkers[job.id]!;
+                      final double radius = job.publicRadiusMeters > 0
+                          ? job.publicRadiusMeters
+                          : 500.0;
+                      return CircleMarker(
+                        point: point,
+                        radius: radius,
+                        useRadiusInMeter: true,
+                        color: const Color(0xFF7C3AED).withValues(alpha: 0.10),
+                        borderColor:
+                            const Color(0xFF7C3AED).withValues(alpha: 0.35),
+                        borderStrokeWidth: 1.5,
+                      );
+                    }).toList(),
+                  ),
+                if (markersToRender.isNotEmpty && !showPrivacyBubble)
                   MarkerLayer(
                     markers: markersToRender.map((job) {
                       final point = markerPoints[job.id] ?? jobMarkers[job.id]!;
@@ -1505,7 +1551,11 @@ class _ListingsView extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 10),
-          ...services.map((s) => _ServiceListTile(service: s, isDark: isDark)),
+          ...services.map((s) => _ServiceListTile(
+                service: s,
+                isDark: isDark,
+                currentUserId: currentUserId,
+              )),
           const SizedBox(height: 24),
         ],
         if (jobs.isNotEmpty) ...[
@@ -1535,7 +1585,12 @@ class _ListingsView extends StatelessWidget {
 class _ServiceListTile extends StatelessWidget {
   final Service service;
   final bool isDark;
-  const _ServiceListTile({required this.service, required this.isDark});
+  final String currentUserId;
+  const _ServiceListTile({
+    required this.service,
+    required this.isDark,
+    required this.currentUserId,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -1552,6 +1607,26 @@ class _ServiceListTile extends StatelessWidget {
               builder: (_) => ServiceDetailScreen(service: service),
             ),
           ),
+          onLongPress: service.providerId == currentUserId
+              ? null
+              : () => showSafetyActionsSheet(
+                    context,
+                    targetType: 'Service',
+                    targetId: service.id,
+                    userId: service.providerId,
+                    userName: service.providerName,
+                    onHide: () => context.read<AppState>().hideService(service.id),
+                  ),
+          onSecondaryTapUp: service.providerId == currentUserId
+              ? null
+              : (_) => showSafetyActionsSheet(
+                    context,
+                    targetType: 'Service',
+                    targetId: service.id,
+                    userId: service.providerId,
+                    userName: service.providerName,
+                    onHide: () => context.read<AppState>().hideService(service.id),
+                  ),
           borderRadius: BorderRadius.circular(18),
           child: Padding(
             padding: const EdgeInsets.all(16),
@@ -1622,7 +1697,7 @@ class _ServiceListTile extends StatelessWidget {
                                       MediaQuery.of(context).size.width * 0.45,
                                 ),
                                 child: Text(
-                                  service.location,
+                                  service.displayLocation,
                                   overflow: TextOverflow.ellipsis,
                                   style: GoogleFonts.plusJakartaSans(
                                     fontSize: 11,
@@ -1651,15 +1726,48 @@ class _ServiceListTile extends StatelessWidget {
                                 ),
                               ),
                             ),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 8, vertical: 2),
+                            decoration: BoxDecoration(
+                              color:
+                                  const Color(0xFF2563EB).withValues(alpha: 0.1),
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                            child: Text(
+                              '${service.workRadiusKm.toStringAsFixed(0)} km radius',
+                              style: GoogleFonts.plusJakartaSans(
+                                fontSize: 10,
+                                fontWeight: FontWeight.w700,
+                                color: const Color(0xFF2563EB),
+                              ),
+                            ),
+                          ),
                         ],
                       ),
                     ],
                   ),
                 ),
-                Icon(
-                  Icons.chevron_right_rounded,
-                  color: isDark ? const Color(0xFF334155) : AppColors.slate200,
-                ),
+                if (service.providerId == currentUserId)
+                  Icon(
+                    Icons.chevron_right_rounded,
+                    color:
+                        isDark ? const Color(0xFF334155) : AppColors.slate200,
+                  )
+                else
+                  IconButton(
+                    tooltip: 'Safety actions',
+                    icon: const Icon(Icons.shield_outlined,
+                        color: Color(0xFFDC2626)),
+                    onPressed: () => showSafetyActionsSheet(
+                      context,
+                      targetType: 'Service',
+                      targetId: service.id,
+                      userId: service.providerId,
+                      userName: service.providerName,
+                      onHide: () => context.read<AppState>().hideService(service.id),
+                    ),
+                  ),
               ],
             ),
           ),
@@ -1710,6 +1818,26 @@ class _JobListTile extends StatelessWidget {
               builder: (_) => JobDetailScreen(job: job),
             ),
           ),
+          onLongPress: job.posterId == currentUserId
+              ? null
+              : () => showSafetyActionsSheet(
+                    context,
+                    targetType: 'Job',
+                    targetId: job.id,
+                    userId: job.posterId,
+                    userName: job.posterName,
+                    onHide: () => context.read<AppState>().hideJob(job.id),
+                  ),
+          onSecondaryTapUp: job.posterId == currentUserId
+              ? null
+              : (_) => showSafetyActionsSheet(
+                    context,
+                    targetType: 'Job',
+                    targetId: job.id,
+                    userId: job.posterId,
+                    userName: job.posterName,
+                    onHide: () => context.read<AppState>().hideJob(job.id),
+                  ),
           borderRadius: BorderRadius.circular(18),
           child: Padding(
             padding: const EdgeInsets.all(16),
@@ -1756,7 +1884,7 @@ class _JobListTile extends StatelessWidget {
                                       MediaQuery.of(context).size.width * 0.45,
                                 ),
                                 child: Text(
-                                  job.location,
+                                  job.displayLocation,
                                   overflow: TextOverflow.ellipsis,
                                   style: GoogleFonts.plusJakartaSans(
                                     fontSize: 11,
@@ -1823,10 +1951,26 @@ class _JobListTile extends StatelessWidget {
                     ],
                   ),
                 ),
-                Icon(
-                  Icons.chevron_right_rounded,
-                  color: isDark ? const Color(0xFF334155) : AppColors.slate200,
-                ),
+                if (job.posterId == currentUserId)
+                  Icon(
+                    Icons.chevron_right_rounded,
+                    color:
+                        isDark ? const Color(0xFF334155) : AppColors.slate200,
+                  )
+                else
+                  IconButton(
+                    tooltip: 'Safety actions',
+                    icon: const Icon(Icons.shield_outlined,
+                        color: Color(0xFFDC2626)),
+                    onPressed: () => showSafetyActionsSheet(
+                      context,
+                      targetType: 'Job',
+                      targetId: job.id,
+                      userId: job.posterId,
+                      userName: job.posterName,
+                      onHide: () => context.read<AppState>().hideJob(job.id),
+                    ),
+                  ),
               ],
             ),
           ),

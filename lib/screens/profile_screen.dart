@@ -235,13 +235,53 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         color: isDark ? Colors.white : AppColors.slate900,
                       ),
                     ),
-                    if (state.amVerified) ...[
-                      const SizedBox(width: 8),
-                      const Icon(Icons.verified_rounded,
-                          color: Color(0xFF059669), size: 24),
-                    ],
+                    const SizedBox(width: 8),
+                    Builder(builder: (context) {
+                      final tier = state.myWorkerTier;
+                      switch (tier) {
+                        case WorkerTier.topRated:
+                          return const Icon(Icons.workspace_premium_rounded,
+                              color: Color(0xFFF59E0B), size: 24);
+                        case WorkerTier.reliable:
+                          return const Icon(Icons.verified_rounded,
+                              color: Color(0xFF059669), size: 24);
+                        case WorkerTier.newWorker:
+                          return const Icon(Icons.new_releases_rounded,
+                              color: Color(0xFF94A3B8), size: 22);
+                      }
+                    }),
                   ],
                 ),
+                const SizedBox(height: 4),
+                Builder(builder: (context) {
+                  final tier = state.myWorkerTier;
+                  final label = tier == WorkerTier.topRated
+                      ? 'Top Rated'
+                      : tier == WorkerTier.reliable
+                          ? 'Reliable'
+                          : 'New';
+                  final color = tier == WorkerTier.topRated
+                      ? const Color(0xFFF59E0B)
+                      : tier == WorkerTier.reliable
+                          ? const Color(0xFF059669)
+                          : const Color(0xFF94A3B8);
+                  return Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: color.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Text(
+                      label,
+                      style: GoogleFonts.plusJakartaSans(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w800,
+                        color: color,
+                      ),
+                    ),
+                  );
+                }),
                 if (state.myReviewCount > 0) ...[
                   const SizedBox(height: 6),
                   Row(

@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/foundation.dart'
+    show kIsWeb, defaultTargetPlatform, TargetPlatform;
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import '../models/models.dart';
@@ -19,16 +20,29 @@ class _JobSnapshot {
   });
 }
 
+enum WorkerTier { newWorker, reliable, topRated }
+
 class AppState extends ChangeNotifier {
   static const String _googleServerClientId =
       '387879577336-qeh1hns71n3fd2rscd020d3e734ruglr.apps.googleusercontent.com';
   static const String currentTermsVersion = '2026-03-01';
+  static final RegExp _phoneRe = RegExp(r'(?<!\d)(?:\+?\d[\d\s().-]{7,}\d)');
+  static final RegExp _emailRe =
+      RegExp(r'\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b', caseSensitive: false);
+  static final RegExp _socialRe = RegExp(
+    r'(?:^|\s)(@[\w._]{2,}|snap(?:chat)?|instagram|insta|ig|tiktok|discord|telegram|whatsapp)\b',
+    caseSensitive: false,
+  );
 
   final _auth = FirebaseAuth.instance;
+  ThemeMode _themeMode = ThemeMode.system;
 
   UserProfile? _profile;
   bool get isLoggedIn => _auth.currentUser != null;
   UserProfile? get profile => _profile;
+  ThemeMode get themeMode => _themeMode;
+  bool get privacyBubbleEnabled => _profile?.privacyBubbleEnabled ?? true;
+  bool get isShadowBanned => _profile?.shadowBanned == true;
 
   String get currentUserId => _auth.currentUser?.uid ?? 'guest';
   String get currentUserName {
@@ -62,6 +76,9 @@ class AppState extends ChangeNotifier {
   final Map<String, DateTime> _recentOutgoingAt = {};
 
   final Set<String> _blockedUserIds = {};
+  final Set<String> _hiddenJobIds = {};
+  final Set<String> _hiddenServiceIds = {};
+  final Set<String> _hiddenHuddlePostIds = {};
   final List<DateTime> _deleteStrikes = [];
   DateTime? _postingSuspendedUntil;
 
@@ -69,6 +86,12 @@ class AppState extends ChangeNotifier {
   String get userLocationText => _userLocationText;
   void setUserLocation(String location) {
     _userLocationText = location;
+    notifyListeners();
+  }
+
+  void setThemeMode(ThemeMode mode) {
+    if (_themeMode == mode) return;
+    _themeMode = mode;
     notifyListeners();
   }
 
@@ -108,6 +131,10 @@ class AppState extends ChangeNotifier {
       _services = [];
       _reports = [];
       _reviews = [];
+      _blockedUserIds.clear();
+      _hiddenJobIds.clear();
+      _hiddenServiceIds.clear();
+      _hiddenHuddlePostIds.clear();
     }
     notifyListeners();
   }
@@ -329,6 +356,15 @@ class AppState extends ChangeNotifier {
     }
 
     _profile = profile;
+    _hiddenJobIds
+      ..clear()
+      ..addAll(profile.hiddenJobIds);
+    _hiddenServiceIds
+      ..clear()
+      ..addAll(profile.hiddenServiceIds);
+    _hiddenHuddlePostIds
+      ..clear()
+      ..addAll(profile.hiddenHuddlePostIds);
     _startListening();
     notifyListeners();
   }
@@ -577,42 +613,96 @@ class AppState extends ChangeNotifier {
 
   Future<String?> loginWithGoogle({bool forceAccountPicker = false}) async {
     final googleSignIn = GoogleSignIn.instance;
+    final trace = <String>[];
+    void step(String s) {
+      trace.add(s);
+      debugPrint('[GoogleAuth] $s');
+    }
+
+    String fail(String message) {
+      final diag = trace.join(' | ');
+      if (diag.isEmpty) return message;
+      return '$message\n[diag] $diag';
+    }
+
+    step('start platform=${kIsWeb ? 'web' : defaultTargetPlatform.name} forcePicker=$forceAccountPicker');
     try {
       UserCredential cred;
       if (kIsWeb) {
+        step('web: signInWithPopup begin');
         final provider = GoogleAuthProvider();
         cred = await _auth.signInWithPopup(provider);
+        step('web: signInWithPopup success');
       } else {
-        await googleSignIn.initialize(
-          serverClientId: _googleServerClientId,
-        );
-        // Keep last Google session on device so returning users don't need
-        // to re-enter email/password every time.
-        GoogleSignInAccount? account;
-        if (forceAccountPicker) {
-          try {
-            await googleSignIn.signOut();
-          } catch (_) {}
+        if (defaultTargetPlatform == TargetPlatform.android) {
+          // Use a single Google plugin flow on Android to avoid double prompts.
+          await googleSignIn.initialize();
+          step('android: plugin initialize success');
+          GoogleSignInAccount? account;
+          if (forceAccountPicker) {
+            try {
+              await googleSignIn.signOut();
+              step('android: plugin signOut success');
+            } catch (_) {}
+          }
+          if (!forceAccountPicker) {
+            try {
+              account = await googleSignIn.attemptLightweightAuthentication();
+              step('android: lightweightAuth ${account == null ? 'miss' : 'hit'}');
+            } catch (_) {}
+          }
+          step('android: plugin authenticate begin');
+          account ??= await googleSignIn.authenticate();
+          step('android: plugin authenticate success');
+          final auth = account.authentication;
+          if (auth.idToken == null || auth.idToken!.isEmpty) {
+            return fail('Google sign-in did not return a valid ID token. '
+                'Check your Firebase Google provider setup and SHA fingerprint.');
+          }
+          final credential = GoogleAuthProvider.credential(
+            idToken: auth.idToken,
+          );
+          cred = await _auth.signInWithCredential(credential);
+          step('android: signInWithCredential success');
+        } else {
+          await googleSignIn.initialize(
+            serverClientId: _googleServerClientId,
+          );
+          step('non-android: plugin initialize success');
+          // Keep last Google session on device so returning users don't need
+          // to re-enter email/password every time.
+          GoogleSignInAccount? account;
+          if (forceAccountPicker) {
+            try {
+              await googleSignIn.signOut();
+              step('non-android: plugin signOut success');
+            } catch (_) {}
+          }
+          if (!forceAccountPicker) {
+            try {
+              account = await googleSignIn.attemptLightweightAuthentication();
+              step('non-android: lightweightAuth ${account == null ? 'miss' : 'hit'}');
+            } catch (_) {}
+          }
+          step('non-android: plugin authenticate begin');
+          account ??= await googleSignIn.authenticate();
+          step('non-android: plugin authenticate success');
+          final auth = account.authentication;
+          if (auth.idToken == null || auth.idToken!.isEmpty) {
+            return fail('Google sign-in did not return a valid ID token. '
+                'Check your Firebase Google provider setup and SHA fingerprint.');
+          }
+          final credential = GoogleAuthProvider.credential(
+            idToken: auth.idToken,
+          );
+          cred = await _auth.signInWithCredential(credential);
+          step('non-android: signInWithCredential success');
         }
-        if (!forceAccountPicker) {
-          try {
-            account = await googleSignIn.attemptLightweightAuthentication();
-          } catch (_) {}
-        }
-        account ??= await googleSignIn.authenticate();
-        final auth = account.authentication;
-        if (auth.idToken == null || auth.idToken!.isEmpty) {
-          return 'Google sign-in did not return a valid ID token. '
-              'Check your Firebase Google provider setup and SHA fingerprint.';
-        }
-        final credential = GoogleAuthProvider.credential(
-          idToken: auth.idToken,
-        );
-        cred = await _auth.signInWithCredential(credential);
       }
 
       final user = cred.user;
-      if (user == null) return 'Google sign in failed: no user returned.';
+      if (user == null) return fail('Google sign in failed: no user returned.');
+      step('firebase user uid=${user.uid}');
 
       return await _finalizeAuthSession(
         credential: cred,
@@ -621,6 +711,7 @@ class AppState extends ChangeNotifier {
         touchLogin: true,
       );
     } on GoogleSignInException catch (e) {
+      step('GoogleSignInException code=${e.code.name} desc=${(e.description ?? '').trim()}');
       switch (e.code) {
         case GoogleSignInExceptionCode.canceled:
           // Some Android builds report "canceled" even though account selection
@@ -633,6 +724,7 @@ class AppState extends ChangeNotifier {
               (p) => p.providerId == 'google.com',
             );
             if (!hasGoogleProvider) continue;
+            step('canceled-recovery: found settled firebase google session');
             await _syncProfileForCurrentUser(
               preferredName: settled.displayName,
               authProvider: 'google.com',
@@ -648,6 +740,7 @@ class AppState extends ChangeNotifier {
               (p) => p.providerId == 'google.com',
             );
             if (hasGoogleProvider) {
+              step('canceled-recovery: active firebase google provider');
               await _syncProfileForCurrentUser(
                 preferredName: active.displayName,
                 authProvider: 'google.com',
@@ -661,6 +754,7 @@ class AppState extends ChangeNotifier {
           try {
             final recovered = await googleSignIn.attemptLightweightAuthentication();
             if (recovered != null) {
+              step('canceled-recovery: lightweightAuth hit');
               final auth = recovered.authentication;
               if (auth.idToken != null && auth.idToken!.isNotEmpty) {
                 final credential = GoogleAuthProvider.credential(
@@ -669,6 +763,7 @@ class AppState extends ChangeNotifier {
                 final cred = await _auth.signInWithCredential(credential);
                 final user = cred.user;
                 if (user != null) {
+                  step('canceled-recovery: signInWithCredential success');
                   return await _finalizeAuthSession(
                     credential: cred,
                     preferredName: user.displayName,
@@ -679,39 +774,41 @@ class AppState extends ChangeNotifier {
               }
             }
           } catch (_) {}
-          return 'Google sign-in was canceled.';
+          return fail('Google sign-in was canceled.');
         case GoogleSignInExceptionCode.interrupted:
-          return 'Google sign-in was interrupted. Try again.';
+          return fail('Google sign-in was interrupted. Try again.');
         case GoogleSignInExceptionCode.uiUnavailable:
-          return 'Google sign-in UI is unavailable on this device/emulator.';
+          return fail('Google sign-in UI is unavailable on this device/emulator.');
         case GoogleSignInExceptionCode.clientConfigurationError:
-          return 'Google sign-in client is misconfigured. '
-              'Check SHA fingerprints and google-services.json.';
+          return fail('Google sign-in client is misconfigured. '
+              'Check SHA fingerprints and google-services.json.');
         case GoogleSignInExceptionCode.providerConfigurationError:
-          return 'Google Play Services/Google provider is not configured correctly on this device.';
+          return fail('Google Play Services/Google provider is not configured correctly on this device.');
         case GoogleSignInExceptionCode.userMismatch:
-          return 'Google account mismatch. Try again and pick the account explicitly.';
+          return fail('Google account mismatch. Try again and pick the account explicitly.');
         case GoogleSignInExceptionCode.unknownError:
           final desc = e.description?.trim();
           if (desc != null && desc.isNotEmpty) {
-            return 'Google sign-in failed: $desc';
+            return fail('Google sign-in failed: $desc');
           }
-          return 'Google sign-in failed (unknown error).';
+          return fail('Google sign-in failed (unknown error).');
       }
     } on FirebaseAuthException catch (e) {
+      step('FirebaseAuthException code=${e.code} msg=${e.message ?? ''}');
       if (e.code == 'account-exists-with-different-credential' ||
           e.code == 'credential-already-in-use' ||
           e.code == 'email-already-in-use') {
-        return 'That email already has a different sign-in method. '
-            'Use your password (or "Forgot password?") first, then try Google again.';
+        return fail('That email already has a different sign-in method. '
+            'Use your password (or "Forgot password?") first, then try Google again.');
       }
       if (e.code == 'operation-not-allowed' ||
           e.code == 'configuration-not-found') {
-        return 'Google sign-in is not enabled/configured in Firebase for this app.';
+        return fail('Google sign-in is not enabled/configured in Firebase for this app.');
       }
-      return 'Google sign in failed (${e.code}): ${e.message ?? 'Unknown auth error'}';
+      return fail('Google sign in failed (${e.code}): ${e.message ?? 'Unknown auth error'}');
     } catch (e) {
-      return 'Google sign in failed: $e';
+      step('UnknownException $e');
+      return fail('Google sign in failed: $e');
     }
   }
 
@@ -834,6 +931,9 @@ class AppState extends ChangeNotifier {
   List<Report> get reports => _reports;
   List<Review> get reviews => _reviews;
   Set<String> get blockedUserIds => Set.unmodifiable(_blockedUserIds);
+  Set<String> get hiddenJobIds => Set.unmodifiable(_hiddenJobIds);
+  Set<String> get hiddenServiceIds => Set.unmodifiable(_hiddenServiceIds);
+  Set<String> get hiddenHuddlePostIds => Set.unmodifiable(_hiddenHuddlePostIds);
 
   // ── Stats ──
 
@@ -942,14 +1042,23 @@ class AppState extends ChangeNotifier {
       .where((j) => j.status == JobStatus.completed && j.hiredId == userId)
       .length;
 
+  WorkerTier workerTierForUser(String userId) {
+    final completed = completedJobCountForUser(userId);
+    final rating = averageRatingForUser(userId);
+    if (completed >= 15 && rating >= 4.0) return WorkerTier.topRated;
+    if (completed >= 5 && rating >= 3.5) return WorkerTier.reliable;
+    return WorkerTier.newWorker;
+  }
+
   bool isVerified(String userId) {
-    return completedJobCountForUser(userId) >= 5 &&
-        averageRatingForUser(userId) >= 3.5;
+    final tier = workerTierForUser(userId);
+    return tier == WorkerTier.reliable || tier == WorkerTier.topRated;
   }
 
   double get myRating => averageRatingForUser(currentUserId);
   int get myReviewCount => reviewsForUser(currentUserId).length;
   bool get amVerified => isVerified(currentUserId);
+  WorkerTier get myWorkerTier => workerTierForUser(currentUserId);
 
   List<Job> get myPendingConfirmJobs => _jobs
       .where((j) =>
@@ -1060,6 +1169,9 @@ class AppState extends ChangeNotifier {
   // ── Jobs ──
 
   Future<void> addJob(Job job) async {
+    if (isShadowBanned) {
+      throw Exception('Your account is restricted while under safety review.');
+    }
     if (job.posterId.trim().isEmpty || job.posterId == 'guest') {
       throw Exception('You must be logged in to post a job.');
     }
@@ -1083,9 +1195,20 @@ class AppState extends ChangeNotifier {
     final job = _jobs.firstWhere((j) => j.id == jobId);
     if (!job.applicantIds.contains(currentUserId)) {
       job.applicantIds.add(currentUserId);
-      job.applicantNames.add(currentUserName);
+      job.applicantNames.add(_publicApplicantName(currentUserName));
       await FirestoreService.updateJob(job);
     }
+  }
+
+  String _publicApplicantName(String fullName) {
+    final parts = fullName
+        .trim()
+        .split(RegExp(r'\s+'))
+        .where((p) => p.isNotEmpty)
+        .toList();
+    if (parts.isEmpty) return 'User';
+    if (parts.length == 1) return parts.first;
+    return '${parts.first} ${parts.last[0]}.';
   }
 
   Future<void> hireApplicant(
@@ -1128,6 +1251,7 @@ class AppState extends ChangeNotifier {
     final job = _jobs.firstWhere((j) => j.id == jobId);
     job.status = JobStatus.completed;
     job.payment = payment;
+    job.completedAt = DateTime.now();
     await FirestoreService.updateJob(job);
   }
 
@@ -1135,6 +1259,7 @@ class AppState extends ChangeNotifier {
     final job = _jobs.firstWhere((j) => j.id == jobId);
     job.status = JobStatus.completed;
     job.payment = payment;
+    job.completedAt = DateTime.now();
     await FirestoreService.updateJob(job);
   }
 
@@ -1176,7 +1301,21 @@ class AppState extends ChangeNotifier {
   // ── Services ──
 
   Future<void> addService(Service service) async {
+    if (isShadowBanned) {
+      throw Exception('Your account is restricted while under safety review.');
+    }
+    final existing = myServices;
+    final alreadyHasDifferentService = existing.any((s) => s.id != service.id);
+    if (alreadyHasDifferentService) {
+      throw Exception(
+        'You can only publish one service. Edit your existing service instead.',
+      );
+    }
     await FirestoreService.addService(service);
+  }
+
+  Future<void> updateService(Service service) async {
+    await FirestoreService.updateService(service);
   }
 
   Future<void> deleteService(String serviceId) async {
@@ -1260,6 +1399,58 @@ class AppState extends ChangeNotifier {
 
   bool isBlocked(String userId) => _blockedUserIds.contains(userId);
 
+  bool isJobHidden(String jobId) => _hiddenJobIds.contains(jobId);
+  bool isServiceHidden(String serviceId) => _hiddenServiceIds.contains(serviceId);
+  bool isHuddlePostHidden(String postId) => _hiddenHuddlePostIds.contains(postId);
+
+  Future<void> hideJob(String jobId) async {
+    if (jobId.trim().isEmpty || _hiddenJobIds.contains(jobId)) return;
+    _hiddenJobIds.add(jobId);
+    _profile?.hiddenJobIds.add(jobId);
+    notifyListeners();
+    if (_profile != null) {
+      await FirestoreService.createOrUpdateUser(_profile!);
+    }
+  }
+
+  Future<void> hideService(String serviceId) async {
+    if (serviceId.trim().isEmpty || _hiddenServiceIds.contains(serviceId)) return;
+    _hiddenServiceIds.add(serviceId);
+    _profile?.hiddenServiceIds.add(serviceId);
+    notifyListeners();
+    if (_profile != null) {
+      await FirestoreService.createOrUpdateUser(_profile!);
+    }
+  }
+
+  Future<void> hideHuddlePost(String postId) async {
+    if (postId.trim().isEmpty || _hiddenHuddlePostIds.contains(postId)) return;
+    _hiddenHuddlePostIds.add(postId);
+    _profile?.hiddenHuddlePostIds.add(postId);
+    notifyListeners();
+    if (_profile != null) {
+      await FirestoreService.createOrUpdateUser(_profile!);
+    }
+  }
+
+  Future<void> blockUser({
+    required String userId,
+    required String targetType,
+    String? targetId,
+    String reason = 'Blocked by user',
+  }) async {
+    if (userId.trim().isEmpty || userId == currentUserId || isBlocked(userId)) {
+      return;
+    }
+    await reportContent(
+      targetType: targetType,
+      targetId: targetId ?? 'user:$userId',
+      reason: reason,
+      block: true,
+      userId: userId,
+    );
+  }
+
   // ── Conversations ──
 
   Stream<List<Conversation>> get conversationsStream =>
@@ -1316,18 +1507,65 @@ class AppState extends ChangeNotifier {
   }
 
   Future<void> sendMessage(String conversationId, String text) async {
+    if (isShadowBanned) {
+      throw Exception('Messaging is restricted while your account is under review.');
+    }
+    final trimmed = text.trim();
+    if (_phoneRe.hasMatch(trimmed) ||
+        _emailRe.hasMatch(trimmed) ||
+        _socialRe.hasMatch(trimmed)) {
+      throw Exception(
+        'Keep it in the app! For your safety, sharing personal contact info is disabled.',
+      );
+    }
     _recentOutgoingAt[conversationId] = DateTime.now();
     final message = ChatMessage(
       id: DateTime.now().microsecondsSinceEpoch.toString(),
       senderId: currentUserId,
       senderName: currentUserName,
-      text: text,
+      text: trimmed,
       timestamp: DateTime.now(),
     );
     await FirestoreService.sendMessage(
       conversationId: conversationId,
       message: message,
     );
+  }
+
+  Future<void> deleteMessageForEveryone({
+    required String conversationId,
+    required ChatMessage message,
+  }) async {
+    if (message.senderId != currentUserId) {
+      throw Exception('You can only delete your own messages.');
+    }
+    if (message.isDeleted) return;
+    await FirestoreService.deleteMessageForEveryone(
+      conversationId: conversationId,
+      messageId: message.id,
+      deletedById: currentUserId,
+      deletedByName: currentUserName,
+    );
+  }
+
+  Future<void> setPrivacyBubbleEnabled(bool enabled) async {
+    final p = _profile;
+    if (p == null) return;
+    if (p.privacyBubbleEnabled == enabled) return;
+    p.privacyBubbleEnabled = enabled;
+    notifyListeners();
+    await FirestoreService.createOrUpdateUser(p);
+  }
+
+  Future<void> deleteAccountWithDataWipe() async {
+    if (!isLoggedIn) return;
+    await FirestoreService.deleteMyAccountData();
+    try {
+      await _auth.currentUser?.delete();
+    } catch (_) {
+      // Deletion can fail when auth session is stale; data wipe still completes.
+    }
+    await logout();
   }
 
   // ── The Huddle ──

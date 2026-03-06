@@ -59,9 +59,12 @@ class HomeScreen extends StatelessWidget {
         ),
         child: SafeArea(
           child: SingleChildScrollView(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.center,
-              children: [
+            child: Center(
+              child: FractionallySizedBox(
+                widthFactor: 0.8,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
                 if (isLoggedIn && profile != null) ...[
                   const SizedBox(height: 24),
                   Padding(
@@ -397,13 +400,18 @@ class HomeScreen extends StatelessWidget {
                         .where((j) =>
                             j.status != JobStatus.completed &&
                             j.posterId != myId &&
+                            !state.isBlocked(j.posterId) &&
+                            !state.isJobHidden(j.id) &&
                             !j.applicantIds.contains(myId) &&
                             j.hiredId != myId)
                         .toList();
                     final canHire = state.canPostJobs;
                     final services = canHire
                         ? state.services
-                            .where((s) => s.providerId != myId)
+                            .where((s) =>
+                                s.providerId != myId &&
+                                !state.isBlocked(s.providerId) &&
+                                !state.isServiceHidden(s.id))
                             .toList()
                         : <Service>[];
                     if (jobs.isEmpty && services.isEmpty) {
@@ -530,6 +538,8 @@ class HomeScreen extends StatelessWidget {
                   ),
                 const SizedBox(height: 48),
               ],
+                ),
+              ),
             ),
           ),
         ),
@@ -759,6 +769,7 @@ class _HomeActivityPanel extends StatelessWidget {
     final posted = state.myPostedJobs
         .where((j) => j.status != JobStatus.completed)
         .toList();
+    final myServices = state.myServices;
 
     return StreamBuilder<List<Conversation>>(
       stream: state.conversationsStream,
@@ -781,6 +792,7 @@ class _HomeActivityPanel extends StatelessWidget {
             );
             final hasAnything = applied.isNotEmpty ||
                 posted.isNotEmpty ||
+                myServices.isNotEmpty ||
                 convos.isNotEmpty ||
                 hasHuddleReplyAlert;
 
@@ -821,7 +833,7 @@ class _HomeActivityPanel extends StatelessWidget {
                               context: context,
                               icon: Icons.send_rounded,
                               title: job.title,
-                              subtitle: job.location,
+                              subtitle: job.displayLocation,
                               detailText: 'Your application is active',
                               detailColor: const Color(0xFF2563EB),
                               statusText: _appliedStatusLabel(job),
@@ -852,7 +864,7 @@ class _HomeActivityPanel extends StatelessWidget {
                               context: context,
                               icon: Icons.inventory_2_rounded,
                               title: job.title,
-                              subtitle: job.location,
+                              subtitle: job.displayLocation,
                               detailText:
                                   'Applicants: ${job.applicantIds.length}',
                               detailColor: _applicantCountColor(job),
@@ -861,6 +873,41 @@ class _HomeActivityPanel extends StatelessWidget {
                               onTap: () => Navigator.of(context).push(
                                 SmoothPageRoute(
                                   builder: (_) => JobDetailScreen(job: job),
+                                ),
+                              ),
+                              isDark: isDark,
+                            ),
+                          );
+                        }).toList(),
+                      ),
+                    ),
+                  if (myServices.isNotEmpty)
+                    _activitySection(
+                      context: context,
+                      title: 'Your services',
+                      tint: const Color(0xFFEDE9FE),
+                      border: const Color(0xFFC4B5FD),
+                      isDark: isDark,
+                      child: Column(
+                        children: myServices.take(2).map((service) {
+                          final msgCount =
+                              _serviceMessageCount(service, convos);
+                          return Padding(
+                            padding: const EdgeInsets.only(bottom: 8),
+                            child: _jobStateTile(
+                              context: context,
+                              icon: Icons.handyman_rounded,
+                              title: service.skills.join(', '),
+                              subtitle:
+                                  '${service.displayLocation} · ${service.workRadiusKm.toStringAsFixed(0)} km',
+                              detailText: 'People messaged: $msgCount',
+                              detailColor: const Color(0xFF7C3AED),
+                              statusText: '$msgCount msg',
+                              statusColor: const Color(0xFF7C3AED),
+                              onTap: () => Navigator.of(context).push(
+                                SmoothPageRoute(
+                                  builder: (_) =>
+                                      ServiceDetailScreen(service: service),
                                 ),
                               ),
                               isDark: isDark,
@@ -974,6 +1021,20 @@ class _HomeActivityPanel extends StatelessWidget {
     if (count <= 0) return const Color(0xFF94A3B8);
     if (count <= 2) return const Color(0xFFF59E0B);
     return const Color(0xFF16A34A);
+  }
+
+  int _serviceMessageCount(Service service, List<Conversation> convos) {
+    final keys = service.skills.map((s) => s.toLowerCase().trim()).toList();
+    final senders = <String>{};
+    for (final c in convos) {
+      final label = (c.contextLabel ?? '').toLowerCase().trim();
+      if (!label.startsWith('service:')) continue;
+      if (keys.isEmpty) continue;
+      final matches = keys.every((k) => label.contains(k));
+      if (!matches) continue;
+      senders.add(c.otherUserId);
+    }
+    return senders.length;
   }
 
   Widget _activityEmpty(BuildContext context) {
@@ -1420,7 +1481,7 @@ class _LatestJobCard extends StatelessWidget {
                     ),
                     const SizedBox(height: 2),
                     Text(
-                      '${job.location} · ${job.type}',
+                      '${job.displayLocation} · ${job.type}',
                       style: GoogleFonts.plusJakartaSans(
                         fontSize: 12,
                         fontWeight: FontWeight.w500,

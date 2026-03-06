@@ -31,7 +31,8 @@ const _skills = [
 const _days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
 class PostServiceScreen extends StatefulWidget {
-  const PostServiceScreen({super.key});
+  final Service? initialService;
+  const PostServiceScreen({super.key, this.initialService});
 
   @override
   State<PostServiceScreen> createState() => _PostServiceScreenState();
@@ -49,6 +50,11 @@ class _PostServiceScreenState extends State<PostServiceScreen> {
   final Set<String> _selectedDays = {};
   TimeOfDay _startTime = const TimeOfDay(hour: 9, minute: 0);
   TimeOfDay _endTime = const TimeOfDay(hour: 17, minute: 0);
+  bool _pickedStartTime = false;
+  bool _pickedEndTime = false;
+  double _workRadiusKm = 5;
+  String? _editingServiceId;
+  DateTime? _editingCreatedAt;
   bool _prefilled = false;
   bool _loginRedirectQueued = false;
 
@@ -73,8 +79,42 @@ class _PostServiceScreenState extends State<PostServiceScreen> {
       if (state.isLoggedIn && _nameCtrl.text.isEmpty) {
         _nameCtrl.text = state.currentUserName;
       }
+      final target = widget.initialService ??
+          (state.myServices.isNotEmpty ? state.myServices.first : null);
+      if (target != null) {
+        _loadExistingService(target);
+      }
       Future.microtask(_prefillLocationField);
     }
+  }
+
+  void _loadExistingService(Service service) {
+    _editingServiceId = service.id;
+    _editingCreatedAt = service.createdAt;
+    _nameCtrl.text = service.providerName;
+    _locationCtrl.text = service.location;
+    _bioCtrl.text = service.bio;
+    _selectedSkills
+      ..clear()
+      ..addAll(service.skills);
+    if ((service.otherSkill ?? '').trim().isNotEmpty) {
+      _selectedSkills.add('Other');
+      _otherSkillCtrl.text = service.otherSkill!.trim();
+    } else {
+      _otherSkillCtrl.clear();
+    }
+    _selectedDays
+      ..clear()
+      ..addAll(service.availableDays);
+    _startTime = service.startTime;
+    _endTime = service.endTime;
+    _pickedStartTime = true;
+    _pickedEndTime = true;
+    _workRadiusKm = service.workRadiusKm;
+    _minPriceCtrl.text =
+        service.minPrice > 0 ? service.minPrice.toStringAsFixed(0) : '';
+    _maxPriceCtrl.text =
+        service.maxPrice > 0 ? service.maxPrice.toStringAsFixed(0) : '';
   }
 
   Future<void> _prefillLocationField() async {
@@ -140,7 +180,7 @@ class _PostServiceScreenState extends State<PostServiceScreen> {
               children: [
                 const SizedBox(height: 24),
                 Text(
-                  'Offer Your Skills',
+                  _editingServiceId == null ? 'Offer Your Skills' : 'Edit Your Service',
                 style: GoogleFonts.plusJakartaSans(
                   fontSize: 32,
                   fontWeight: FontWeight.w800,
@@ -151,7 +191,9 @@ class _PostServiceScreenState extends State<PostServiceScreen> {
               ),
               const SizedBox(height: 8),
               Text(
-                'Let people in your area know what you can do and when you\'re free.',
+                _editingServiceId == null
+                    ? 'Let people in your area know what you can do and when you\'re free.'
+                    : 'You can only publish one service. Update your existing one below.',
                 style: GoogleFonts.plusJakartaSans(
                   fontSize: 15,
                   fontWeight: FontWeight.w500,
@@ -162,6 +204,28 @@ class _PostServiceScreenState extends State<PostServiceScreen> {
                 textAlign: TextAlign.center,
               ),
               const SizedBox(height: 32),
+              if (state.myServices.isNotEmpty) ...[
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF59E0B).withValues(alpha: 0.14),
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(
+                      color: const Color(0xFFF59E0B).withValues(alpha: 0.4),
+                    ),
+                  ),
+                  child: Text(
+                    'Make sure everything is correct - you can only publish one service.',
+                    style: GoogleFonts.plusJakartaSans(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                      color: isDark ? Colors.white : const Color(0xFF92400E),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 16),
+              ],
               // Form card
               Container(
                 padding: const EdgeInsets.all(24),
@@ -212,6 +276,55 @@ class _PostServiceScreenState extends State<PostServiceScreen> {
                           fontSize: 11,
                           fontWeight: FontWeight.w600,
                           color: const Color(0xFF94A3B8),
+                        ),
+                      ),
+                      const SizedBox(height: 14),
+                      _label('HOW FAR WILL YOU TRAVEL FOR WORK?'),
+                      const SizedBox(height: 8),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 12, vertical: 8),
+                        decoration: BoxDecoration(
+                          color: isDark
+                              ? const Color(0xFF0F172A).withValues(alpha: 0.5)
+                              : Colors.white.withValues(alpha: 0.5),
+                          borderRadius: BorderRadius.circular(14),
+                          border: Border.all(
+                            color: isDark
+                                ? const Color(0xFF334155)
+                                : AppColors.slate100,
+                          ),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                const Icon(Icons.near_me_rounded,
+                                    size: 16, color: AppColors.indigo600),
+                                const SizedBox(width: 8),
+                                Text(
+                                  'Up to ${_workRadiusKm.toStringAsFixed(0)} km from your home area',
+                                  style: GoogleFonts.plusJakartaSans(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w700,
+                                    color: isDark
+                                        ? Colors.white
+                                        : AppColors.slate900,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            Slider(
+                              value: _workRadiusKm,
+                              min: 1,
+                              max: 10,
+                              divisions: 9,
+                              label: '${_workRadiusKm.toStringAsFixed(0)} km',
+                              onChanged: (v) =>
+                                  setState(() => _workRadiusKm = v),
+                            ),
+                          ],
                         ),
                       ),
                       const SizedBox(height: 24),
@@ -279,7 +392,12 @@ class _PostServiceScreenState extends State<PostServiceScreen> {
                                   context: context,
                                   initialTime: _startTime,
                                 );
-                                if (t != null) setState(() => _startTime = t);
+                                if (t != null) {
+                                  setState(() {
+                                    _startTime = t;
+                                    _pickedStartTime = true;
+                                  });
+                                }
                               },
                             ),
                           ),
@@ -294,7 +412,12 @@ class _PostServiceScreenState extends State<PostServiceScreen> {
                                   context: context,
                                   initialTime: _endTime,
                                 );
-                                if (t != null) setState(() => _endTime = t);
+                                if (t != null) {
+                                  setState(() {
+                                    _endTime = t;
+                                    _pickedEndTime = true;
+                                  });
+                                }
                               },
                             ),
                           ),
@@ -491,7 +614,9 @@ class _PostServiceScreenState extends State<PostServiceScreen> {
                                     ],
                                   )
                                 : Text(
-                                    'Publish Your Service',
+                                    _editingServiceId == null
+                                        ? 'Publish Your Service'
+                                        : 'Update Your Service',
                                     textAlign: TextAlign.center,
                                     style: GoogleFonts.plusJakartaSans(
                                       fontSize: 16,
@@ -703,6 +828,25 @@ class _PostServiceScreenState extends State<PostServiceScreen> {
   Future<void> _submit() async {
     if (_submitting) return;
     if (!(_formKey.currentState?.validate() ?? false)) return;
+    if (_selectedDays.isEmpty) {
+      if (!mounted) return;
+      _showModerationWarning(
+          'Please select at least one available day before posting.');
+      return;
+    }
+    if (!_pickedStartTime || !_pickedEndTime) {
+      if (!mounted) return;
+      _showModerationWarning(
+          'Please pick both start and end time so people know your exact hours.');
+      return;
+    }
+    final startMins = _startTime.hour * 60 + _startTime.minute;
+    final endMins = _endTime.hour * 60 + _endTime.minute;
+    if (endMins <= startMins) {
+      if (!mounted) return;
+      _showModerationWarning('End time must be after start time.');
+      return;
+    }
 
     final appState = context.read<AppState>();
     if (appState.amReportSuspended) {
@@ -769,10 +913,18 @@ class _PostServiceScreenState extends State<PostServiceScreen> {
     }
 
     final state = context.read<AppState>();
+    final isMinorProvider = (state.profile?.age ?? 18) < 18;
+    final rawLocation = _locationCtrl.text.trim();
+    final publicLocation = isMinorProvider
+        ? LocationService.approximatePublicLocation(rawLocation,
+            radiusMeters: 500)
+        : null;
     final service = Service(
-      id: DateTime.now().microsecondsSinceEpoch.toString(),
+      id: _editingServiceId ?? DateTime.now().microsecondsSinceEpoch.toString(),
       providerName: _nameCtrl.text.trim(),
-      location: _locationCtrl.text.trim(),
+      location: rawLocation,
+      isMinorProvider: isMinorProvider,
+      publicLocation: publicLocation,
       skills: Set.from(_selectedSkills),
       otherSkill: _selectedSkills.contains('Other')
           ? _otherSkillCtrl.text.trim()
@@ -782,15 +934,30 @@ class _PostServiceScreenState extends State<PostServiceScreen> {
       endTime: _endTime,
       bio: _bioCtrl.text.trim(),
       providerId: state.currentUserId,
-      createdAt: DateTime.now(),
+      createdAt: _editingCreatedAt ?? DateTime.now(),
+      workRadiusKm: _workRadiusKm,
       minPrice: double.tryParse(_minPriceCtrl.text.trim()) ?? 0,
       maxPrice: double.tryParse(_maxPriceCtrl.text.trim()) ?? 0,
     );
-    await state.addService(service);
+    try {
+      if (_editingServiceId != null) {
+        await state.updateService(service);
+      } else {
+        await state.addService(service);
+      }
+    } catch (e) {
+      if (!mounted) return;
+      _showModerationWarning(e.toString().replaceFirst('Exception: ', ''));
+      return;
+    }
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: const Text('Service posted! Check your Dashboard.'),
+        content: Text(
+          _editingServiceId == null
+              ? 'Service posted! Check your Dashboard.'
+              : 'Service updated! Check your Dashboard.',
+        ),
         behavior: SnackBarBehavior.floating,
         shape:
             RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),

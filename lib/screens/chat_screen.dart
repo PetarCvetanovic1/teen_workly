@@ -34,6 +34,13 @@ class _ChatScreenState extends State<ChatScreen> {
   DateTime? _lastSeenMarkedAt;
   String? _lastRenderedMessageId;
   bool _loginRedirectQueued = false;
+  static final RegExp _phoneRe = RegExp(r'(?<!\d)(?:\+?\d[\d\s().-]{7,}\d)');
+  static final RegExp _emailRe =
+      RegExp(r'\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b', caseSensitive: false);
+  static final RegExp _socialRe = RegExp(
+    r'(?:^|\s)(@[\w._]{2,}|snap(?:chat)?|instagram|insta|ig|tiktok|discord|telegram|whatsapp)\b',
+    caseSensitive: false,
+  );
 
   void _queueLoginRedirectIfNeeded(AppState state) {
     if (_loginRedirectQueued || state.isLoggedIn) return;
@@ -100,14 +107,20 @@ class _ChatScreenState extends State<ChatScreen> {
   void _send() async {
     final text = _msgCtrl.text.trim();
     if (text.isEmpty) return;
+    if (_containsContactInfo(text)) {
+      _showContactBlockedDialog();
+      return;
+    }
 
-    final result = await ModerationService.moderateMessage(text);
+    await _setTyping(false);
     if (!mounted) return;
-
-    if (!result.approved) {
+    try {
+      await context.read<AppState>().sendMessage(widget.conversationId, text);
+    } catch (e) {
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(result.reason ?? 'Message blocked.'),
+          content: Text('$e'),
           behavior: SnackBarBehavior.floating,
           backgroundColor: const Color(0xFFDC2626),
           shape: RoundedRectangleBorder(
@@ -117,10 +130,6 @@ class _ChatScreenState extends State<ChatScreen> {
       );
       return;
     }
-
-    await _setTyping(false);
-    if (!mounted) return;
-    await context.read<AppState>().sendMessage(widget.conversationId, text);
     _msgCtrl.clear();
     if (mounted) {
       _msgFocusNode.requestFocus();
@@ -134,6 +143,111 @@ class _ChatScreenState extends State<ChatScreen> {
         );
       }
     });
+  }
+
+  bool _containsContactInfo(String text) {
+    return _phoneRe.hasMatch(text) ||
+        _emailRe.hasMatch(text) ||
+        _socialRe.hasMatch(text);
+  }
+
+  Future<void> _showContactBlockedDialog() async {
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Keep it in the app'),
+        content: const Text(
+          'For your safety, sharing personal contact info is disabled. '
+          'Use the in-app call or chat instead.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('OK'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _flagConversationForCreepyBehavior(String? reportedUserId) async {
+    await context.read<AppState>().reportContent(
+          targetType: 'Conversation',
+          targetId: widget.conversationId,
+          reason: 'Creepy Behavior: flagged from chat header',
+          userId: reportedUserId,
+        );
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Flag sent. Safety team is reviewing.'),
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+  }
+
+  Future<void> _showMessageActions(
+    ChatMessage msg, {
+    required bool isMe,
+    required String? otherUserId,
+  }) async {
+    await showModalBottomSheet<void>(
+      context: context,
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (isMe && !msg.isDeleted)
+              ListTile(
+                leading: const Icon(Icons.delete_outline_rounded,
+                    color: Color(0xFFDC2626)),
+                title: const Text('Delete for everyone'),
+                onTap: () async {
+                  Navigator.pop(ctx);
+                  try {
+                    await context.read<AppState>().deleteMessageForEveryone(
+                          conversationId: widget.conversationId,
+                          message: msg,
+                        );
+                  } catch (e) {
+                    if (!mounted) return;
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text('$e'),
+                        behavior: SnackBarBehavior.floating,
+                        backgroundColor: const Color(0xFFDC2626),
+                      ),
+                    );
+                  }
+                },
+              ),
+            if (!isMe)
+              ListTile(
+                leading:
+                    const Icon(Icons.flag_outlined, color: Color(0xFFDC2626)),
+                title: const Text('Flag message'),
+                onTap: () async {
+                  Navigator.pop(ctx);
+                  await context.read<AppState>().reportContent(
+                        targetType: 'Message',
+                        targetId: msg.id,
+                        reason:
+                            'Creepy Behavior: flagged from message in conversation ${widget.conversationId}',
+                        userId: otherUserId,
+                      );
+                  if (!mounted) return;
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Message flagged for safety review.'),
+                      behavior: SnackBarBehavior.floating,
+                    ),
+                  );
+                },
+              ),
+          ],
+        ),
+      ),
+    );
   }
 
   @override
@@ -234,6 +348,14 @@ class _ChatScreenState extends State<ChatScreen> {
                 ),
               ],
             ),
+            actions: [
+              IconButton(
+                tooltip: 'Flag conversation',
+                onPressed: () =>
+                    _flagConversationForCreepyBehavior(conversation?.otherUserId),
+                icon: const Icon(Icons.flag_outlined, color: Color(0xFFDC2626)),
+              ),
+            ],
           ),
           body: ContentWrap(
             child: Column(
@@ -328,6 +450,13 @@ class _ChatScreenState extends State<ChatScreen> {
                         isDark: isDark,
                         timestamp: msg.timestamp,
                         seenByOther: seenByOther,
+                        isDeleted: msg.isDeleted,
+                        deletedByName: msg.deletedByName,
+                        onLongPress: () => _showMessageActions(
+                          msg,
+                          isMe: isMe,
+                          otherUserId: conversation?.otherUserId,
+                        ),
                       );
                     },
                   );
@@ -425,7 +554,9 @@ class _ChatScreenState extends State<ChatScreen> {
                           color: AppColors.indigo600,
                           borderRadius: BorderRadius.circular(14),
                           child: InkWell(
-                            onTap: _send,
+                            onTap: _containsContactInfo(_msgCtrl.text.trim())
+                                ? _showContactBlockedDialog
+                                : _send,
                             borderRadius: BorderRadius.circular(14),
                             child: const Padding(
                               padding: EdgeInsets.all(12),
@@ -457,6 +588,9 @@ class _ChatBubble extends StatelessWidget {
   final bool isDark;
   final DateTime timestamp;
   final bool seenByOther;
+  final bool isDeleted;
+  final String? deletedByName;
+  final VoidCallback? onLongPress;
 
   const _ChatBubble({
     required this.text,
@@ -465,19 +599,31 @@ class _ChatBubble extends StatelessWidget {
     required this.isDark,
     required this.timestamp,
     this.seenByOther = false,
+    this.isDeleted = false,
+    this.deletedByName,
+    this.onLongPress,
   });
 
   @override
   Widget build(BuildContext context) {
+    final double maxBubbleWidth =
+        (MediaQuery.of(context).size.width * 0.60).clamp(0.0, 560.0).toDouble();
+    final deletedLabel =
+        '${(deletedByName ?? senderName).trim().isEmpty ? "Someone" : (deletedByName ?? senderName)} deleted this message';
+    final visibleText = isDeleted
+        ? deletedLabel
+        : (text.trim().isEmpty ? '(empty message)' : text);
     return Padding(
       padding: const EdgeInsets.only(bottom: 10),
       child: Align(
         alignment: isMe ? Alignment.centerRight : Alignment.centerLeft,
         child: ConstrainedBox(
           constraints: BoxConstraints(
-            maxWidth: MediaQuery.of(context).size.width * 0.75,
+            maxWidth: maxBubbleWidth,
           ),
-          child: Container(
+          child: GestureDetector(
+            onLongPress: onLongPress,
+            child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
             decoration: BoxDecoration(
               color: isMe
@@ -522,11 +668,31 @@ class _ChatBubble extends StatelessWidget {
                       ),
                     ),
                   ),
+                if (isMe && !isDeleted && onLongPress != null)
+                  InkWell(
+                    onTap: onLongPress,
+                    borderRadius: BorderRadius.circular(10),
+                    child: Container(
+                      margin: const EdgeInsets.only(bottom: 4),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 3),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.18),
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                      child: Icon(
+                        Icons.more_horiz_rounded,
+                        size: 16,
+                        color: Colors.white,
+                      ),
+                    ),
+                  ),
                 Text(
-                  text,
+                  visibleText,
                   style: GoogleFonts.plusJakartaSans(
                     fontSize: 14,
-                    fontWeight: FontWeight.w500,
+                    fontWeight: isDeleted ? FontWeight.w600 : FontWeight.w500,
+                    fontStyle: isDeleted ? FontStyle.italic : FontStyle.normal,
                     color: isMe
                         ? Colors.white
                         : isDark
@@ -564,7 +730,7 @@ class _ChatBubble extends StatelessWidget {
                 ),
               ],
             ),
-          ),
+          )),
         ),
       ),
     );

@@ -1,4 +1,3 @@
-import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:flutter/material.dart';
@@ -7,6 +6,8 @@ import '../models/models.dart';
 class FirestoreService {
   static final _db = FirebaseFirestore.instance;
   static final _functions = FirebaseFunctions.instance;
+  // Low-cost mode: avoid callable endpoints unless explicitly turned on.
+  static const bool _useCallableBackend = false;
 
   // ── Collections ──
   static final _usersCol = _db.collection('users');
@@ -67,6 +68,11 @@ class FirestoreService {
       'huddleRepliesSeenAt': profile.huddleRepliesSeenAt != null
           ? Timestamp.fromDate(profile.huddleRepliesSeenAt!)
           : null,
+      'hiddenJobIds': profile.hiddenJobIds.toList(),
+      'hiddenServiceIds': profile.hiddenServiceIds.toList(),
+      'hiddenHuddlePostIds': profile.hiddenHuddlePostIds.toList(),
+      'privacyBubbleEnabled': profile.privacyBubbleEnabled,
+      'shadowBanned': profile.shadowBanned,
       'updatedAt': FieldValue.serverTimestamp(),
     };
     if (authProvider != null && authProvider.isNotEmpty) {
@@ -102,6 +108,13 @@ class FirestoreService {
       riskAcknowledgedAt: (d['riskAcknowledgedAt'] as Timestamp?)?.toDate(),
       guardianConsentAt: (d['guardianConsentAt'] as Timestamp?)?.toDate(),
       huddleRepliesSeenAt: (d['huddleRepliesSeenAt'] as Timestamp?)?.toDate(),
+      hiddenJobIds: Set<String>.from(d['hiddenJobIds'] ?? const <String>[]),
+      hiddenServiceIds:
+          Set<String>.from(d['hiddenServiceIds'] ?? const <String>[]),
+      hiddenHuddlePostIds:
+          Set<String>.from(d['hiddenHuddlePostIds'] ?? const <String>[]),
+      privacyBubbleEnabled: d['privacyBubbleEnabled'] != false,
+      shadowBanned: d['shadowBanned'] == true,
     );
   }
 
@@ -145,6 +158,11 @@ class FirestoreService {
           'otherService': job.otherService,
           'posterId': job.posterId,
           'posterName': job.posterName,
+          'isMinorPoster': job.isMinorPoster,
+          'publicLocation': job.publicLocation,
+          'publicLat': job.publicLat,
+          'publicLng': job.publicLng,
+          'publicRadiusMeters': job.publicRadiusMeters,
           'createdAtMs': job.createdAt.millisecondsSinceEpoch,
           'payment': job.payment,
         },
@@ -153,45 +171,7 @@ class FirestoreService {
     } catch (e) {
       if (!_isFunctionsUnavailable(e)) rethrow;
     }
-    await _addJobDirect(job);
-  }
-
-  static Future<void> _addJobDirect(Job job) async {
-    const maxAttempts = 3;
-    for (var attempt = 1; attempt <= maxAttempts; attempt++) {
-      try {
-        await _jobsCol
-            .doc(job.id)
-            .set(_jobToMap(job))
-            .timeout(const Duration(seconds: 12));
-        return;
-      } on TimeoutException {
-        if (attempt == maxAttempts) {
-          throw Exception(
-            'Could not reach the database. Job was not posted online.',
-          );
-        }
-      } on FirebaseException catch (e) {
-        if (e.code == 'permission-denied') {
-          throw Exception(
-            'Firestore blocked this write (permission-denied). '
-            'Check Firestore rules for authenticated users.',
-          );
-        }
-        if (e.code == 'unauthenticated') {
-          throw Exception('You are not authenticated with Firebase.');
-        }
-        final retriable = e.code == 'unavailable' ||
-            e.code == 'deadline-exceeded' ||
-            e.code == 'aborted';
-        if (!retriable || attempt == maxAttempts) {
-          throw Exception(
-            'Firestore error (${e.code}): ${e.message ?? 'unknown error'}',
-          );
-        }
-      }
-      await Future<void>.delayed(Duration(milliseconds: 600 * attempt));
-    }
+    await _jobsCol.doc(job.id).set(_jobToMap(job));
   }
 
   static Future<void> updateJob(Job job) async {
@@ -205,12 +185,18 @@ class FirestoreService {
   static Map<String, dynamic> _jobToMap(Job job) => {
         'title': job.title,
         'type': job.type,
-        'location': job.location,
+        // Store privacy-safe location for public reads.
+        'location': job.displayLocation,
         'description': job.description,
         'services': job.services.toList(),
         'otherService': job.otherService,
         'posterId': job.posterId,
         'posterName': job.posterName,
+        'isMinorPoster': job.isMinorPoster,
+        'publicLocation': job.publicLocation,
+        'publicLat': job.publicLat,
+        'publicLng': job.publicLng,
+        'publicRadiusMeters': job.publicRadiusMeters,
         'createdAt': Timestamp.fromDate(job.createdAt),
         'applicantIds': job.applicantIds,
         'applicantNames': job.applicantNames,
@@ -218,6 +204,8 @@ class FirestoreService {
         'hiredName': job.hiredName,
         'status': job.status.name,
         'payment': job.payment,
+        'completedAt':
+            job.completedAt != null ? Timestamp.fromDate(job.completedAt!) : null,
       };
 
   static Job _jobFromDoc(QueryDocumentSnapshot doc) {
@@ -232,6 +220,11 @@ class FirestoreService {
       otherService: d['otherService'],
       posterId: d['posterId'] ?? '',
       posterName: d['posterName'] ?? '',
+      isMinorPoster: d['isMinorPoster'] ?? false,
+      publicLocation: d['publicLocation'],
+      publicLat: (d['publicLat'] as num?)?.toDouble(),
+      publicLng: (d['publicLng'] as num?)?.toDouble(),
+      publicRadiusMeters: (d['publicRadiusMeters'] as num?)?.toDouble() ?? 500,
       createdAt: (d['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
       applicantIds: List<String>.from(d['applicantIds'] ?? []),
       applicantNames: List<String>.from(d['applicantNames'] ?? []),
@@ -242,6 +235,7 @@ class FirestoreService {
         orElse: () => JobStatus.open,
       ),
       payment: (d['payment'] ?? 0).toDouble(),
+      completedAt: (d['completedAt'] as Timestamp?)?.toDate(),
     );
   }
 
@@ -262,6 +256,11 @@ class FirestoreService {
           'id': service.id,
           'providerName': service.providerName,
           'location': service.location,
+          'isMinorProvider': service.isMinorProvider,
+          'publicLocation': service.publicLocation,
+          'publicLat': service.publicLat,
+          'publicLng': service.publicLng,
+          'publicRadiusMeters': service.publicRadiusMeters,
           'skills': service.skills.toList(),
           'otherSkill': service.otherSkill,
           'availableDays': service.availableDays.toList(),
@@ -272,17 +271,27 @@ class FirestoreService {
           'bio': service.bio,
           'providerId': service.providerId,
           'createdAtMs': service.createdAt.millisecondsSinceEpoch,
+          'workRadiusKm': service.workRadiusKm,
           'minPrice': service.minPrice,
           'maxPrice': service.maxPrice,
         },
       });
       return;
     } catch (e) {
-      if (!_isFunctionsUnavailable(e)) rethrow;
+      // Web can throw non-FirebaseFunctionsException on CORS/OPTIONS failures.
+      // In low-cost mode, fall back to direct Firestore writes.
+      if (e is FirebaseFunctionsException && !_isFunctionsUnavailable(e)) {
+        rethrow;
+      }
     }
     await _servicesCol.doc(service.id).set({
       'providerName': service.providerName,
-      'location': service.location,
+      'location': service.displayLocation,
+      'isMinorProvider': service.isMinorProvider,
+      'publicLocation': service.publicLocation,
+      'publicLat': service.publicLat,
+      'publicLng': service.publicLng,
+      'publicRadiusMeters': service.publicRadiusMeters,
       'skills': service.skills.toList(),
       'otherSkill': service.otherSkill,
       'availableDays': service.availableDays.toList(),
@@ -293,9 +302,61 @@ class FirestoreService {
       'bio': service.bio,
       'providerId': service.providerId,
       'createdAt': Timestamp.fromDate(service.createdAt),
+      'workRadiusKm': service.workRadiusKm,
       'minPrice': service.minPrice,
       'maxPrice': service.maxPrice,
     });
+  }
+
+  static Future<void> updateService(Service service) async {
+    final callable = _functions.httpsCallable('updateServiceSecure');
+    try {
+      await callable.call({
+        'service': {
+          'id': service.id,
+          'providerName': service.providerName,
+          'location': service.location,
+          'skills': service.skills.toList(),
+          'otherSkill': service.otherSkill,
+          'availableDays': service.availableDays.toList(),
+          'startHour': service.startTime.hour,
+          'startMinute': service.startTime.minute,
+          'endHour': service.endTime.hour,
+          'endMinute': service.endTime.minute,
+          'bio': service.bio,
+          'providerId': service.providerId,
+          'createdAtMs': service.createdAt.millisecondsSinceEpoch,
+          'workRadiusKm': service.workRadiusKm,
+          'minPrice': service.minPrice,
+          'maxPrice': service.maxPrice,
+        },
+      });
+      return;
+    } catch (e) {
+      if (!_isFunctionsUnavailable(e)) rethrow;
+    }
+    await _servicesCol.doc(service.id).set({
+      'providerName': service.providerName,
+      'location': service.displayLocation,
+      'isMinorProvider': service.isMinorProvider,
+      'publicLocation': service.publicLocation,
+      'publicLat': service.publicLat,
+      'publicLng': service.publicLng,
+      'publicRadiusMeters': service.publicRadiusMeters,
+      'skills': service.skills.toList(),
+      'otherSkill': service.otherSkill,
+      'availableDays': service.availableDays.toList(),
+      'startHour': service.startTime.hour,
+      'startMinute': service.startTime.minute,
+      'endHour': service.endTime.hour,
+      'endMinute': service.endTime.minute,
+      'bio': service.bio,
+      'providerId': service.providerId,
+      'createdAt': Timestamp.fromDate(service.createdAt),
+      'workRadiusKm': service.workRadiusKm,
+      'minPrice': service.minPrice,
+      'maxPrice': service.maxPrice,
+    }, SetOptions(merge: true));
   }
 
   static Future<void> deleteService(String serviceId) async {
@@ -308,6 +369,11 @@ class FirestoreService {
       id: doc.id,
       providerName: d['providerName'] ?? '',
       location: d['location'] ?? '',
+      isMinorProvider: d['isMinorProvider'] ?? false,
+      publicLocation: d['publicLocation'],
+      publicLat: (d['publicLat'] as num?)?.toDouble(),
+      publicLng: (d['publicLng'] as num?)?.toDouble(),
+      publicRadiusMeters: (d['publicRadiusMeters'] as num?)?.toDouble() ?? 500,
       skills: Set<String>.from(d['skills'] ?? []),
       otherSkill: d['otherSkill'],
       availableDays: Set<String>.from(d['availableDays'] ?? []),
@@ -318,6 +384,7 @@ class FirestoreService {
       bio: d['bio'] ?? '',
       providerId: d['providerId'] ?? '',
       createdAt: (d['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
+      workRadiusKm: (d['workRadiusKm'] ?? 5).toDouble(),
       minPrice: (d['minPrice'] ?? 0).toDouble(),
       maxPrice: (d['maxPrice'] ?? 0).toDouble(),
     );
@@ -379,6 +446,24 @@ class FirestoreService {
   }
 
   static Future<void> addReport(Report report) async {
+    final callable = _functions.httpsCallable('reportSafetyIncident');
+    try {
+      await callable.call({
+        'report': {
+          'id': report.id,
+          'reporterId': report.reporterId,
+          'targetType': report.targetType,
+          'targetId': report.targetId,
+          'reportedUserId': report.reportedUserId,
+          'reason': report.reason,
+          'blocked': report.blocked,
+          'createdAtMs': report.createdAt.millisecondsSinceEpoch,
+        },
+      });
+      return;
+    } catch (e) {
+      if (!_isFunctionsUnavailable(e)) rethrow;
+    }
     await _reportsCol.doc(report.id).set({
       'reporterId': report.reporterId,
       'targetType': report.targetType,
@@ -549,6 +634,9 @@ class FirestoreService {
                 text: d['text'] ?? '',
                 timestamp:
                     (d['timestamp'] as Timestamp?)?.toDate() ?? DateTime.now(),
+                isDeleted: d['isDeleted'] == true || d['deletedAt'] != null,
+                deletedById: d['deletedById'],
+                deletedByName: d['deletedByName'],
               );
             }).toList());
   }
@@ -557,23 +645,24 @@ class FirestoreService {
     required String conversationId,
     required ChatMessage message,
   }) async {
-    final callable = _functions.httpsCallable('sendConversationMessage');
-    try {
-      await callable.call({
-        'conversationId': conversationId,
-        'message': {
-          'id': message.id,
-          'senderId': message.senderId,
-          'senderName': message.senderName,
-          'text': message.text,
-          'timestampMs': message.timestamp.millisecondsSinceEpoch,
-        },
-      });
-      return;
-    } catch (e) {
-      if (!_isFunctionsUnavailable(e)) rethrow;
+    if (_useCallableBackend) {
+      final callable = _functions.httpsCallable('sendConversationMessage');
+      try {
+        await callable.call({
+          'conversationId': conversationId,
+          'message': {
+            'id': message.id,
+            'senderId': message.senderId,
+            'senderName': message.senderName,
+            'text': message.text,
+            'timestampMs': message.timestamp.millisecondsSinceEpoch,
+          },
+        });
+        return;
+      } catch (_) {
+        // Fall back to Firestore write below.
+      }
     }
-
     final batch = _db.batch();
     final msgRef = _conversationsCol
         .doc(conversationId)
@@ -584,14 +673,49 @@ class FirestoreService {
       'senderName': message.senderName,
       'text': message.text,
       'timestamp': Timestamp.fromDate(message.timestamp),
+      'isDeleted': false,
+      'deletedById': null,
+      'deletedByName': null,
+      'deletedAt': null,
     });
-    batch.update(_conversationsCol.doc(conversationId), {
+    batch.set(_conversationsCol.doc(conversationId), {
       'lastMessageAt': Timestamp.fromDate(message.timestamp),
       'lastMessageText': message.text,
-      'typingBy.${message.senderId}': false,
-      'lastSeenBy.${message.senderId}': Timestamp.fromDate(message.timestamp),
-    });
+      'typingBy': {message.senderId: false},
+      'lastSeenBy': {message.senderId: Timestamp.fromDate(message.timestamp)},
+    }, SetOptions(merge: true));
     await batch.commit();
+  }
+
+  static Future<void> deleteMessageForEveryone({
+    required String conversationId,
+    required String messageId,
+    required String deletedById,
+    required String deletedByName,
+  }) async {
+    final msgRef = _conversationsCol
+        .doc(conversationId)
+        .collection('messages')
+        .doc(messageId);
+    await msgRef.set({
+      'isDeleted': true,
+      'deletedById': deletedById,
+      'deletedByName': deletedByName,
+      'deletedAt': FieldValue.serverTimestamp(),
+      'text': '$deletedByName deleted this message',
+    }, SetOptions(merge: true));
+
+    final latest = await _conversationsCol
+        .doc(conversationId)
+        .collection('messages')
+        .orderBy('timestamp', descending: true)
+        .limit(1)
+        .get();
+    if (latest.docs.isNotEmpty && latest.docs.first.id == messageId) {
+      await _conversationsCol.doc(conversationId).set({
+        'lastMessageText': '$deletedByName deleted a message',
+      }, SetOptions(merge: true));
+    }
   }
 
   static Future<void> setConversationTyping({
@@ -773,5 +897,10 @@ class FirestoreService {
     await _usersCol.doc(userId).update({
       'deleteStrikes': FieldValue.arrayUnion([Timestamp.now()]),
     });
+  }
+
+  static Future<void> deleteMyAccountData() async {
+    final callable = _functions.httpsCallable('deleteMyAccountData');
+    await callable.call();
   }
 }

@@ -8,6 +8,8 @@ class ModerationResult {
 
 class ModerationService {
   static final FirebaseFunctions _functions = FirebaseFunctions.instance;
+  // Low-cost mode: keep local safety checks only (no backend callable needed).
+  static const bool _useBackendAiModeration = false;
 
   static const _bannedWords = [
     'goon', 'gooning', 'goonin', 'porn', 'onlyfans', 'nsfw', 'nude', 'nudes',
@@ -28,14 +30,15 @@ class ModerationService {
     'femboy', 'femboys', 'furry', 'furries', 'hentai', 'ahegao',
     'milf', 'dilf', 'dildo', 'vibrator', 'orgasm', 'cum', 'cumming',
     'jerk off', 'jerking', 'wank', 'wanker', 'masturbat',
-    'onlyfan', 'skibidi', 'rizz',
+    'onlyfan', 'skibidi', 'rizz', 'sx', 'seggs', 'prn', 'pron',
+    'dady', 'daddy', 'gon', 'gons', 'goon', 'goons',
     'cunt', 'twat', 'bollocks', 'wanking', 'shag',
     'damn', 'dammit', 'bastard', 'piss', 'pissed',
     'brainrot', 'brain rot', 'edging',
     'motherfucker', 'mother fucker', 'mfer', 'mf',
     'bullshit', 'bs', 'wtf', 'stfu', 'douche', 'douchebag',
     'jackass', 'prick', 'pussy', 'cock',
-    'chink', 'kike', 'spic', 'dih', 'puh', 'bih', 
+    'chink', 'kike', 'spic', 'dih', 'puh', 'bih', 'fuh', 'buh',
     'femboy', 'femboys', 'furry', 'furries', 'futa', 'trap',
     'simp', 'incel', 'cuck', 'gooner', 'coomer',
     'anal', 'blowjob', 'bj', 'handjob', 'rimjob', 'deepthroat',
@@ -52,8 +55,15 @@ class ModerationService {
   static const _hardBlockRegexes = <String>[
     // Severe profanity / harassment
     r'\b(f+[\W_]*u+[\W_]*c+[\W_]*k+)\b',
+    r'\b(f+[\W_]*c+[\W_]*k+[\W_]*(i+n+|i+n+g+)?)\b',
+    r'\b(f+[\W_]*u+[\W_]*k+[\W_]*(i+n+|i+n+g+)?)\b',
     r'\b(s+[\W_]*h+[\W_]*i+[\W_]*t+)\b',
     r'\b(b+[\W_]*i+[\W_]*t+[\W_]*c+[\W_]*h+)\b',
+    r'\b(b+[\W_]*i+[\W_]*c+[\W_]*h+)\b',
+    r'\b(b+[\W_]*e+[\W_]*t+[\W_]*c+[\W_]*h+)\b',
+    r'\b(d+[\W_]*a+[\W_]*d+[\W_]*y+)\b',
+    r'\b(g+[\W_]*o{1,20}+[\W_]*n+s*)\b',
+    r'\b(your|ur|my|his|her|their)\s*(but|butt|booty|ass)\b',
     r'\b(c+[\W_]*u+[\W_]*n+[\W_]*t+)\b',
     r'\b(a+[\W_]*s+[\W_]*s+[\W_]*h+[\W_]*o+[\W_]*l+[\W_]*e+)\b',
     r'\b(n+[\W_]*i+[\W_]*g+[\W_]*g+[\W_]*a+)\b',
@@ -63,6 +73,8 @@ class ModerationService {
 
     // Sexual / explicit
     r'\b(sex|sexual|sexy|xxx|porn|onlyfans|nsfw|nude|nudes|naked)\b',
+    r'\b(s[\W_]*x|s[\W_]*e[\W_]*g[\W_]*g[\W_]*s)\b',
+    r'\b(p[\W_]*r[\W_]*n|p[\W_]*r[\W_]*o[\W_]*n)\b',
     r'\b(dick|penis|vagina|boob|boobs|tits|titty|titties|cock|pussy)\b',
     r'\b(blow[\W_]*job|hand[\W_]*job|rim[\W_]*job|deep[\W_]*throat)\b',
     r'\b(orgasm|cum+|cumming|ejaculat(e|ion)|masturbat(e|ion|ing))\b',
@@ -87,14 +99,25 @@ class ModerationService {
   // Stems used to catch masked/censored variants like f***, sh!t, bi7ch, etc.
   static const _blockedStems = <String>[
     'fuck', 'shit', 'bitch', 'asshole', 'cunt', 'faggot', 'retard',
+    'fck', 'fukin', 'fuking', 'fukin', 'fking', 'bich', 'biatch',
+    'fk', 'fkn', 'sht', 'btch', 'sex', 'sx', 'seggs', 'prn', 'pron',
+    'dady', 'daddy', 'gon', 'gons', 'goon', 'goons',
     'nigga', 'nigger', 'whore', 'slut', 'motherfucker',
     'dick', 'cock', 'pussy', 'penis', 'vagina',
     'porn', 'nude', 'nudes', 'nsfw', 'sex', 'sexual',
     'rape', 'rapist', 'molest', 'pedo', 'pedophile',
-    'dih', 'puh', 'bih', 'nethnyaho', 
+    'dih', 'puh', 'bih', 'fuh', 'buh', 'nethnyaho',
     'kys', 'kms', 'selfharm', 'suicide',
     'femboy', 'furry', 'hentai',
   ];
+
+  // Common shorthand/abbreviations used to bypass filters.
+  static const _abbrevToxicTokens = <String>{
+    'sx', 'sex', 'seggs', 'prn', 'pron', 'nsfw',
+    'fk', 'fck', 'fkn', 'fkin', 'fking',
+    'sht', 'shyt', 'btch', 'bich',
+    'dih', 'puh', 'bih', 'fuh', 'buh', 'dady', 'daddy', 'gon', 'gons', 'goon', 'goons',
+  };
 
   static const _suspiciousPatterns = [
     'send nudes', 'come to my house alone', 'no parents',
@@ -253,6 +276,23 @@ class ModerationService {
     final normalized = _normalizeForProfanity(text);
     final compact = normalized.replaceAll(' ', '');
     final lower = text.toLowerCase();
+    final stitched = _normalizeForProfanity(
+      lower.replaceAll(RegExp(r'[^a-zA-Z0-9@!\|\$]'), ''),
+    ).replaceAll(' ', '');
+    final tokens = normalized.split(RegExp(r'\s+'));
+
+    // Hard cap: very long single tokens are commonly obfuscated abuse/spam.
+    for (final token in tokens) {
+      final t = token.trim();
+      if (t.length > 15) {
+        return const ModerationResult(
+          approved: false,
+          reason:
+              'Your post contains an invalid long word and has been blocked. '
+              'Please keep wording clear and appropriate.',
+        );
+      }
+    }
 
     for (final pattern in _hardBlockRegexes) {
       final re = RegExp(pattern, caseSensitive: false);
@@ -275,6 +315,34 @@ class ModerationService {
       );
     }
 
+    // Block frequent short toxic tokens before longer phrase checks.
+    for (final token in tokens) {
+      final t = token.trim();
+      if (t.isEmpty) continue;
+      if (_abbrevToxicTokens.contains(t)) {
+        return const ModerationResult(
+          approved: false,
+          reason:
+              'Your post contains inappropriate language and has been blocked. '
+              'Please keep all content family-friendly and professional.',
+        );
+      }
+    }
+
+    // Extra sexualized phrase block, including joined/compact forms.
+    final possessiveBody = RegExp(
+      r'(your|ur|my|his|her|their)(but|butt|booty|ass)',
+      caseSensitive: false,
+    );
+    if (possessiveBody.hasMatch(compact) || possessiveBody.hasMatch(stitched)) {
+      return const ModerationResult(
+        approved: false,
+        reason:
+            'Your post contains inappropriate language and has been blocked. '
+            'Please keep all content family-friendly and professional.',
+      );
+    }
+
     for (final word in _bannedWords) {
       final needle = _normalizeForProfanity(word).trim();
       if (needle.isEmpty) continue;
@@ -289,8 +357,13 @@ class ModerationService {
       // Catch obfuscated spacing/punctuation for longer words only.
       final inCompact =
           !isPhrase && needle.length >= 4 && compact.contains(needle);
+      final inStitched =
+          !isPhrase &&
+          needle.length >= 4 &&
+          (stitched.contains(needle) ||
+              _containsGappedStem(stitched, needle, maxGap: 2));
 
-      if (inNormalized || inCompact) {
+      if (inNormalized || inCompact || inStitched) {
         return const ModerationResult(
           approved: false,
           reason:
@@ -300,6 +373,37 @@ class ModerationService {
       }
     }
     return null;
+  }
+
+  static bool _containsGappedStem(
+    String haystack,
+    String stem, {
+    int maxGap = 2,
+  }) {
+    if (haystack.isEmpty || stem.isEmpty) return false;
+    if (haystack.contains(stem)) return true;
+    final s = stem.toLowerCase();
+    final h = haystack.toLowerCase();
+    for (var start = 0; start < h.length; start++) {
+      if (h[start] != s[0]) continue;
+      var hi = start;
+      var matched = 1;
+      while (matched < s.length) {
+        var found = false;
+        final end = (hi + maxGap + 1) < h.length ? (hi + maxGap + 1) : (h.length - 1);
+        for (var j = hi + 1; j <= end; j++) {
+          if (h[j] == s[matched]) {
+            hi = j;
+            matched++;
+            found = true;
+            break;
+          }
+        }
+        if (!found) break;
+      }
+      if (matched == s.length) return true;
+    }
+    return false;
   }
 
   static String _normalizeForProfanity(String text) {
@@ -407,6 +511,10 @@ class ModerationService {
   }
 
   static Future<ModerationResult> _validateWithAi(String text) async {
+    if (!_useBackendAiModeration) {
+      // Local hard-block checks already ran before this call.
+      return const ModerationResult(approved: true);
+    }
     try {
       final callable = _functions.httpsCallable('validatePost');
       final res = await callable

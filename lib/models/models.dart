@@ -21,6 +21,11 @@ class UserProfile {
   DateTime? riskAcknowledgedAt;
   DateTime? guardianConsentAt;
   DateTime? huddleRepliesSeenAt;
+  Set<String> hiddenJobIds;
+  Set<String> hiddenServiceIds;
+  Set<String> hiddenHuddlePostIds;
+  bool privacyBubbleEnabled;
+  bool shadowBanned;
 
   UserProfile({
     required this.id,
@@ -41,8 +46,16 @@ class UserProfile {
     this.riskAcknowledgedAt,
     this.guardianConsentAt,
     this.huddleRepliesSeenAt,
+    Set<String>? hiddenJobIds,
+    Set<String>? hiddenServiceIds,
+    Set<String>? hiddenHuddlePostIds,
+    this.privacyBubbleEnabled = true,
+    this.shadowBanned = false,
   })  : skills = skills ?? {},
-        interests = interests ?? {};
+        interests = interests ?? {},
+        hiddenJobIds = hiddenJobIds ?? {},
+        hiddenServiceIds = hiddenServiceIds ?? {},
+        hiddenHuddlePostIds = hiddenHuddlePostIds ?? {};
 
   String get initials => name
       .split(' ')
@@ -63,12 +76,18 @@ class Job {
   final String posterId;
   final String posterName;
   final DateTime createdAt;
+  final bool isMinorPoster;
+  final String? publicLocation;
+  final double? publicLat;
+  final double? publicLng;
+  final double publicRadiusMeters;
   final List<String> applicantIds;
   final List<String> applicantNames;
   String? hiredId;
   String? hiredName;
   JobStatus status;
   double payment;
+  DateTime? completedAt;
 
   Job({
     required this.id,
@@ -81,20 +100,38 @@ class Job {
     required this.posterId,
     required this.posterName,
     required this.createdAt,
+    this.isMinorPoster = false,
+    this.publicLocation,
+    this.publicLat,
+    this.publicLng,
+    this.publicRadiusMeters = 500,
     List<String>? applicantIds,
     List<String>? applicantNames,
     this.hiredId,
     this.hiredName,
     this.status = JobStatus.open,
     this.payment = 0,
+    this.completedAt,
   })  : applicantIds = applicantIds ?? [],
         applicantNames = applicantNames ?? [];
+
+  String get displayLocation =>
+      isMinorPoster
+          ? ((publicLocation ?? '').trim().isNotEmpty
+              ? publicLocation!.trim()
+              : 'Approx. local area (~500m)')
+          : location;
 }
 
 class Service {
   final String id;
   final String providerName;
   final String location;
+  final bool isMinorProvider;
+  final String? publicLocation;
+  final double? publicLat;
+  final double? publicLng;
+  final double publicRadiusMeters;
   final Set<String> skills;
   final String? otherSkill;
   final Set<String> availableDays;
@@ -103,6 +140,7 @@ class Service {
   final String bio;
   final String providerId;
   final DateTime createdAt;
+  final double workRadiusKm;
   final double minPrice;
   final double maxPrice;
 
@@ -110,6 +148,11 @@ class Service {
     required this.id,
     required this.providerName,
     required this.location,
+    this.isMinorProvider = false,
+    this.publicLocation,
+    this.publicLat,
+    this.publicLng,
+    this.publicRadiusMeters = 500,
     required this.skills,
     this.otherSkill,
     required this.availableDays,
@@ -118,6 +161,7 @@ class Service {
     required this.bio,
     required this.providerId,
     required this.createdAt,
+    this.workRadiusKm = 5,
     this.minPrice = 0,
     this.maxPrice = 0,
   });
@@ -127,6 +171,13 @@ class Service {
     if (minPrice == maxPrice) return '\$${minPrice.toStringAsFixed(0)}/hr';
     return '\$${minPrice.toStringAsFixed(0)} – \$${maxPrice.toStringAsFixed(0)}/hr';
   }
+
+  String get displayLocation =>
+      isMinorProvider
+          ? ((publicLocation ?? '').trim().isNotEmpty
+              ? publicLocation!.trim()
+              : 'Approx. local area (~500m)')
+          : location;
 }
 
 class ChatMessage {
@@ -135,6 +186,9 @@ class ChatMessage {
   final String senderName;
   final String text;
   final DateTime timestamp;
+  final bool isDeleted;
+  final String? deletedById;
+  final String? deletedByName;
 
   const ChatMessage({
     required this.id,
@@ -142,6 +196,9 @@ class ChatMessage {
     required this.senderName,
     required this.text,
     required this.timestamp,
+    this.isDeleted = false,
+    this.deletedById,
+    this.deletedByName,
   });
 }
 

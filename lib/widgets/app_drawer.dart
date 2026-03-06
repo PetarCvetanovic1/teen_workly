@@ -14,6 +14,7 @@ import '../screens/login_screen.dart';
 import '../screens/profile_editor_screen.dart';
 import '../screens/contact_screen.dart';
 import '../screens/huddle_screen.dart';
+import '../screens/settings_screen.dart';
 
 DateTime? _lastDrawerNavTapAt;
 
@@ -196,6 +197,14 @@ class AppDrawer extends StatelessWidget {
                   icon: Icons.mail_outline_rounded,
                   label: 'Contact Us',
                   onTap: () => replaceAfterClose(const ContactScreen()),
+                ),
+                _DrawerTile(
+                  icon: Icons.settings_rounded,
+                  label: 'Settings',
+                  onTap: () => replaceAfterClose(
+                    const SettingsScreen(),
+                    requiresAuth: true,
+                  ),
                 ),
                 if (!loggedIn) ...[
                   const Divider(height: 24),

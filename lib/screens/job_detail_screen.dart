@@ -51,41 +51,18 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
             ),
             actions: [
               if (!isOwner)
-                PopupMenuButton<String>(
-                  icon: const Icon(Icons.more_vert_rounded),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(14),
+                IconButton(
+                  tooltip: 'Safety actions',
+                  icon: const Icon(Icons.shield_outlined,
+                      color: Color(0xFFDC2626)),
+                  onPressed: () => showSafetyActionsSheet(
+                    context,
+                    targetType: 'Job',
+                    targetId: job.id,
+                    userId: job.posterId,
+                    userName: job.posterName,
+                    onHide: () => state.hideJob(job.id),
                   ),
-                  onSelected: (value) {
-                    if (value == 'report') {
-                      showReportSheet(
-                        context,
-                        targetType: 'Job',
-                        targetId: job.id,
-                        userId: job.posterId,
-                        userName: job.posterName,
-                      );
-                    }
-                  },
-                  itemBuilder: (_) => [
-                    PopupMenuItem(
-                      value: 'report',
-                      child: Row(
-                        children: [
-                          const Icon(Icons.flag_outlined,
-                              size: 18, color: Color(0xFFDC2626)),
-                          const SizedBox(width: 10),
-                          Text(
-                            'Report / Block',
-                            style: GoogleFonts.plusJakartaSans(
-                              fontSize: 13,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
                 ),
             ],
           ),
@@ -98,6 +75,21 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
                   const SizedBox(height: 16),
                   // Status badge
                   _StatusBadge(job: job),
+                if (!isOwner) ...[
+                  const SizedBox(height: 8),
+                  OutlinedButton.icon(
+                    onPressed: () => showSafetyActionsSheet(
+                      context,
+                      targetType: 'Job',
+                      targetId: job.id,
+                      userId: job.posterId,
+                      userName: job.posterName,
+                      onHide: () => state.hideJob(job.id),
+                    ),
+                    icon: const Icon(Icons.shield_outlined, size: 18),
+                    label: const Text('Safety actions'),
+                  ),
+                ],
                 const SizedBox(height: 16),
                 // Title
                 Text(
@@ -115,13 +107,35 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
                   spacing: 10,
                   runSpacing: 8,
                   children: [
-                    _MetaChip(
-                      icon: Icons.person_outline_rounded,
-                      label: job.posterName,
+                    GestureDetector(
+                      onLongPress: isOwner
+                          ? null
+                          : () => showSafetyActionsSheet(
+                                context,
+                                targetType: 'Job',
+                                targetId: job.id,
+                                userId: job.posterId,
+                                userName: job.posterName,
+                                onHide: () => state.hideJob(job.id),
+                              ),
+                      onSecondaryTapUp: isOwner
+                          ? null
+                          : (_) => showSafetyActionsSheet(
+                                context,
+                                targetType: 'Job',
+                                targetId: job.id,
+                                userId: job.posterId,
+                                userName: job.posterName,
+                                onHide: () => state.hideJob(job.id),
+                              ),
+                      child: _MetaChip(
+                        icon: Icons.person_outline_rounded,
+                        label: job.posterName,
+                      ),
                     ),
                     _MetaChip(
                       icon: Icons.location_on_outlined,
-                      label: job.location,
+                      label: job.displayLocation,
                     ),
                     _MetaChip(
                       icon: Icons.schedule_rounded,
@@ -216,7 +230,7 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
                         completedJobs:
                             state.completedJobCountForUser(job.applicantIds[i]),
                         reviewCount: state.reviewsForUser(job.applicantIds[i]).length,
-                        verified: state.isVerified(job.applicantIds[i]),
+                        tier: state.workerTierForUser(job.applicantIds[i]),
                         isDark: isDark,
                         onHire: () async {
                           final applicantActiveJobs = state.jobs
@@ -1088,7 +1102,7 @@ class _ApplicantTile extends StatelessWidget {
   final double rating;
   final int completedJobs;
   final int reviewCount;
-  final bool verified;
+  final WorkerTier tier;
   final bool isDark;
   final VoidCallback onHire;
   final VoidCallback onMessage;
@@ -1098,7 +1112,7 @@ class _ApplicantTile extends StatelessWidget {
     required this.rating,
     required this.completedJobs,
     required this.reviewCount,
-    required this.verified,
+    required this.tier,
     required this.isDark,
     required this.onHire,
     required this.onMessage,
@@ -1205,15 +1219,26 @@ class _ApplicantTile extends StatelessWidget {
                                   overflow: TextOverflow.ellipsis,
                                 ),
                               ),
-                              if (verified)
-                                const Tooltip(
-                                  message: 'Verified worker',
-                                  child: Icon(
-                                    Icons.verified_rounded,
-                                    size: 16,
-                                    color: Color(0xFF059669),
-                                  ),
+                              Tooltip(
+                                message: tier == WorkerTier.topRated
+                                    ? 'Top Rated'
+                                    : tier == WorkerTier.reliable
+                                        ? 'Reliable'
+                                        : 'New',
+                                child: Icon(
+                                  tier == WorkerTier.topRated
+                                      ? Icons.workspace_premium_rounded
+                                      : tier == WorkerTier.reliable
+                                          ? Icons.verified_rounded
+                                          : Icons.new_releases_rounded,
+                                  size: 16,
+                                  color: tier == WorkerTier.topRated
+                                      ? const Color(0xFFF59E0B)
+                                      : tier == WorkerTier.reliable
+                                          ? const Color(0xFF059669)
+                                          : const Color(0xFF94A3B8),
                                 ),
+                              ),
                             ],
                           ),
                           const SizedBox(height: 2),
@@ -1228,6 +1253,36 @@ class _ApplicantTile extends StatelessWidget {
                             ),
                             overflow: TextOverflow.ellipsis,
                             maxLines: 2,
+                          ),
+                          const SizedBox(height: 4),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 8, vertical: 3),
+                            decoration: BoxDecoration(
+                              color: (tier == WorkerTier.topRated
+                                      ? const Color(0xFFF59E0B)
+                                      : tier == WorkerTier.reliable
+                                          ? const Color(0xFF059669)
+                                          : const Color(0xFF94A3B8))
+                                  .withValues(alpha: 0.12),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Text(
+                              tier == WorkerTier.topRated
+                                  ? 'Top Rated'
+                                  : tier == WorkerTier.reliable
+                                      ? 'Reliable'
+                                      : 'New',
+                              style: GoogleFonts.plusJakartaSans(
+                                fontSize: 10,
+                                fontWeight: FontWeight.w800,
+                                color: tier == WorkerTier.topRated
+                                    ? const Color(0xFFF59E0B)
+                                    : tier == WorkerTier.reliable
+                                        ? const Color(0xFF059669)
+                                        : const Color(0xFF94A3B8),
+                              ),
+                            ),
                           ),
                         ],
                       ),

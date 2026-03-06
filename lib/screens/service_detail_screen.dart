@@ -35,41 +35,17 @@ class ServiceDetailScreen extends StatelessWidget {
         ),
         actions: [
           if (!isOwn)
-            PopupMenuButton<String>(
-              icon: const Icon(Icons.more_vert_rounded),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(14),
+            IconButton(
+              tooltip: 'Safety actions',
+              icon: const Icon(Icons.shield_outlined, color: Color(0xFFDC2626)),
+              onPressed: () => showSafetyActionsSheet(
+                context,
+                targetType: 'Service',
+                targetId: service.id,
+                userId: service.providerId,
+                userName: service.providerName,
+                onHide: () => state.hideService(service.id),
               ),
-              onSelected: (value) {
-                if (value == 'report') {
-                  showReportSheet(
-                    context,
-                    targetType: 'Service',
-                    targetId: service.id,
-                    userId: service.providerId,
-                    userName: service.providerName,
-                  );
-                }
-              },
-              itemBuilder: (_) => [
-                PopupMenuItem(
-                  value: 'report',
-                  child: Row(
-                    children: [
-                      const Icon(Icons.flag_outlined,
-                          size: 18, color: Color(0xFFDC2626)),
-                      const SizedBox(width: 10),
-                      Text(
-                        'Report / Block',
-                        style: GoogleFonts.plusJakartaSans(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
             ),
         ],
       ),
@@ -110,38 +86,91 @@ class ServiceDetailScreen extends StatelessWidget {
                 ),
                 const SizedBox(width: 16),
                 Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        service.providerName,
-                        style: GoogleFonts.plusJakartaSans(
-                          fontSize: 22,
-                          fontWeight: FontWeight.w800,
-                          color: isDark ? Colors.white : AppColors.slate900,
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      Row(
-                        children: [
-                          Icon(Icons.location_on_outlined,
-                              size: 15, color: const Color(0xFF94A3B8)),
-                          const SizedBox(width: 4),
-                          Text(
-                            service.location,
-                            style: GoogleFonts.plusJakartaSans(
-                              fontSize: 13,
-                              fontWeight: FontWeight.w500,
-                              color: const Color(0xFF94A3B8),
+                  child: GestureDetector(
+                    onLongPress: isOwn
+                        ? null
+                        : () => showSafetyActionsSheet(
+                              context,
+                              targetType: 'Service',
+                              targetId: service.id,
+                              userId: service.providerId,
+                              userName: service.providerName,
+                              onHide: () => state.hideService(service.id),
                             ),
+                    onSecondaryTapUp: isOwn
+                        ? null
+                        : (_) => showSafetyActionsSheet(
+                              context,
+                              targetType: 'Service',
+                              targetId: service.id,
+                              userId: service.providerId,
+                              userName: service.providerName,
+                              onHide: () => state.hideService(service.id),
+                            ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          service.providerName,
+                          style: GoogleFonts.plusJakartaSans(
+                            fontSize: 22,
+                            fontWeight: FontWeight.w800,
+                            color: isDark ? Colors.white : AppColors.slate900,
                           ),
-                        ],
-                      ),
-                    ],
+                        ),
+                        const SizedBox(height: 4),
+                        Row(
+                          children: [
+                            Icon(Icons.location_on_outlined,
+                                size: 15, color: const Color(0xFF94A3B8)),
+                            const SizedBox(width: 4),
+                            Text(
+                              service.displayLocation,
+                              style: GoogleFonts.plusJakartaSans(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w500,
+                                color: const Color(0xFF94A3B8),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 4),
+                        Row(
+                          children: [
+                            Icon(Icons.near_me_rounded,
+                                size: 15, color: const Color(0xFF94A3B8)),
+                            const SizedBox(width: 4),
+                            Text(
+                              'Can travel up to ${service.workRadiusKm.toStringAsFixed(0)} km',
+                              style: GoogleFonts.plusJakartaSans(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w500,
+                                color: const Color(0xFF94A3B8),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
                   ),
                 ),
               ],
             ),
+            if (!isOwn) ...[
+              const SizedBox(height: 12),
+              OutlinedButton.icon(
+                onPressed: () => showSafetyActionsSheet(
+                  context,
+                  targetType: 'Service',
+                  targetId: service.id,
+                  userId: service.providerId,
+                  userName: service.providerName,
+                  onHide: () => state.hideService(service.id),
+                ),
+                icon: const Icon(Icons.shield_outlined, size: 18),
+                label: const Text('Safety actions'),
+              ),
+            ],
             const SizedBox(height: 28),
             // Skills
             _SectionLabel('SKILLS'),

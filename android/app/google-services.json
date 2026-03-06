@@ -14,6 +14,14 @@
       },
       "oauth_client": [
         {
+          "client_id": "387879577336-bik3ts58v48ri5igft4ddi69n0rsm8pn.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.teenworkly.app",
+            "certificate_hash": "fbe4bf122b33173eaf892b5193cf8ca6c48e3244"
+          }
+        },
+        {
           "client_id": "387879577336-u45ueuj9pdn4kc9nglarpl5fp3qavmll.apps.googleusercontent.com",
           "client_type": 1,
           "android_info": {

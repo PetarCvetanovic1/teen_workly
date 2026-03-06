@@ -5,6 +5,7 @@ import '../app_colors.dart';
 import '../state/app_state.dart';
 
 const _reasons = [
+  'Creepy behavior',
   'Inappropriate or offensive content',
   'Spam or scam',
   'Misleading information',
@@ -33,6 +34,131 @@ void showReportSheet(
   );
 }
 
+Future<void> showSafetyActionsSheet(
+  BuildContext context, {
+  required String targetType,
+  required String targetId,
+  required String userId,
+  String? userName,
+  Future<void> Function()? onHide,
+}) async {
+  final isDark = Theme.of(context).brightness == Brightness.dark;
+  await showModalBottomSheet(
+    context: context,
+    backgroundColor: Colors.transparent,
+    builder: (ctx) {
+      return Container(
+        margin: const EdgeInsets.all(16),
+        padding: const EdgeInsets.fromLTRB(12, 12, 12, 8),
+        decoration: BoxDecoration(
+          color: isDark ? const Color(0xFF1E293B) : Colors.white,
+          borderRadius: BorderRadius.circular(18),
+        ),
+        child: SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ListTile(
+                leading: const Icon(Icons.flag_outlined,
+                    color: Color(0xFFDC2626)),
+                title: Text(
+                  'Report',
+                  style: GoogleFonts.plusJakartaSans(
+                    fontWeight: FontWeight.w700,
+                    color: isDark ? Colors.white : AppColors.slate900,
+                  ),
+                ),
+                subtitle: Text(
+                  'Send a report to moderators',
+                  style: GoogleFonts.plusJakartaSans(
+                    fontSize: 12,
+                    color: const Color(0xFF94A3B8),
+                  ),
+                ),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  showReportSheet(
+                    context,
+                    targetType: targetType,
+                    targetId: targetId,
+                    userId: userId,
+                    userName: userName,
+                  );
+                },
+              ),
+              if (onHide != null)
+                ListTile(
+                  leading: const Icon(Icons.visibility_off_outlined,
+                      color: Color(0xFF64748B)),
+                  title: Text(
+                    'Hide',
+                    style: GoogleFonts.plusJakartaSans(
+                      fontWeight: FontWeight.w700,
+                      color: isDark ? Colors.white : AppColors.slate900,
+                    ),
+                  ),
+                  subtitle: Text(
+                    'Remove this from your feed',
+                    style: GoogleFonts.plusJakartaSans(
+                      fontSize: 12,
+                      color: const Color(0xFF94A3B8),
+                    ),
+                  ),
+                  onTap: () async {
+                    await onHide();
+                    if (!context.mounted) return;
+                    Navigator.pop(ctx);
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('Hidden from your feed.'),
+                        behavior: SnackBarBehavior.floating,
+                      ),
+                    );
+                  },
+                ),
+              ListTile(
+                leading: const Icon(Icons.block_rounded,
+                    color: Color(0xFFDC2626)),
+                title: Text(
+                  'Block user',
+                  style: GoogleFonts.plusJakartaSans(
+                    fontWeight: FontWeight.w700,
+                    color: isDark ? Colors.white : AppColors.slate900,
+                  ),
+                ),
+                subtitle: Text(
+                  'Hide all content from this user',
+                  style: GoogleFonts.plusJakartaSans(
+                    fontSize: 12,
+                    color: const Color(0xFF94A3B8),
+                  ),
+                ),
+                onTap: () async {
+                  final state = context.read<AppState>();
+                  await state.blockUser(
+                    userId: userId,
+                    targetType: targetType,
+                    targetId: targetId,
+                    reason: 'Blocked from safety actions',
+                  );
+                  if (!context.mounted) return;
+                  Navigator.pop(ctx);
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('User blocked. Their posts are hidden.'),
+                      behavior: SnackBarBehavior.floating,
+                    ),
+                  );
+                },
+              ),
+            ],
+          ),
+        ),
+      );
+    },
+  );
+}
+
 class _ReportSheet extends StatefulWidget {
   final String targetType;
   final String targetId;
@@ -51,7 +177,7 @@ class _ReportSheet extends StatefulWidget {
 }
 
 class _ReportSheetState extends State<_ReportSheet> {
-  String? _selectedReason;
+  final Set<String> _selectedReasons = <String>{};
   bool _alsoBlock = false;
   final _otherCtrl = TextEditingController();
 
@@ -124,11 +250,19 @@ class _ReportSheetState extends State<_ReportSheet> {
             const SizedBox(height: 20),
             ...List.generate(_reasons.length, (i) {
               final reason = _reasons[i];
-              final selected = _selectedReason == reason;
+              final selected = _selectedReasons.contains(reason);
               return Padding(
                 padding: const EdgeInsets.only(bottom: 8),
                 child: GestureDetector(
-                  onTap: () => setState(() => _selectedReason = reason),
+                  onTap: () {
+                    setState(() {
+                      if (selected) {
+                        _selectedReasons.remove(reason);
+                      } else {
+                        _selectedReasons.add(reason);
+                      }
+                    });
+                  },
                   child: AnimatedContainer(
                     duration: const Duration(milliseconds: 150),
                     width: double.infinity,
@@ -156,8 +290,8 @@ class _ReportSheetState extends State<_ReportSheet> {
                       children: [
                         Icon(
                           selected
-                              ? Icons.radio_button_checked_rounded
-                              : Icons.radio_button_off_rounded,
+                              ? Icons.check_box_rounded
+                              : Icons.check_box_outline_blank_rounded,
                           size: 20,
                           color: selected
                               ? const Color(0xFFDC2626)
@@ -185,35 +319,45 @@ class _ReportSheetState extends State<_ReportSheet> {
                 ),
               );
             }),
-            if (_selectedReason == 'Other') ...[
-              const SizedBox(height: 4),
-              TextField(
-                controller: _otherCtrl,
-                maxLines: 2,
+            const SizedBox(height: 4),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: Text(
+                'Tell us what happened (optional)',
                 style: GoogleFonts.plusJakartaSans(
-                  fontWeight: FontWeight.w500,
-                  color: isDark ? Colors.white : AppColors.slate900,
-                ),
-                decoration: InputDecoration(
-                  hintText: 'Tell us what\'s wrong...',
-                  hintStyle: GoogleFonts.plusJakartaSans(
-                    fontWeight: FontWeight.w500,
-                    color: const Color(0xFF94A3B8),
-                  ),
-                  filled: true,
-                  fillColor: isDark
-                      ? const Color(0xFF0F172A).withValues(alpha: 0.5)
-                      : AppColors.slate100,
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(14),
-                    borderSide: BorderSide.none,
-                  ),
-                  contentPadding: const EdgeInsets.symmetric(
-                      horizontal: 16, vertical: 14),
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                  color: const Color(0xFF94A3B8),
                 ),
               ),
-              const SizedBox(height: 8),
-            ],
+            ),
+            const SizedBox(height: 6),
+            TextField(
+              controller: _otherCtrl,
+              maxLines: 3,
+              style: GoogleFonts.plusJakartaSans(
+                fontWeight: FontWeight.w500,
+                color: isDark ? Colors.white : AppColors.slate900,
+              ),
+              decoration: InputDecoration(
+                hintText: 'Describe what happened...',
+                hintStyle: GoogleFonts.plusJakartaSans(
+                  fontWeight: FontWeight.w500,
+                  color: const Color(0xFF94A3B8),
+                ),
+                filled: true,
+                fillColor: isDark
+                    ? const Color(0xFF0F172A).withValues(alpha: 0.5)
+                    : AppColors.slate100,
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(14),
+                  borderSide: BorderSide.none,
+                ),
+                contentPadding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+              ),
+            ),
+            const SizedBox(height: 8),
             if (widget.userId != null) ...[
               const SizedBox(height: 4),
               GestureDetector(
@@ -248,12 +392,12 @@ class _ReportSheetState extends State<_ReportSheet> {
             SizedBox(
               width: double.infinity,
               child: Material(
-                color: _selectedReason != null
+                color: _selectedReasons.isNotEmpty
                     ? const Color(0xFFDC2626)
                     : const Color(0xFF94A3B8),
                 borderRadius: BorderRadius.circular(16),
                 child: InkWell(
-                  onTap: _selectedReason != null ? _submit : null,
+                  onTap: _selectedReasons.isNotEmpty ? _submit : null,
                   borderRadius: BorderRadius.circular(16),
                   child: Padding(
                     padding: const EdgeInsets.symmetric(vertical: 16),
@@ -313,11 +457,11 @@ class _ReportSheetState extends State<_ReportSheet> {
       return;
     }
 
-    final reason = _selectedReason == 'Other'
-        ? _otherCtrl.text.trim().isNotEmpty
-            ? _otherCtrl.text.trim()
-            : 'Other'
-        : _selectedReason!;
+    final selectedList = _selectedReasons.toList()..sort();
+    final details = _otherCtrl.text.trim();
+    final reason = details.isNotEmpty
+        ? 'Reasons: ${selectedList.join(', ')}\nDetails: $details'
+        : 'Reasons: ${selectedList.join(', ')}';
 
     await state.reportContent(
       targetType: widget.targetType,

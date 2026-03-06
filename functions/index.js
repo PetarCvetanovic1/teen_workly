@@ -1,11 +1,63 @@
 const admin = require("firebase-admin");
 const {onCall, HttpsError} = require("firebase-functions/v2/https");
+const {onObjectFinalized} = require("firebase-functions/v2/storage");
 const {defineSecret} = require("firebase-functions/params");
+const crypto = require("crypto");
+const os = require("os");
+const path = require("path");
+const fs = require("fs/promises");
+const sharp = require("sharp");
 
 admin.initializeApp();
 const db = admin.firestore();
 const openAiApiKey = defineSecret("OPENAI_API_KEY");
 const geminiApiKey = defineSecret("GEMINI_API_KEY");
+const CONTACT_INFO_RE = /(?:\+?\d[\d\s().-]{7,}\d)|(?:[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,})|(?:^|\s)(@[\w._]{2,}|snap(?:chat)?|instagram|insta|ig|tiktok|discord|telegram|whatsapp)\b/i;
+
+function containsContactInfo(text) {
+  return CONTACT_INFO_RE.test(String(text || ""));
+}
+
+function approximateLabelFromLocation(location) {
+  const parts = String(location || "")
+      .split(",")
+      .map((p) => p.trim())
+      .filter(Boolean);
+  const city = parts.length > 1 ? parts[parts.length - 2] : parts[0] || "local area";
+  return `Near ${city} (~500m)`;
+}
+
+function fuzzCoordinates(lat, lng, seed) {
+  const radiusM = 500;
+  const hash = crypto.createHash("sha256").update(String(seed)).digest();
+  const theta = (hash.readUInt32BE(0) / 0xffffffff) * 2 * Math.PI;
+  const distanceM = (hash.readUInt32BE(4) / 0xffffffff) * radiusM;
+  const dLat = (distanceM * Math.cos(theta)) / 111320;
+  const lonMeters = Math.max(1, Math.abs(111320 * Math.cos((lat * Math.PI) / 180)));
+  const dLng = (distanceM * Math.sin(theta)) / lonMeters;
+  return {
+    lat: lat + dLat,
+    lng: lng + dLng,
+    radiusMeters: radiusM,
+  };
+}
+
+async function geocodeLocation(query) {
+  const uri = new URL("https://nominatim.openstreetmap.org/search");
+  uri.searchParams.set("q", String(query || "").trim());
+  uri.searchParams.set("format", "jsonv2");
+  uri.searchParams.set("limit", "1");
+  const res = await fetch(uri.toString(), {
+    headers: {"User-Agent": "TeenWorkly/1.0 (contact: support@teenworkly.app)"},
+  });
+  if (!res.ok) return null;
+  const data = await res.json();
+  if (!Array.isArray(data) || !data.length) return null;
+  const lat = Number(data[0]?.lat);
+  const lng = Number(data[0]?.lon);
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+  return {lat, lng};
+}
 
 function normalizeEmail(email) {
   return String(email || "").trim().toLowerCase();
@@ -225,6 +277,19 @@ exports.createJob = onCall(
         String(job.otherService).trim();
       const payment = Number(job.payment || 0);
       const createdAtMs = Number(job.createdAtMs || Date.now());
+      const profileSnap = await db.collection("users").doc(uid).get();
+      const profile = profileSnap.exists ? profileSnap.data() : {};
+      const age = Number(profile?.age ?? 18);
+      const isMinorPoster = age < 18;
+      const publicLocation = isMinorPoster ?
+        approximateLabelFromLocation(location) : location;
+      let fuzzy = null;
+      try {
+        const coords = await geocodeLocation(location);
+        if (coords) {
+          fuzzy = fuzzCoordinates(coords.lat, coords.lng, `${uid}|${id}|job`);
+        }
+      } catch (_) {}
 
       if (!id || !title || !type || !location || !description || !posterName) {
         throw new HttpsError("invalid-argument", "Missing required job fields.");
@@ -252,7 +317,12 @@ exports.createJob = onCall(
       await db.collection("jobs").doc(id).set({
         title,
         type,
-        location,
+        location: publicLocation,
+        publicLocation,
+        isMinorPoster,
+        publicLat: fuzzy?.lat ?? null,
+        publicLng: fuzzy?.lng ?? null,
+        publicRadiusMeters: fuzzy?.radiusMeters ?? 500,
         description,
         services: services.map((s) => String(s)),
         otherService,
@@ -296,6 +366,20 @@ exports.createService = onCall(
       const createdAtMs = Number(service.createdAtMs || Date.now());
       const minPrice = Number(service.minPrice || 0);
       const maxPrice = Number(service.maxPrice || 0);
+      const workRadiusKm = Number(service.workRadiusKm || 5);
+      const profileSnap = await db.collection("users").doc(uid).get();
+      const profile = profileSnap.exists ? profileSnap.data() : {};
+      const age = Number(profile?.age ?? 18);
+      const isMinorProvider = age < 18;
+      const publicLocation = isMinorProvider ?
+        approximateLabelFromLocation(location) : location;
+      let fuzzy = null;
+      try {
+        const coords = await geocodeLocation(location);
+        if (coords) {
+          fuzzy = fuzzCoordinates(coords.lat, coords.lng, `${uid}|${id}|service`);
+        }
+      } catch (_) {}
 
       if (!id || !providerName || !location || !bio) {
         throw new HttpsError("invalid-argument", "Missing required service fields.");
@@ -305,6 +389,86 @@ exports.createService = onCall(
       }
       if (bio.length < 8) {
         throw new HttpsError("invalid-argument", "Bio is too short.");
+      }
+      if (!Number.isFinite(minPrice) || !Number.isFinite(maxPrice) ||
+          minPrice < 0 || maxPrice < minPrice) {
+        throw new HttpsError("invalid-argument", "Invalid price range.");
+      }
+      if (!Number.isFinite(workRadiusKm) || workRadiusKm < 1 || workRadiusKm > 10) {
+        throw new HttpsError("invalid-argument", "Invalid work radius.");
+      }
+
+      const moderationText = [
+        `Name: ${providerName}`,
+        `Location: ${location}`,
+        `Skills: ${skills.join(", ")}`,
+        otherSkill ? `Other skill: ${otherSkill}` : "",
+        `Bio: ${bio}`,
+      ].filter(Boolean).join("\n");
+      await validateSafetyOrThrow(moderationText);
+
+      await db.collection("services").doc(id).set({
+        providerName,
+        location: publicLocation,
+        publicLocation,
+        isMinorProvider,
+        publicLat: fuzzy?.lat ?? null,
+        publicLng: fuzzy?.lng ?? null,
+        publicRadiusMeters: fuzzy?.radiusMeters ?? 500,
+        skills: skills.map((s) => String(s)),
+        otherSkill,
+        availableDays: availableDays.map((d) => String(d)),
+        startHour,
+        startMinute,
+        endHour,
+        endMinute,
+        bio,
+        providerId: uid,
+        createdAt: admin.firestore.Timestamp.fromMillis(createdAtMs),
+        workRadiusKm,
+        minPrice,
+        maxPrice,
+      }, {merge: false});
+
+      return {ok: true};
+    },
+);
+
+exports.updateServiceSecure = onCall(
+    {secrets: [openAiApiKey, geminiApiKey]},
+    async (request) => {
+      if (!request.auth) {
+        throw new HttpsError("unauthenticated", "Sign in required.");
+      }
+      const uid = request.auth.uid;
+      const service = request.data?.service || {};
+      const id = String(service.id || "").trim();
+      const providerName = String(service.providerName || "").trim();
+      const location = String(service.location || "").trim();
+      const skills = Array.isArray(service.skills) ? service.skills : [];
+      const otherSkill = service.otherSkill == null ? null :
+        String(service.otherSkill).trim();
+      const availableDays = Array.isArray(service.availableDays) ?
+        service.availableDays : [];
+      const startHour = Number(service.startHour ?? 9);
+      const startMinute = Number(service.startMinute ?? 0);
+      const endHour = Number(service.endHour ?? 17);
+      const endMinute = Number(service.endMinute ?? 0);
+      const bio = String(service.bio || "").trim();
+      const providerId = String(service.providerId || "").trim();
+      const createdAtMs = Number(service.createdAtMs || Date.now());
+      const minPrice = Number(service.minPrice || 0);
+      const maxPrice = Number(service.maxPrice || 0);
+      const workRadiusKm = Number(service.workRadiusKm || 5);
+
+      if (!id || !providerName || !location || !bio) {
+        throw new HttpsError("invalid-argument", "Missing required service fields.");
+      }
+      if (providerId !== uid) {
+        throw new HttpsError("permission-denied", "Provider mismatch.");
+      }
+      if (!Number.isFinite(workRadiusKm) || workRadiusKm < 1 || workRadiusKm > 10) {
+        throw new HttpsError("invalid-argument", "Invalid work radius.");
       }
       if (!Number.isFinite(minPrice) || !Number.isFinite(maxPrice) ||
           minPrice < 0 || maxPrice < minPrice) {
@@ -320,9 +484,29 @@ exports.createService = onCall(
       ].filter(Boolean).join("\n");
       await validateSafetyOrThrow(moderationText);
 
+      const profileSnap = await db.collection("users").doc(uid).get();
+      const profile = profileSnap.exists ? profileSnap.data() : {};
+      const age = Number(profile?.age ?? 18);
+      const isMinorProvider = age < 18;
+      const publicLocation = isMinorProvider ?
+        approximateLabelFromLocation(location) : location;
+
+      let fuzzy = null;
+      try {
+        const coords = await geocodeLocation(location);
+        if (coords) {
+          fuzzy = fuzzCoordinates(coords.lat, coords.lng, `${uid}|${id}|service`);
+        }
+      } catch (_) {}
+
       await db.collection("services").doc(id).set({
         providerName,
-        location,
+        location: publicLocation,
+        publicLocation,
+        isMinorProvider,
+        publicLat: fuzzy?.lat ?? null,
+        publicLng: fuzzy?.lng ?? null,
+        publicRadiusMeters: fuzzy?.radiusMeters ?? 500,
         skills: skills.map((s) => String(s)),
         otherSkill,
         availableDays: availableDays.map((d) => String(d)),
@@ -333,9 +517,10 @@ exports.createService = onCall(
         bio,
         providerId: uid,
         createdAt: admin.firestore.Timestamp.fromMillis(createdAtMs),
+        workRadiusKm,
         minPrice,
         maxPrice,
-      }, {merge: false});
+      }, {merge: true});
 
       return {ok: true};
     },
@@ -361,6 +546,12 @@ exports.sendConversationMessage = onCall(
       }
       if (senderId !== uid) {
         throw new HttpsError("permission-denied", "Sender mismatch.");
+      }
+      if (containsContactInfo(text)) {
+        throw new HttpsError(
+            "permission-denied",
+            "Keep it in the app! For your safety, sharing personal contact info is disabled. Use the in-app call or chat instead.",
+        );
       }
       await validateSafetyOrThrow(text);
 
@@ -476,6 +667,160 @@ exports.createHuddleReply = onCall(
       return {ok: true};
     },
 );
+
+exports.reportSafetyIncident = onCall(async (request) => {
+  if (!request.auth) {
+    throw new HttpsError("unauthenticated", "Sign in required.");
+  }
+  const uid = request.auth.uid;
+  const report = request.data?.report || {};
+  const id = String(report.id || Date.now()).trim();
+  const targetType = String(report.targetType || "").trim();
+  const targetId = String(report.targetId || "").trim();
+  const reportedUserId = report.reportedUserId ?
+    String(report.reportedUserId).trim() : null;
+  const reason = String(report.reason || "").trim();
+  const blocked = report.blocked === true;
+  const createdAtMs = Number(report.createdAtMs || Date.now());
+
+  if (!targetType || !targetId || !reason) {
+    throw new HttpsError("invalid-argument", "Missing required report fields.");
+  }
+
+  await db.collection("reports").doc(id).set({
+    reporterId: uid,
+    targetType,
+    targetId,
+    reportedUserId,
+    reason,
+    blocked,
+    createdAt: admin.firestore.Timestamp.fromMillis(createdAtMs),
+  }, {merge: false});
+
+  const reasonLower = reason.toLowerCase();
+  const creepyLike = reasonLower.includes("creepy behavior") ||
+    reasonLower.includes("harassment");
+  if (creepyLike && reportedUserId && reportedUserId !== uid) {
+    await db.collection("users").doc(reportedUserId).set({
+      shadowBanned: true,
+      shadowBannedAt: admin.firestore.FieldValue.serverTimestamp(),
+      shadowBanReason: "creepy_behavior_flag",
+    }, {merge: true});
+    await db.collection("admin_flags").add({
+      type: "creepy_behavior_shadowban",
+      reportId: id,
+      targetUserId: reportedUserId,
+      reporterId: uid,
+      reason,
+      targetType,
+      targetId,
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+  }
+
+  return {ok: true};
+});
+
+exports.deleteMyAccountData = onCall(async (request) => {
+  if (!request.auth) {
+    throw new HttpsError("unauthenticated", "Sign in required.");
+  }
+  const uid = request.auth.uid;
+
+  const deletions = [];
+
+  const jobsPosted = await db.collection("jobs").where("posterId", "==", uid).get();
+  for (const doc of jobsPosted.docs) {
+    deletions.push(db.recursiveDelete(doc.ref));
+  }
+
+  const services = await db.collection("services").where("providerId", "==", uid).get();
+  for (const doc of services.docs) {
+    deletions.push(db.recursiveDelete(doc.ref));
+  }
+
+  const huddlePosts = await db.collection("huddle_posts").where("authorId", "==", uid).get();
+  for (const doc of huddlePosts.docs) {
+    deletions.push(db.recursiveDelete(doc.ref));
+  }
+
+  const replies = await db.collectionGroup("replies").where("authorId", "==", uid).get();
+  for (const doc of replies.docs) {
+    deletions.push(doc.ref.delete());
+  }
+
+  const convs = await db.collection("conversations").where("participants", "array-contains", uid).get();
+  for (const doc of convs.docs) {
+    deletions.push(db.recursiveDelete(doc.ref));
+  }
+
+  const reportsByMe = await db.collection("reports").where("reporterId", "==", uid).get();
+  for (const doc of reportsByMe.docs) {
+    deletions.push(doc.ref.delete());
+  }
+
+  const reportsAboutMe = await db.collection("reports").where("reportedUserId", "==", uid).get();
+  for (const doc of reportsAboutMe.docs) {
+    deletions.push(doc.ref.delete());
+  }
+
+  const reviewsByMe = await db.collection("reviews").where("reviewerId", "==", uid).get();
+  for (const doc of reviewsByMe.docs) {
+    deletions.push(doc.ref.delete());
+  }
+
+  const reviewsForMe = await db.collection("reviews").where("workerId", "==", uid).get();
+  for (const doc of reviewsForMe.docs) {
+    deletions.push(doc.ref.delete());
+  }
+
+  deletions.push(db.collection("users").doc(uid).delete());
+  await Promise.allSettled(deletions);
+
+  try {
+    const bucket = admin.storage().bucket();
+    await Promise.allSettled([
+      bucket.deleteFiles({prefix: `users/${uid}/`}),
+      bucket.deleteFiles({prefix: `jobs/${uid}/`}),
+      bucket.deleteFiles({prefix: `services/${uid}/`}),
+    ]);
+  } catch (_) {}
+
+  return {ok: true};
+});
+
+exports.stripTeenImageMetadata = onObjectFinalized(async (event) => {
+  const object = event.data || {};
+  const name = object.name || "";
+  const contentType = object.contentType || "";
+  if (!name || !contentType.startsWith("image/")) return;
+  if (!name.startsWith("users/") &&
+      !name.startsWith("jobs/") &&
+      !name.startsWith("services/")) {
+    return;
+  }
+  const customMetadata = object.metadata || {};
+  if (customMetadata.exifStripped === "true") return;
+
+  const bucket = admin.storage().bucket(object.bucket);
+  const file = bucket.file(name);
+  const tmpIn = path.join(os.tmpdir(), `in-${Date.now()}-${path.basename(name)}`);
+  const tmpOut = path.join(os.tmpdir(), `out-${Date.now()}-${path.basename(name)}`);
+
+  await file.download({destination: tmpIn});
+  await sharp(tmpIn).rotate().toFile(tmpOut);
+  await bucket.upload(tmpOut, {
+    destination: name,
+    metadata: {
+      contentType,
+      metadata: {
+        ...customMetadata,
+        exifStripped: "true",
+      },
+    },
+  });
+  await Promise.allSettled([fs.unlink(tmpIn), fs.unlink(tmpOut)]);
+});
 
 exports.issuePasswordResetCode = onCall(async (request) => {
   const email = normalizeEmail(request.data?.email);
