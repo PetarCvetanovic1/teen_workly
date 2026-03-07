@@ -329,6 +329,7 @@ class Conversation {
   final String otherUserId;
   final String otherUserName;
   final String? contextLabel;
+  final String? scopeKey;
   final String? lastMessageText;
   final DateTime? lastMessageAt;
   final Map<String, bool> typingBy;
@@ -340,6 +341,7 @@ class Conversation {
     required this.otherUserId,
     required this.otherUserName,
     this.contextLabel,
+    this.scopeKey,
     this.lastMessageText,
     this.lastMessageAt,
     Map<String, bool>? typingBy,

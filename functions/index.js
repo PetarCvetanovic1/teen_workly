@@ -23,7 +23,23 @@ function approximateLabelFromLocation(location) {
       .split(",")
       .map((p) => p.trim())
       .filter(Boolean);
-  const city = parts.length > 1 ? parts[parts.length - 2] : parts[0] || "local area";
+  const adminOrCountry = /\b(region|county|district|state|province|canada|usa|united states|ontario|quebec|alberta|manitoba|saskatchewan|british columbia|nova scotia|new brunswick|newfoundland|prince edward island|pei)\b/i;
+  const streetWords = /\b(st|street|ave|avenue|rd|road|cres|crescent|blvd|boulevard|dr|drive|lane|ln|way|court|ct)\b/i;
+  const postalLike = /(^\d{5}(-\d{4})?$)|(^[A-Z]\d[A-Z][ -]?\d[A-Z]\d$)/i;
+  let city = "";
+  for (const p of parts) {
+    if (/\d/.test(p)) continue;
+    if (streetWords.test(p)) continue;
+    if (postalLike.test(p)) continue;
+    if (adminOrCountry.test(p)) continue;
+    city = p;
+    break;
+  }
+  if (!city) {
+    city = parts.find((p) => !postalLike.test(p) && !adminOrCountry.test(p)) ||
+      parts[0] ||
+      "local area";
+  }
   return `Near ${city} (~500m)`;
 }
 

@@ -852,6 +852,26 @@ class _HomeActivityPanel extends StatelessWidget {
                                   builder: (_) => JobDetailScreen(job: job),
                                 ),
                               ),
+                              actionLabel: 'Message',
+                              onActionTap: () async {
+                                final conv = await state.getOrCreateConversation(
+                                  otherUserId: job.posterId,
+                                  otherUserName: job.posterName,
+                                  contextLabel: 'Job: ${job.title}',
+                                  scopeKey: 'job:${job.id}',
+                                );
+                                if (!context.mounted) return;
+                                Navigator.of(context).push(
+                                  appRoute(
+                                    builder: (_) => ChatScreen(
+                                      conversationId: conv.id,
+                                      otherUserName: conv.otherUserName,
+                                      contextLabel: conv.contextLabel,
+                                    ),
+                                    requiresAuth: true,
+                                  ),
+                                );
+                              },
                               isDark: isDark,
                             ),
                           );
@@ -1194,6 +1214,8 @@ class _HomeActivityPanel extends StatelessWidget {
     required String statusText,
     required Color statusColor,
     required VoidCallback onTap,
+    String? actionLabel,
+    VoidCallback? onActionTap,
     required bool isDark,
   }) {
     final surface = isDark ? const Color(0xFF1E293B) : Colors.white;
@@ -1260,20 +1282,57 @@ class _HomeActivityPanel extends StatelessWidget {
               ),
             ),
             const SizedBox(width: 8),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-              decoration: BoxDecoration(
-                color: statusColor.withValues(alpha: 0.14),
-                borderRadius: BorderRadius.circular(999),
-              ),
-              child: Text(
-                statusText,
-                style: GoogleFonts.plusJakartaSans(
-                  fontSize: 10,
-                  fontWeight: FontWeight.w800,
-                  color: statusColor,
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                if (onActionTap != null)
+                  GestureDetector(
+                    onTap: onActionTap,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 10, vertical: 5),
+                      decoration: BoxDecoration(
+                        color: AppColors.indigo600,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(
+                            Icons.chat_rounded,
+                            size: 12,
+                            color: Colors.white,
+                          ),
+                          const SizedBox(width: 4),
+                          Text(
+                            actionLabel ?? 'Message',
+                            style: GoogleFonts.plusJakartaSans(
+                              fontSize: 10,
+                              fontWeight: FontWeight.w800,
+                              color: Colors.white,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                if (onActionTap != null) const SizedBox(height: 6),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: statusColor.withValues(alpha: 0.14),
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                  child: Text(
+                    statusText,
+                    style: GoogleFonts.plusJakartaSans(
+                      fontSize: 10,
+                      fontWeight: FontWeight.w800,
+                      color: statusColor,
+                    ),
+                  ),
                 ),
-              ),
+              ],
             ),
           ],
         ),

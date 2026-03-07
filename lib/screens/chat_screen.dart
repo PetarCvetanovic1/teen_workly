@@ -199,6 +199,35 @@ class _ChatScreenState extends State<ChatScreen> {
           children: [
             if (isMe && !msg.isDeleted)
               ListTile(
+                leading: const Icon(
+                  Icons.edit_outlined,
+                  color: AppColors.indigo600,
+                ),
+                title: const Text('Edit message'),
+                onTap: () async {
+                  Navigator.pop(ctx);
+                  final edited = await _showEditMessageDialog(msg.text);
+                  if (!mounted || edited == null) return;
+                  try {
+                    await context.read<AppState>().editOwnMessage(
+                          conversationId: widget.conversationId,
+                          message: msg,
+                          newText: edited,
+                        );
+                  } catch (e) {
+                    if (!mounted) return;
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text('$e'),
+                        behavior: SnackBarBehavior.floating,
+                        backgroundColor: const Color(0xFFDC2626),
+                      ),
+                    );
+                  }
+                },
+              ),
+            if (isMe && !msg.isDeleted)
+              ListTile(
                 leading: const Icon(Icons.delete_outline_rounded,
                     color: Color(0xFFDC2626)),
                 title: const Text('Delete for everyone'),
@@ -248,6 +277,42 @@ class _ChatScreenState extends State<ChatScreen> {
         ),
       ),
     );
+  }
+
+  Future<String?> _showEditMessageDialog(String initialText) async {
+    final ctrl = TextEditingController(text: initialText);
+    final result = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Edit message'),
+        content: TextField(
+          controller: ctrl,
+          autofocus: true,
+          maxLines: 5,
+          minLines: 1,
+          textInputAction: TextInputAction.done,
+          onSubmitted: (_) => Navigator.pop(ctx, ctrl.text.trim()),
+          decoration: const InputDecoration(
+            hintText: 'Update your message',
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, ctrl.text.trim()),
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+    ctrl.dispose();
+    if (result == null) return null;
+    final trimmed = result.trim();
+    if (trimmed.isEmpty || trimmed == initialText.trim()) return null;
+    return trimmed;
   }
 
   @override

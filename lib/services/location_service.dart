@@ -31,7 +31,7 @@ class LocationService {
         .toList();
 
     String city = '';
-    for (final p in parts.reversed) {
+    for (final p in parts) {
       if (RegExp(r'\d').hasMatch(p)) continue;
       if (_streetWords.hasMatch(p)) continue;
       if (_postalLike.hasMatch(p)) continue;
@@ -39,7 +39,12 @@ class LocationService {
       city = p;
       break;
     }
-    if (city.isEmpty && parts.isNotEmpty) city = parts.last;
+    if (city.isEmpty && parts.isNotEmpty) {
+      city = parts.firstWhere(
+        (p) => !_postalLike.hasMatch(p) && !_adminOrCountry.hasMatch(p),
+        orElse: () => parts.last,
+      );
+    }
 
     String postalHint = '';
     for (final p in parts) {

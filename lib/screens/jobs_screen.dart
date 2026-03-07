@@ -20,6 +20,7 @@ import 'home_screen.dart';
 import 'post_job_screen.dart';
 import 'job_detail_screen.dart';
 import 'service_detail_screen.dart';
+import 'chat_screen.dart';
 
 const _categories = [
   'All',
@@ -54,7 +55,11 @@ class _PlaceSuggestion {
 }
 
 String _simplifyWorkLocation(String raw) {
-  final parts = raw
+  final cleaned = raw
+      .replaceAll(RegExp(r'^\s*near\s+', caseSensitive: false), '')
+      .replaceAll(RegExp(r'\([^)]*\)'), '')
+      .trim();
+  final parts = cleaned
       .split(',')
       .map((p) => p.trim())
       .where((p) => p.isNotEmpty)
@@ -75,7 +80,7 @@ String _simplifyWorkLocation(String raw) {
   );
 
   String? city;
-  for (final p in parts.reversed) {
+  for (final p in parts) {
     if (RegExp(r'\d').hasMatch(p)) continue;
     if (streetWords.hasMatch(p)) continue;
     if (postalLike.hasMatch(p)) continue;
@@ -83,7 +88,10 @@ String _simplifyWorkLocation(String raw) {
     city = p;
     break;
   }
-  city ??= parts.last;
+  city ??= parts.firstWhere(
+    (p) => !postalLike.hasMatch(p) && !adminOrCountry.hasMatch(p),
+    orElse: () => parts.last,
+  );
 
   String? street;
   if (parts.isNotEmpty &&
@@ -103,6 +111,24 @@ String _simplifyWorkLocation(String raw) {
     return '$street, $city';
   }
   return city;
+}
+
+final RegExp _broadRegionRe = RegExp(
+  r'^(ontario|quebec|alberta|manitoba|saskatchewan|british columbia|nova scotia|new brunswick|newfoundland|pei|prince edward island|canada|usa|united states)$',
+  caseSensitive: false,
+);
+
+String _normalizeSearchQuery(String raw) {
+  return raw
+      .replaceAll(RegExp(r'^\s*near\s+', caseSensitive: false), '')
+      .replaceAll(RegExp(r'\([^)]*\)'), '')
+      .trim();
+}
+
+bool _isBroadRegionOnly(String raw) {
+  final normalized = _normalizeSearchQuery(raw).toLowerCase();
+  if (normalized.isEmpty) return true;
+  return _broadRegionRe.hasMatch(normalized);
 }
 
 Future<List<_PlaceSuggestion>> _fetchPlaceSuggestions({
@@ -140,9 +166,11 @@ Future<List<_PlaceSuggestion>> _fetchPlaceSuggestions({
 Future<List<_PlaceSuggestion>> _searchPlaceSuggestions({
   required String query,
 }) async {
-  if (query.trim().length < 2) return const [];
+  final normalized = _normalizeSearchQuery(query);
+  if (normalized.length < 2) return const [];
+  if (_isBroadRegionOnly(normalized)) return const [];
   try {
-    final trimmed = query.trim();
+    final trimmed = normalized.trim();
     return await _fetchPlaceSuggestions(query: trimmed);
   } catch (_) {
     return const [];
@@ -150,7 +178,8 @@ Future<List<_PlaceSuggestion>> _searchPlaceSuggestions({
 }
 
 class JobsScreen extends StatefulWidget {
-  const JobsScreen({super.key});
+  final String? focusJobId;
+  const JobsScreen({super.key, this.focusJobId});
 
   @override
   State<JobsScreen> createState() => _JobsScreenState();
@@ -165,10 +194,27 @@ class _JobsScreenState extends State<JobsScreen> {
   bool _locationLoading = false;
   final Map<String, LatLng> _jobMarkers = {};
   final Set<String> _resolvingJobIds = {};
+  final MapController _mapController = MapController();
+  bool _focusedJobCentered = false;
+
+  bool _isGenericLocationText(String value) {
+    final v = _normalizeSearchQuery(value).toLowerCase();
+    if (v.isEmpty) return true;
+    return v == 'current area' ||
+        v == 'my location' ||
+        v == 'current location' ||
+        v == 'near me' ||
+        v == 'nearby' ||
+        _isBroadRegionOnly(v);
+  }
 
   @override
   void initState() {
     super.initState();
+    if ((widget.focusJobId ?? '').isNotEmpty) {
+      _contentType = _BrowseContentType.jobs;
+      _isMapView = true;
+    }
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       if (!mounted) return;
       await _restoreSavedLocation();
@@ -190,7 +236,7 @@ class _JobsScreenState extends State<JobsScreen> {
       }
     }
 
-    if (saved.isNotEmpty) {
+    if (saved.isNotEmpty && !_isGenericLocationText(saved)) {
       var results = await _searchPlaceSuggestions(query: saved);
       if (results.isEmpty) {
         results = await _searchPlaceSuggestions(
@@ -206,8 +252,12 @@ class _JobsScreenState extends State<JobsScreen> {
       }
     }
 
-    // Fallback: if we have only text but no resolvable coordinates,
-    // prompt for a fresh location so the map can render the user marker.
+    // When opening map from a specific job, avoid auto-prompting location.
+    // This prevents centering on unrelated geocode results.
+    if ((widget.focusJobId ?? '').isNotEmpty) return;
+
+    // Fallback: if we have only text but no resolvable coordinates, prompt
+    // for a fresh location so the map can render the user marker.
     await _promptLocation();
   }
 
@@ -324,6 +374,76 @@ class _JobsScreenState extends State<JobsScreen> {
     }
   }
 
+  Future<void> _editLocationByTyping() async {
+    final state = context.read<AppState>();
+    final initial = state.userLocationText.isNotEmpty
+        ? state.userLocationText
+        : (state.profile?.location ?? '');
+    final ctrl = TextEditingController(text: initial);
+    final typed = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Change your location'),
+        content: TextField(
+          controller: ctrl,
+          autofocus: true,
+          textInputAction: TextInputAction.done,
+          onSubmitted: (_) => Navigator.pop(ctx, ctrl.text.trim()),
+          decoration: const InputDecoration(
+            hintText: 'Type city, postal code, or area',
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, ctrl.text.trim()),
+            child: const Text('Update'),
+          ),
+        ],
+      ),
+    );
+    if (!mounted) return;
+    final query = (typed ?? '').trim();
+    if (query.isEmpty) return;
+
+    List<_PlaceSuggestion> suggestions =
+        await _searchPlaceSuggestions(query: query);
+    if (suggestions.isEmpty) {
+      suggestions =
+          await _searchPlaceSuggestions(query: _simplifyWorkLocation(query));
+    }
+    if (!mounted) return;
+    if (suggestions.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Could not find that location. Try city + country.'),
+        ),
+      );
+      return;
+    }
+
+    final chosen = suggestions.first;
+    final approved = await _confirmManualLocation(chosen.label);
+    if (!mounted || !approved) return;
+
+    final simplified = _simplifyWorkLocation(chosen.label);
+    setState(() {
+      _userLocation = chosen.point;
+      _focusedJobCentered = false;
+    });
+    state.setUserLocation(simplified);
+    await state.updateProfile(location: simplified);
+    if (!mounted) return;
+    if (_isMapView) {
+      try {
+        _mapController.move(chosen.point, 14);
+      } catch (_) {}
+    }
+  }
+
   Future<void> _syncJobMarkers(List<Job> jobs) async {
     if (!_isMapView) return;
     final userText = context.read<AppState>().userLocationText.toLowerCase();
@@ -346,12 +466,31 @@ class _JobsScreenState extends State<JobsScreen> {
         setState(() {
           _jobMarkers[job.id] = LatLng(job.publicLat!, job.publicLng!);
         });
+        if (!_focusedJobCentered && widget.focusJobId == job.id) {
+          try {
+            _mapController.move(_jobMarkers[job.id]!, 15.5);
+            _focusedJobCentered = true;
+          } catch (_) {}
+        }
         continue;
       }
       final query = job.location.trim();
       if (query.length < 2) continue;
       _resolvingJobIds.add(job.id);
       try {
+        if (_isBroadRegionOnly(query) && _userLocation != null) {
+          if (!mounted) return;
+          setState(() {
+            _jobMarkers[job.id] = _userLocation!;
+          });
+          if (!_focusedJobCentered && widget.focusJobId == job.id) {
+            try {
+              _mapController.move(_jobMarkers[job.id]!, 15.5);
+              _focusedJobCentered = true;
+            } catch (_) {}
+          }
+          continue;
+        }
         List<_PlaceSuggestion> suggestions =
             await _searchPlaceSuggestions(query: query);
         if (suggestions.isEmpty) {
@@ -375,6 +514,12 @@ class _JobsScreenState extends State<JobsScreen> {
           setState(() {
             _jobMarkers[job.id] = suggestions.first.point;
           });
+          if (!_focusedJobCentered && widget.focusJobId == job.id) {
+            try {
+              _mapController.move(_jobMarkers[job.id]!, 15.5);
+              _focusedJobCentered = true;
+            } catch (_) {}
+          }
         }
       } catch (_) {
         // Ignore marker resolution failures for now.
@@ -452,6 +597,13 @@ class _JobsScreenState extends State<JobsScreen> {
               : openOrInProgressJobs.where((j) => j.services.any(
                     (s) => s.toLowerCase().contains(filter.toLowerCase()),
                   )).toList();
+          if ((widget.focusJobId ?? '').isNotEmpty &&
+              !filteredJobs.any((j) => j.id == widget.focusJobId)) {
+            final focused = state.jobs.where((j) => j.id == widget.focusJobId);
+            if (focused.isNotEmpty) {
+              filteredJobs.insert(0, focused.first);
+            }
+          }
 
           final canHire = state.canPostJobs;
           final filteredServices = !canHire
@@ -485,6 +637,18 @@ class _JobsScreenState extends State<JobsScreen> {
               .length;
           final totalCount = openOpportunities + visibleServices.length;
           final workLocation = state.userLocationText;
+          LatLng? initialFocusCenter;
+          if ((widget.focusJobId ?? '').isNotEmpty) {
+            final focused = visibleJobs.where((j) => j.id == widget.focusJobId);
+            if (focused.isNotEmpty) {
+              final job = focused.first;
+              if (job.publicLat != null && job.publicLng != null) {
+                initialFocusCenter = LatLng(job.publicLat!, job.publicLng!);
+              } else {
+                initialFocusCenter = _jobMarkers[job.id];
+              }
+            }
+          }
           if (_isMapView) {
             Future.microtask(() => _syncJobMarkers(visibleJobs));
           }
@@ -516,11 +680,15 @@ class _JobsScreenState extends State<JobsScreen> {
                             userLocation: _userLocation,
                             jobs: visibleJobs,
                             jobMarkers: _jobMarkers,
+                            focusedJobId: widget.focusJobId,
+                            mapController: _mapController,
                             showPrivacyBubble:
                                 context.read<AppState>().privacyBubbleEnabled,
+                            currentUserId: myId,
                             onRadiusChanged: (v) => setState(() => _radiusKm = v),
                             onDetectLocation: _detectGPS,
                             locationLoading: _locationLoading,
+                            initialFocusCenter: initialFocusCenter,
                           )
                         : (visibleJobs.isEmpty && visibleServices.isEmpty)
                             ? const _EmptyState()
@@ -609,38 +777,58 @@ class _JobsScreenState extends State<JobsScreen> {
                   ),
                 ),
                 if (workLocation.isNotEmpty)
-                  Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                    decoration: BoxDecoration(
-                      color: isDark
-                          ? AppColors.slate900
-                          : AppColors.indigo600.withValues(alpha: 0.08),
+                  Tooltip(
+                    message: 'Tap to edit location',
+                    child: Material(
+                      color: Colors.transparent,
                       borderRadius: BorderRadius.circular(999),
-                      border: Border.all(
-                        color: isDark
-                            ? const Color(0xFF334155)
-                            : AppColors.indigo600.withValues(alpha: 0.25),
-                      ),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(
-                          Icons.place_rounded,
-                          size: 13,
-                          color: AppColors.indigo600,
-                        ),
-                        const SizedBox(width: 6),
-                        Text(
-                          workLocation,
-                          style: GoogleFonts.plusJakartaSans(
-                            fontSize: 11,
-                            fontWeight: FontWeight.w700,
-                            color: isDark ? Colors.white : AppColors.slate900,
+                      child: InkWell(
+                        borderRadius: BorderRadius.circular(999),
+                        onTap: _editLocationByTyping,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 10, vertical: 6),
+                          decoration: BoxDecoration(
+                            color: isDark
+                                ? AppColors.slate900
+                                : AppColors.indigo600.withValues(alpha: 0.08),
+                            borderRadius: BorderRadius.circular(999),
+                            border: Border.all(
+                              color: isDark
+                                  ? const Color(0xFF334155)
+                                  : AppColors.indigo600.withValues(alpha: 0.25),
+                            ),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                Icons.place_rounded,
+                                size: 13,
+                                color: AppColors.indigo600,
+                              ),
+                              const SizedBox(width: 6),
+                              Text(
+                                workLocation,
+                                style: GoogleFonts.plusJakartaSans(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w700,
+                                  color:
+                                      isDark ? Colors.white : AppColors.slate900,
+                                ),
+                              ),
+                              const SizedBox(width: 6),
+                              Icon(
+                                Icons.edit_rounded,
+                                size: 12,
+                                color: isDark
+                                    ? const Color(0xFF94A3B8)
+                                    : const Color(0xFF64748B),
+                              ),
+                            ],
                           ),
                         ),
-                      ],
+                      ),
                     ),
                   ),
               ],
@@ -777,10 +965,14 @@ class _MapView extends StatelessWidget {
   final LatLng? userLocation;
   final List<Job> jobs;
   final Map<String, LatLng> jobMarkers;
+  final String? focusedJobId;
+  final MapController mapController;
   final bool showPrivacyBubble;
+  final String currentUserId;
   final ValueChanged<double> onRadiusChanged;
   final VoidCallback onDetectLocation;
   final bool locationLoading;
+  final LatLng? initialFocusCenter;
 
   const _MapView({
     required this.isDark,
@@ -788,19 +980,67 @@ class _MapView extends StatelessWidget {
     required this.userLocation,
     required this.jobs,
     required this.jobMarkers,
+    required this.focusedJobId,
+    required this.mapController,
     required this.showPrivacyBubble,
+    required this.currentUserId,
     required this.onRadiusChanged,
     required this.onDetectLocation,
     required this.locationLoading,
+    required this.initialFocusCenter,
   });
+
+  Color _jobMapColor(Job job) {
+    if (job.applicantIds.contains(currentUserId)) return const Color(0xFFF59E0B);
+    if (job.status == JobStatus.open) return const Color(0xFF059669);
+    if (job.status == JobStatus.pendingCompletion) return const Color(0xFFEA580C);
+    if (job.status == JobStatus.inProgress) return const Color(0xFF7C3AED);
+    return const Color(0xFF64748B);
+  }
+
+  Future<void> _promptRadiusInput(BuildContext context) async {
+    final ctrl = TextEditingController(text: radiusKm.round().toString());
+    final picked = await showDialog<double>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Set search distance'),
+        content: TextField(
+          controller: ctrl,
+          keyboardType: TextInputType.number,
+          decoration: const InputDecoration(
+            labelText: 'Distance (km)',
+            hintText: '1 to 25',
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () {
+              final v = int.tryParse(ctrl.text.trim());
+              if (v == null) return;
+              final clamped = v.clamp(1, 25).toDouble();
+              Navigator.pop(ctx, clamped);
+            },
+            child: const Text('Apply'),
+          ),
+        ],
+      ),
+    );
+    if (picked != null) onRadiusChanged(picked);
+  }
 
   @override
   Widget build(BuildContext context) {
-    final center = userLocation ?? const LatLng(43.4643, -80.5204);
+    final center =
+        initialFocusCenter ?? userLocation ?? const LatLng(43.4643, -80.5204);
     const distance = Distance();
     final markersToRender = jobs.where((job) {
       final point = jobMarkers[job.id];
       if (point == null) return false;
+      if (focusedJobId != null && job.id == focusedJobId) return true;
       if (userLocation == null) return true;
       final meters = distance(userLocation!, point);
       return meters <= radiusKm * 1000;
@@ -817,6 +1057,7 @@ class _MapView extends StatelessWidget {
         child: Stack(
           children: [
             FlutterMap(
+              mapController: mapController,
               options: MapOptions(
                 initialCenter: center,
                 initialZoom: 14,
@@ -870,6 +1111,8 @@ class _MapView extends StatelessWidget {
                   CircleLayer(
                     circles: markersToRender.map((job) {
                       final point = markerPoints[job.id] ?? jobMarkers[job.id]!;
+                      final isFocused = focusedJobId != null && focusedJobId == job.id;
+                      final baseColor = _jobMapColor(job);
                       final double radius = job.publicRadiusMeters > 0
                           ? job.publicRadiusMeters
                           : 500.0;
@@ -877,10 +1120,11 @@ class _MapView extends StatelessWidget {
                         point: point,
                         radius: radius,
                         useRadiusInMeter: true,
-                        color: const Color(0xFF7C3AED).withValues(alpha: 0.10),
-                        borderColor:
-                            const Color(0xFF7C3AED).withValues(alpha: 0.35),
-                        borderStrokeWidth: 1.5,
+                        color: (isFocused ? const Color(0xFFEF4444) : baseColor)
+                            .withValues(alpha: isFocused ? 0.14 : 0.10),
+                        borderColor: (isFocused ? const Color(0xFFEF4444) : baseColor)
+                            .withValues(alpha: isFocused ? 0.75 : 0.35),
+                        borderStrokeWidth: isFocused ? 2.5 : 1.5,
                       );
                     }).toList(),
                   ),
@@ -888,6 +1132,8 @@ class _MapView extends StatelessWidget {
                   MarkerLayer(
                     markers: markersToRender.map((job) {
                       final point = markerPoints[job.id] ?? jobMarkers[job.id]!;
+                      final isFocused = focusedJobId != null && focusedJobId == job.id;
+                      final baseColor = _jobMapColor(job);
                       return Marker(
                         point: point,
                         width: 42,
@@ -898,12 +1144,14 @@ class _MapView extends StatelessWidget {
                             onTap: () => _showJobQuickSheet(context, job, isDark),
                             child: Container(
                               decoration: BoxDecoration(
-                                color: const Color(0xFF7C3AED),
+                                color: isFocused ? const Color(0xFFEF4444) : baseColor,
                                 shape: BoxShape.circle,
                                 border: Border.all(color: Colors.white, width: 2),
                                 boxShadow: [
                                   BoxShadow(
-                                    color: const Color(0xFF7C3AED)
+                                    color: (isFocused
+                                            ? const Color(0xFFEF4444)
+                                            : baseColor)
                                         .withValues(alpha: 0.45),
                                     blurRadius: 10,
                                   ),
@@ -985,16 +1233,39 @@ class _MapView extends StatelessWidget {
                               value: radiusKm,
                               min: 1,
                               max: 25,
+                              divisions: 24,
                               onChanged: onRadiusChanged,
                             ),
                           ),
                         ),
-                        Text(
-                          '${radiusKm.round()} km',
-                          style: GoogleFonts.plusJakartaSans(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w800,
-                            color: isDark ? Colors.white : AppColors.slate900,
+                        InkWell(
+                          onTap: () => _promptRadiusInput(context),
+                          borderRadius: BorderRadius.circular(8),
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 4, vertical: 2),
+                            child: Row(
+                              children: [
+                                Text(
+                                  '${radiusKm.round()} km',
+                                  style: GoogleFonts.plusJakartaSans(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w800,
+                                    color: isDark
+                                        ? Colors.white
+                                        : AppColors.slate900,
+                                  ),
+                                ),
+                                const SizedBox(width: 4),
+                                Icon(
+                                  Icons.edit_rounded,
+                                  size: 13,
+                                  color: isDark
+                                      ? const Color(0xFF94A3B8)
+                                      : const Color(0xFF64748B),
+                                ),
+                              ],
+                            ),
                           ),
                         ),
                       ],
@@ -1041,27 +1312,45 @@ class _MapView extends StatelessWidget {
               left: 0,
               right: 0,
               child: Center(
-                child: Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                  decoration: BoxDecoration(
-                    color: isDark
-                        ? AppColors.slate900.withValues(alpha: 0.9)
-                        : Colors.white.withValues(alpha: 0.9),
-                    borderRadius: BorderRadius.circular(16),
-                    border: Border.all(
-                      color:
-                          isDark ? const Color(0xFF334155) : AppColors.slate200,
+                child: InkWell(
+                  onTap: () => _promptRadiusInput(context),
+                  borderRadius: BorderRadius.circular(16),
+                  child: Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                    decoration: BoxDecoration(
+                      color: isDark
+                          ? AppColors.slate900.withValues(alpha: 0.9)
+                          : Colors.white.withValues(alpha: 0.9),
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(
+                        color: isDark
+                            ? const Color(0xFF334155)
+                            : AppColors.slate200,
+                      ),
                     ),
-                  ),
-                  child: Text(
-                    userLocation != null
-                        ? '${markersToRender.length} job${markersToRender.length == 1 ? '' : 's'} in ${radiusKm.round()} km'
-                        : '${markersToRender.length} mapped job${markersToRender.length == 1 ? '' : 's'}',
-                    style: GoogleFonts.plusJakartaSans(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w700,
-                      color: isDark ? Colors.white : AppColors.slate900,
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          userLocation != null
+                              ? '${markersToRender.length} job${markersToRender.length == 1 ? '' : 's'} in ${radiusKm.round()} km'
+                              : '${markersToRender.length} mapped job${markersToRender.length == 1 ? '' : 's'}',
+                          style: GoogleFonts.plusJakartaSans(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w700,
+                            color: isDark ? Colors.white : AppColors.slate900,
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        Icon(
+                          Icons.edit_rounded,
+                          size: 13,
+                          color: isDark
+                              ? const Color(0xFF94A3B8)
+                              : const Color(0xFF64748B),
+                        ),
+                      ],
                     ),
                   ),
                 ),
@@ -1814,7 +2103,8 @@ class _JobListTile extends StatelessWidget {
   Color _statusColor() {
     if (job.status == JobStatus.inProgress) return const Color(0xFF7C3AED);
     if (job.status == JobStatus.pendingCompletion) return const Color(0xFFF59E0B);
-    if (job.applicantIds.contains(currentUserId)) return const Color(0xFFEA580C);
+    // Keep "Applied" consistent with the amber status style.
+    if (job.applicantIds.contains(currentUserId)) return const Color(0xFFF59E0B);
     return const Color(0xFF059669);
   }
 
@@ -1896,85 +2186,143 @@ class _JobListTile extends StatelessWidget {
                           ),
                         ),
                         const SizedBox(height: 4),
-                        Wrap(
-                          spacing: 8,
-                          runSpacing: 6,
-                          crossAxisAlignment: WrapCrossAlignment.center,
+                        Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                const Icon(Icons.location_on_outlined,
-                                    size: 12, color: Color(0xFF94A3B8)),
-                                const SizedBox(width: 3),
-                                ConstrainedBox(
-                                  constraints: BoxConstraints(
-                                    maxWidth:
-                                        MediaQuery.of(context).size.width * 0.45,
+                            Expanded(
+                              child: Wrap(
+                                spacing: 8,
+                                runSpacing: 6,
+                                crossAxisAlignment: WrapCrossAlignment.center,
+                                children: [
+                                  Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      const Icon(Icons.location_on_outlined,
+                                          size: 12, color: Color(0xFF94A3B8)),
+                                      const SizedBox(width: 3),
+                                      ConstrainedBox(
+                                        constraints: BoxConstraints(
+                                          maxWidth:
+                                              MediaQuery.of(context).size.width * 0.45,
+                                        ),
+                                        child: Text(
+                                          job.displayLocation,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: GoogleFonts.plusJakartaSans(
+                                            fontSize: 11,
+                                            fontWeight: FontWeight.w500,
+                                            color: const Color(0xFF94A3B8),
+                                          ),
+                                        ),
+                                      ),
+                                    ],
                                   ),
-                                  child: Text(
-                                    job.displayLocation,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: GoogleFonts.plusJakartaSans(
-                                      fontSize: 11,
-                                      fontWeight: FontWeight.w500,
-                                      color: const Color(0xFF94A3B8),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 8, vertical: 2),
+                                    decoration: BoxDecoration(
+                                      color:
+                                          AppColors.indigo600.withValues(alpha: 0.1),
+                                      borderRadius: BorderRadius.circular(6),
+                                    ),
+                                    child: Text(
+                                      job.type,
+                                      style: GoogleFonts.plusJakartaSans(
+                                        fontSize: 10,
+                                        fontWeight: FontWeight.w700,
+                                        color: AppColors.indigo600,
+                                      ),
                                     ),
                                   ),
-                                ),
-                              ],
-                            ),
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 8, vertical: 2),
-                              decoration: BoxDecoration(
-                                color:
-                                    AppColors.indigo600.withValues(alpha: 0.1),
-                                borderRadius: BorderRadius.circular(6),
+                                  if (job.payment > 0)
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(
+                                          horizontal: 8, vertical: 2),
+                                      decoration: BoxDecoration(
+                                        color: const Color(0xFF059669)
+                                            .withValues(alpha: 0.1),
+                                        borderRadius: BorderRadius.circular(6),
+                                      ),
+                                      child: Text(
+                                        '\$${job.payment.toStringAsFixed(0)}',
+                                        style: GoogleFonts.plusJakartaSans(
+                                          fontSize: 10,
+                                          fontWeight: FontWeight.w700,
+                                          color: const Color(0xFF059669),
+                                        ),
+                                      ),
+                                    ),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 8, vertical: 2),
+                                    decoration: BoxDecoration(
+                                      color: _statusColor().withValues(alpha: 0.12),
+                                      borderRadius: BorderRadius.circular(6),
+                                    ),
+                                    child: Text(
+                                      _statusLabel(),
+                                      style: GoogleFonts.plusJakartaSans(
+                                        fontSize: 10,
+                                        fontWeight: FontWeight.w700,
+                                        color: _statusColor(),
+                                      ),
+                                    ),
+                                  ),
+                                ],
                               ),
-                              child: Text(
-                                job.type,
-                                style: GoogleFonts.plusJakartaSans(
-                                  fontSize: 10,
-                                  fontWeight: FontWeight.w700,
-                                  color: AppColors.indigo600,
-                                ),
-                              ),
                             ),
-                            if (job.payment > 0)
-                              Container(
-                                padding: const EdgeInsets.symmetric(
-                                    horizontal: 8, vertical: 2),
-                                decoration: BoxDecoration(
-                                  color: const Color(0xFF059669)
-                                      .withValues(alpha: 0.1),
-                                  borderRadius: BorderRadius.circular(6),
-                                ),
-                                child: Text(
-                                  '\$${job.payment.toStringAsFixed(0)}',
-                                  style: GoogleFonts.plusJakartaSans(
-                                    fontSize: 10,
-                                    fontWeight: FontWeight.w700,
-                                    color: const Color(0xFF059669),
+                            if (job.applicantIds.contains(currentUserId)) ...[
+                              const SizedBox(width: 8),
+                              GestureDetector(
+                                onTap: () async {
+                                  final state = context.read<AppState>();
+                                  final conv = await state.getOrCreateConversation(
+                                    otherUserId: job.posterId,
+                                    otherUserName: job.posterName,
+                                    contextLabel: 'Job: ${job.title}',
+                                    scopeKey: 'job:${job.id}',
+                                  );
+                                  if (!context.mounted) return;
+                                  Navigator.of(context).push(
+                                    SmoothPageRoute(
+                                      builder: (_) => ChatScreen(
+                                        conversationId: conv.id,
+                                        otherUserName: conv.otherUserName,
+                                        contextLabel: conv.contextLabel,
+                                      ),
+                                    ),
+                                  );
+                                },
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 10, vertical: 5),
+                                  decoration: BoxDecoration(
+                                    color: AppColors.indigo600,
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      const Icon(
+                                        Icons.chat_rounded,
+                                        size: 12,
+                                        color: Colors.white,
+                                      ),
+                                      const SizedBox(width: 4),
+                                      Text(
+                                        'Message',
+                                        style: GoogleFonts.plusJakartaSans(
+                                          fontSize: 10,
+                                          fontWeight: FontWeight.w700,
+                                          color: Colors.white,
+                                        ),
+                                      ),
+                                    ],
                                   ),
                                 ),
                               ),
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 8, vertical: 2),
-                              decoration: BoxDecoration(
-                                color: _statusColor().withValues(alpha: 0.12),
-                                borderRadius: BorderRadius.circular(6),
-                              ),
-                              child: Text(
-                                _statusLabel(),
-                                style: GoogleFonts.plusJakartaSans(
-                                  fontSize: 10,
-                                  fontWeight: FontWeight.w700,
-                                  color: _statusColor(),
-                                ),
-                              ),
-                            ),
+                            ],
                           ],
                         ),
                       ],

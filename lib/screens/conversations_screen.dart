@@ -117,10 +117,13 @@ class _ConversationsScreenState extends State<ConversationsScreen> {
                         itemBuilder: (context, index) {
                           final conv = convos[index];
                           return _ConversationTile(
+                            conversationId: conv.id,
                             name: conv.otherUserName,
                             context: conv.contextLabel,
                             preview: conv.lastMessagePreview,
                             time: conv.lastMessageTime,
+                            lastSeenAt: conv.lastSeenBy[authState.currentUserId] ??
+                                conv.lastMessageTime,
                             isDark: isDark,
                             onDelete: () => _confirmDeleteConversation(
                               context,
@@ -194,19 +197,23 @@ Future<void> _confirmDeleteConversation(
 }
 
 class _ConversationTile extends StatelessWidget {
+  final String conversationId;
   final String name;
   final String? context;
   final String preview;
   final DateTime? time;
+  final DateTime? lastSeenAt;
   final bool isDark;
   final VoidCallback onDelete;
   final VoidCallback onTap;
 
   const _ConversationTile({
+    required this.conversationId,
     required this.name,
     this.context,
     required this.preview,
     this.time,
+    this.lastSeenAt,
     required this.isDark,
     required this.onDelete,
     required this.onTap,
@@ -237,6 +244,7 @@ class _ConversationTile extends StatelessWidget {
   @override
   Widget build(BuildContext context_) {
     final initials = name.split(' ').map((w) => w.isEmpty ? '' : w[0]).take(2).join().toUpperCase();
+    final state = context_.read<AppState>();
 
     return Material(
       color: isDark ? const Color(0xFF1E293B) : Colors.white,
@@ -296,6 +304,35 @@ class _ConversationTile extends StatelessWidget {
                               color: const Color(0xFF94A3B8),
                             ),
                           ),
+                        const SizedBox(width: 8),
+                        StreamBuilder<int>(
+                          stream: state.unreadCountStream(
+                            conversationId: conversationId,
+                            lastSeenAt: lastSeenAt,
+                          ),
+                          builder: (context, snapshot) {
+                            final unread = snapshot.data ?? 0;
+                            if (unread <= 0) return const SizedBox.shrink();
+                            return Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 7,
+                                vertical: 2,
+                              ),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFDC2626),
+                                borderRadius: BorderRadius.circular(999),
+                              ),
+                              child: Text(
+                                unread > 99 ? '99+' : '$unread',
+                                style: GoogleFonts.plusJakartaSans(
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w800,
+                                  color: Colors.white,
+                                ),
+                              ),
+                            );
+                          },
+                        ),
                       ],
                     ),
                     if (context != null) ...[

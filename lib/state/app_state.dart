@@ -75,6 +75,8 @@ class AppState extends ChangeNotifier {
   bool _conversationBootstrapComplete = false;
   final Map<String, DateTime> _lastConversationSeenAt = {};
   final Map<String, DateTime> _recentOutgoingAt = {};
+  final Map<String, ({String otherUserId, String otherUserName, String? contextLabel, String? scopeKey})>
+      _pendingConversationSeeds = {};
 
   final Set<String> _blockedUserIds = {};
   final Set<String> _hiddenJobIds = {};
@@ -128,6 +130,7 @@ class AppState extends ChangeNotifier {
       _conversationBootstrapComplete = false;
       _lastConversationSeenAt.clear();
       _recentOutgoingAt.clear();
+      _pendingConversationSeeds.clear();
       _jobs = [];
       _services = [];
       _reports = [];
@@ -999,7 +1002,15 @@ class AppState extends ChangeNotifier {
 
   Job? get vaultSuggestedJob {
     if (!hasVaultGoal) return null;
-    final openJobs = _jobs.where((j) => j.status == JobStatus.open);
+    final openJobs = _jobs.where(
+      (j) =>
+          j.status == JobStatus.open &&
+          j.posterId != currentUserId &&
+          !_blockedUserIds.contains(j.posterId) &&
+          !_hiddenJobIds.contains(j.id) &&
+          !j.applicantIds.contains(currentUserId) &&
+          j.hiredId != currentUserId,
+    );
     final local = (_userLocationText.isNotEmpty
             ? _userLocationText
             : (_profile?.location ?? ''))
@@ -1007,15 +1018,14 @@ class AppState extends ChangeNotifier {
 
     if (local.isNotEmpty) {
       for (final j in openJobs) {
-        if (j.posterId == currentUserId) continue;
-        if (_blockedUserIds.contains(j.posterId)) continue;
-        if (j.location.toLowerCase().contains(local)) return j;
+        if (j.location.toLowerCase().contains(local) ||
+            j.displayLocation.toLowerCase().contains(local)) {
+          return j;
+        }
       }
     }
 
     for (final j in openJobs) {
-      if (j.posterId == currentUserId) continue;
-      if (_blockedUserIds.contains(j.posterId)) continue;
       return j;
     }
     return null;
@@ -1033,8 +1043,7 @@ class AppState extends ChangeNotifier {
       return 'You are only \$$left away from "${vaultGoal!.trim()}". '
           'There is a "${suggested.title}" job near ${suggested.location}.';
     }
-    return 'You are only \$$left away from "${vaultGoal!.trim()}". '
-        'Check new jobs to move closer to your goal.';
+    return '';
   }
 
   List<Review> reviewsForUser(String userId) =>
@@ -1227,9 +1236,7 @@ class AppState extends ChangeNotifier {
     job.status = JobStatus.inProgress;
     await FirestoreService.updateJob(job);
 
-    final conv = await FirestoreService.getOrCreateConversation(
-      myId: currentUserId,
-      myName: currentUserName,
+    final conv = await getOrCreateConversation(
       otherUserId: applicantId,
       otherUserName: applicantName,
       contextLabel: 'Job: ${job.title}',
@@ -1245,6 +1252,12 @@ class AppState extends ChangeNotifier {
             'Hey $applicantName! You\'re hired for "${job.title}". Let\'s chat about the details!',
         timestamp: DateTime.now(),
       ),
+      myUserId: currentUserId,
+      myUserName: currentUserName,
+      otherUserId: applicantId,
+      otherUserName: applicantName,
+      contextLabel: 'Job: ${job.title}',
+      scopeKey: 'job:$jobId',
     );
     notifyListeners();
   }
@@ -1499,6 +1512,17 @@ class AppState extends ChangeNotifier {
   Stream<List<ChatMessage>> messagesStream(String conversationId) =>
       FirestoreService.messagesStream(conversationId);
 
+  Stream<int> unreadCountStream({
+    required String conversationId,
+    required DateTime? lastSeenAt,
+  }) {
+    return FirestoreService.unreadCountStream(
+      conversationId: conversationId,
+      myUserId: currentUserId,
+      lastSeenAt: lastSeenAt,
+    );
+  }
+
   Stream<Conversation?> conversationStream(String conversationId) =>
       FirestoreService.conversationStream(conversationId, currentUserId);
 
@@ -1508,7 +1532,7 @@ class AppState extends ChangeNotifier {
     String? contextLabel,
     String? scopeKey,
   }) async {
-    return FirestoreService.getOrCreateConversation(
+    final conv = await FirestoreService.getOrCreateConversation(
       myId: currentUserId,
       myName: currentUserName,
       otherUserId: otherUserId,
@@ -1516,6 +1540,13 @@ class AppState extends ChangeNotifier {
       contextLabel: contextLabel,
       scopeKey: scopeKey,
     );
+    _pendingConversationSeeds[conv.id] = (
+      otherUserId: otherUserId,
+      otherUserName: otherUserName,
+      contextLabel: contextLabel,
+      scopeKey: scopeKey,
+    );
+    return conv;
   }
 
   Future<void> deleteConversation(String conversationId) async {
@@ -1546,6 +1577,50 @@ class AppState extends ChangeNotifier {
     );
   }
 
+  Future<void> _enforcePreHireApplicantMessageLimit(String conversationId) async {
+    const maxApplicantMessages = 5;
+    final conv = await FirestoreService.getConversation(conversationId, currentUserId);
+    final scope = (conv?.scopeKey ?? '').trim();
+    Job? job;
+    if (scope.startsWith('job:')) {
+      final jobId = scope.substring(4).trim();
+      if (jobId.isNotEmpty) {
+        final jobMatch = _jobs.where((j) => j.id == jobId);
+        if (jobMatch.isNotEmpty) job = jobMatch.first;
+      }
+    }
+    if (job == null) {
+      final label = (conv?.contextLabel ?? '').trim();
+      if (label.toLowerCase().startsWith('job:')) {
+        final title = label.substring(4).trim().toLowerCase();
+        final byTitle = _jobs.where(
+          (j) => j.title.trim().toLowerCase() == title,
+        );
+        if (byTitle.length == 1) job = byTitle.first;
+      }
+    }
+    if (job == null) return;
+    final resolvedJob = job;
+
+    final isPoster = resolvedJob.posterId == currentUserId;
+    final isHired = resolvedJob.hiredId == currentUserId;
+    final isApplicant = resolvedJob.applicantIds.contains(currentUserId);
+
+    // Only cap pre-hire applicants to reduce spam while preserving normal chat
+    // for posters and hired workers.
+    if (!isApplicant || isPoster || isHired) return;
+
+    final sentCount = await FirestoreService.messageCountBySender(
+      conversationId: conversationId,
+      senderId: currentUserId,
+    );
+    if (sentCount >= maxApplicantMessages) {
+      throw Exception(
+        'You can send up to 5 messages before being hired for this job.',
+      );
+    }
+  }
+
   Future<void> sendMessage(String conversationId, String text) async {
     if (isShadowBanned) {
       throw Exception('Messaging is restricted while your account is under review.');
@@ -1562,6 +1637,7 @@ class AppState extends ChangeNotifier {
         'Keep it in the app! For your safety, sharing personal contact info is disabled.',
       );
     }
+    await _enforcePreHireApplicantMessageLimit(conversationId);
     _recentOutgoingAt[conversationId] = DateTime.now();
     final message = ChatMessage(
       id: DateTime.now().microsecondsSinceEpoch.toString(),
@@ -1570,10 +1646,18 @@ class AppState extends ChangeNotifier {
       text: trimmed,
       timestamp: DateTime.now(),
     );
+    final seed = _pendingConversationSeeds[conversationId];
     await FirestoreService.sendMessage(
       conversationId: conversationId,
       message: message,
+      myUserId: currentUserId,
+      myUserName: currentUserName,
+      otherUserId: seed?.otherUserId,
+      otherUserName: seed?.otherUserName,
+      contextLabel: seed?.contextLabel,
+      scopeKey: seed?.scopeKey,
     );
+    _pendingConversationSeeds.remove(conversationId);
   }
 
   Future<void> deleteMessageForEveryone({
@@ -1589,6 +1673,37 @@ class AppState extends ChangeNotifier {
       messageId: message.id,
       deletedById: currentUserId,
       deletedByName: currentUserName,
+    );
+  }
+
+  Future<void> editOwnMessage({
+    required String conversationId,
+    required ChatMessage message,
+    required String newText,
+  }) async {
+    if (message.senderId != currentUserId) {
+      throw Exception('You can only edit your own messages.');
+    }
+    final trimmed = newText.trim();
+    if (trimmed.isEmpty) {
+      throw Exception('Message cannot be empty.');
+    }
+    final moderation = await ModerationService.moderateMessage(trimmed);
+    if (!moderation.approved) {
+      throw Exception(moderation.reason ?? 'Message blocked by safety checks.');
+    }
+    if (_phoneRe.hasMatch(trimmed) ||
+        _emailRe.hasMatch(trimmed) ||
+        _socialRe.hasMatch(trimmed)) {
+      throw Exception(
+        'Keep it in the app! For your safety, sharing personal contact info is disabled.',
+      );
+    }
+    await FirestoreService.editOwnMessage(
+      conversationId: conversationId,
+      messageId: message.id,
+      editorUserId: currentUserId,
+      newText: trimmed,
     );
   }
 

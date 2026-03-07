@@ -523,6 +523,7 @@ class FirestoreService {
                 otherUserId: otherId,
                 otherUserName: names[otherId] ?? 'Unknown',
                 contextLabel: d['contextLabel'],
+                scopeKey: d['scopeKey'],
                 lastMessageText: d['lastMessageText'],
                 lastMessageAt: ts?.toDate(),
                 typingBy: _typingByFromMap(d['typingBy']),
@@ -564,31 +565,23 @@ class FirestoreService {
           otherUserId: otherUserId,
           otherUserName: otherUserName,
           contextLabel: d['contextLabel'],
+          scopeKey: d['scopeKey'],
           typingBy: _typingByFromMap(d['typingBy']),
           lastSeenBy: _lastSeenByFromMap(d['lastSeenBy']),
         );
       }
     }
 
+    // Lazy conversation creation: only persist when first message is sent.
     final docRef = _conversationsCol.doc();
-    await docRef.set({
-      'participants': [myId, otherUserId],
-      'participantNames': {myId: myName, otherUserId: otherUserName},
-      'contextLabel': contextLabel,
-      'scopeKey': scopeKey,
-      'lastMessageAt': Timestamp.now(),
-      'lastMessageText': '',
-      'typingBy': {myId: false, otherUserId: false},
-      'lastSeenBy': {myId: Timestamp.now(), otherUserId: Timestamp.now()},
-    });
-
     return Conversation(
       id: docRef.id,
       otherUserId: otherUserId,
       otherUserName: otherUserName,
       contextLabel: contextLabel,
-      typingBy: {myId: false, otherUserId: false},
-      lastSeenBy: {myId: DateTime.now(), otherUserId: DateTime.now()},
+      scopeKey: scopeKey,
+      typingBy: const {},
+      lastSeenBy: const {},
     );
   }
 
@@ -611,12 +604,40 @@ class FirestoreService {
         otherUserId: otherId,
         otherUserName: names[otherId] ?? 'Unknown',
         contextLabel: d['contextLabel'],
+        scopeKey: d['scopeKey'],
         lastMessageText: d['lastMessageText'],
         lastMessageAt: ts?.toDate(),
         typingBy: _typingByFromMap(d['typingBy']),
         lastSeenBy: _lastSeenByFromMap(d['lastSeenBy']),
       );
     });
+  }
+
+  static Future<Conversation?> getConversation(
+    String conversationId,
+    String myUserId,
+  ) async {
+    final doc = await _conversationsCol.doc(conversationId).get();
+    if (!doc.exists) return null;
+    final d = doc.data()!;
+    final participants = List<String>.from(d['participants'] ?? []);
+    final names = Map<String, String>.from(d['participantNames'] ?? {});
+    final otherId = participants.firstWhere(
+      (id) => id != myUserId,
+      orElse: () => '',
+    );
+    final ts = d['lastMessageAt'] as Timestamp?;
+    return Conversation(
+      id: doc.id,
+      otherUserId: otherId,
+      otherUserName: names[otherId] ?? 'Unknown',
+      contextLabel: d['contextLabel'],
+      scopeKey: d['scopeKey'],
+      lastMessageText: d['lastMessageText'],
+      lastMessageAt: ts?.toDate(),
+      typingBy: _typingByFromMap(d['typingBy']),
+      lastSeenBy: _lastSeenByFromMap(d['lastSeenBy']),
+    );
   }
 
   static Stream<List<ChatMessage>> messagesStream(String conversationId) {
@@ -641,9 +662,59 @@ class FirestoreService {
             }).toList());
   }
 
+  static Stream<int> unreadCountStream({
+    required String conversationId,
+    required String myUserId,
+    required DateTime? lastSeenAt,
+  }) {
+    final me = myUserId.trim();
+    if (me.isEmpty || lastSeenAt == null) {
+      return Stream<int>.value(0);
+    }
+    // Add a tiny epsilon to avoid boundary precision mismatches.
+    final cutoff = lastSeenAt.add(const Duration(milliseconds: 1));
+    return _conversationsCol
+        .doc(conversationId)
+        .collection('messages')
+        .where(
+          'timestamp',
+          isGreaterThan: Timestamp.fromDate(cutoff),
+        )
+        .snapshots()
+        .map((snap) {
+          var count = 0;
+          for (final doc in snap.docs) {
+            final data = doc.data();
+            final sender = (data['senderId'] ?? '').toString().trim();
+            if (sender.isEmpty) continue; // Skip malformed legacy docs.
+            if (data['isDeleted'] == true || data['deletedAt'] != null) continue;
+            if (sender != me) count++;
+          }
+          return count;
+        });
+  }
+
+  static Future<int> messageCountBySender({
+    required String conversationId,
+    required String senderId,
+  }) async {
+    final snap = await _conversationsCol
+        .doc(conversationId)
+        .collection('messages')
+        .where('senderId', isEqualTo: senderId)
+        .get();
+    return snap.size;
+  }
+
   static Future<void> sendMessage({
     required String conversationId,
     required ChatMessage message,
+    String? myUserId,
+    String? myUserName,
+    String? otherUserId,
+    String? otherUserName,
+    String? contextLabel,
+    String? scopeKey,
   }) async {
     if (_useCallableBackend) {
       final callable = _functions.httpsCallable('sendConversationMessage');
@@ -679,6 +750,19 @@ class FirestoreService {
       'deletedAt': null,
     });
     batch.set(_conversationsCol.doc(conversationId), {
+      if ((myUserId ?? '').trim().isNotEmpty &&
+          (otherUserId ?? '').trim().isNotEmpty)
+        'participants': [myUserId!.trim(), otherUserId!.trim()],
+      if ((myUserId ?? '').trim().isNotEmpty &&
+          (otherUserId ?? '').trim().isNotEmpty)
+        'participantNames': {
+          myUserId!.trim(): (myUserName ?? '').trim().isEmpty
+              ? message.senderName
+              : myUserName!.trim(),
+          otherUserId!.trim(): (otherUserName ?? '').trim(),
+        },
+      if ((contextLabel ?? '').trim().isNotEmpty) 'contextLabel': contextLabel!.trim(),
+      if ((scopeKey ?? '').trim().isNotEmpty) 'scopeKey': scopeKey!.trim(),
       'lastMessageAt': Timestamp.fromDate(message.timestamp),
       'lastMessageText': message.text,
       'typingBy': {message.senderId: false},
@@ -718,6 +802,49 @@ class FirestoreService {
     }
   }
 
+  static Future<void> editOwnMessage({
+    required String conversationId,
+    required String messageId,
+    required String editorUserId,
+    required String newText,
+  }) async {
+    final msgRef = _conversationsCol
+        .doc(conversationId)
+        .collection('messages')
+        .doc(messageId);
+
+    final current = await msgRef.get();
+    if (!current.exists) {
+      throw Exception('Message not found.');
+    }
+    final data = current.data() ?? const <String, dynamic>{};
+    final senderId = (data['senderId'] ?? '').toString();
+    if (senderId != editorUserId) {
+      throw Exception('You can only edit your own messages.');
+    }
+    if (data['isDeleted'] == true || data['deletedAt'] != null) {
+      throw Exception('Deleted messages cannot be edited.');
+    }
+
+    await msgRef.set({
+      'text': newText,
+      'isEdited': true,
+      'editedAt': FieldValue.serverTimestamp(),
+    }, SetOptions(merge: true));
+
+    final latest = await _conversationsCol
+        .doc(conversationId)
+        .collection('messages')
+        .orderBy('timestamp', descending: true)
+        .limit(1)
+        .get();
+    if (latest.docs.isNotEmpty && latest.docs.first.id == messageId) {
+      await _conversationsCol.doc(conversationId).set({
+        'lastMessageText': newText,
+      }, SetOptions(merge: true));
+    }
+  }
+
   static Future<void> setConversationTyping({
     required String conversationId,
     required String userId,
@@ -730,9 +857,8 @@ class FirestoreService {
       });
     } on FirebaseException catch (e) {
       if (e.code != 'not-found') rethrow;
-      await ref.set({
-        'typingBy': {userId: isTyping},
-      }, SetOptions(merge: true));
+      // Keep conversations lazy-created; do not create placeholder docs.
+      return;
     }
   }
 
@@ -749,10 +875,8 @@ class FirestoreService {
       });
     } on FirebaseException catch (e) {
       if (e.code != 'not-found') rethrow;
-      await ref.set({
-        'lastSeenBy': {userId: Timestamp.fromDate(seenAt)},
-        'typingBy': {userId: false},
-      }, SetOptions(merge: true));
+      // Keep conversations lazy-created; do not create placeholder docs.
+      return;
     }
   }
 

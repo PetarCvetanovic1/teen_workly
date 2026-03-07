@@ -8,6 +8,7 @@ import '../state/app_state.dart';
 import '../widgets/report_sheet.dart';
 import '../widgets/content_wrap.dart';
 import 'chat_screen.dart';
+import 'jobs_screen.dart';
 
 class JobDetailScreen extends StatefulWidget {
   final Job job;
@@ -142,6 +143,22 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
                       label: job.type,
                     ),
                   ],
+                ),
+                const SizedBox(height: 12),
+                FilledButton.icon(
+                  onPressed: () => Navigator.of(context).push(
+                    SmoothPageRoute(
+                      builder: (_) => JobsScreen(focusJobId: job.id),
+                    ),
+                  ),
+                  style: FilledButton.styleFrom(
+                    backgroundColor: AppColors.indigo600,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 14, vertical: 12),
+                  ),
+                  icon: const Icon(Icons.map_outlined, size: 18),
+                  label: const Text('Open in map'),
                 ),
                 const SizedBox(height: 24),
                 // Description
@@ -495,6 +512,36 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
                       ),
                     ),
                   ),
+                  if (hasApplied) ...[
+                    const SizedBox(height: 10),
+                    SizedBox(
+                      width: double.infinity,
+                      child: _ActionButton(
+                        label: 'Message ${job.posterName.split(" ").first}',
+                        icon: Icons.chat_rounded,
+                        color: AppColors.indigo600,
+                        isDark: isDark,
+                        onTap: () async {
+                          final conv = await state.getOrCreateConversation(
+                            otherUserId: job.posterId,
+                            otherUserName: job.posterName,
+                            contextLabel: 'Job: ${job.title}',
+                            scopeKey: 'job:${job.id}',
+                          );
+                          if (!context.mounted) return;
+                          Navigator.of(context).push(
+                            SmoothPageRoute(
+                              builder: (_) => ChatScreen(
+                                conversationId: conv.id,
+                                otherUserName: conv.otherUserName,
+                                contextLabel: conv.contextLabel,
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+                  ],
                   const SizedBox(height: 24),
                 ],
 
