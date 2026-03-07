@@ -799,22 +799,24 @@ class FirestoreService {
   }
 
   static Future<void> addHuddlePost(HuddlePost post) async {
-    final callable = _functions.httpsCallable('createHuddlePost');
-    try {
-      await callable.call({
-        'post': {
-          'id': post.id,
-          'authorId': post.authorId,
-          'authorName': post.authorName,
-          'text': post.text,
-          'tag': post.tag.name,
-          'ageGroup': post.ageGroup.name,
-          'createdAtMs': post.createdAt.millisecondsSinceEpoch,
-        },
-      });
-      return;
-    } catch (e) {
-      if (!_isFunctionsUnavailable(e)) rethrow;
+    if (_useCallableBackend) {
+      final callable = _functions.httpsCallable('createHuddlePost');
+      try {
+        await callable.call({
+          'post': {
+            'id': post.id,
+            'authorId': post.authorId,
+            'authorName': post.authorName,
+            'text': post.text,
+            'tag': post.tag.name,
+            'ageGroup': post.ageGroup.name,
+            'createdAtMs': post.createdAt.millisecondsSinceEpoch,
+          },
+        });
+        return;
+      } catch (e) {
+        if (!_isFunctionsUnavailable(e)) rethrow;
+      }
     }
     await _huddleCol.doc(post.id).set({
       'authorId': post.authorId,
@@ -853,21 +855,23 @@ class FirestoreService {
   }
 
   static Future<void> addHuddleReply(String postId, HuddleReply reply) async {
-    final callable = _functions.httpsCallable('createHuddleReply');
-    try {
-      await callable.call({
-        'postId': postId,
-        'reply': {
-          'id': reply.id,
-          'authorId': reply.authorId,
-          'authorName': reply.authorName,
-          'text': reply.text,
-          'createdAtMs': reply.createdAt.millisecondsSinceEpoch,
-        },
-      });
-      return;
-    } catch (e) {
-      if (!_isFunctionsUnavailable(e)) rethrow;
+    if (_useCallableBackend) {
+      final callable = _functions.httpsCallable('createHuddleReply');
+      try {
+        await callable.call({
+          'postId': postId,
+          'reply': {
+            'id': reply.id,
+            'authorId': reply.authorId,
+            'authorName': reply.authorName,
+            'text': reply.text,
+            'createdAtMs': reply.createdAt.millisecondsSinceEpoch,
+          },
+        });
+        return;
+      } catch (e) {
+        if (!_isFunctionsUnavailable(e)) rethrow;
+      }
     }
     await _huddleCol.doc(postId).collection('replies').doc(reply.id).set({
       'authorId': reply.authorId,

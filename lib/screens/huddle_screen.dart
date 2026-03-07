@@ -13,6 +13,7 @@ import '../widgets/tw_app_bar.dart';
 import '../utils/smooth_route.dart';
 import 'home_screen.dart';
 import 'login_screen.dart';
+import 'chat_screen.dart';
 
 class HuddleScreen extends StatefulWidget {
   const HuddleScreen({super.key});
@@ -372,6 +373,8 @@ class _HuddlePostCard extends StatefulWidget {
 
 class _HuddlePostCardState extends State<_HuddlePostCard> {
   bool _showReplies = false;
+  bool _sendingReply = false;
+  bool _openingDm = false;
   final _replyCtrl = TextEditingController();
 
   @override
@@ -403,45 +406,93 @@ class _HuddlePostCardState extends State<_HuddlePostCard> {
   }
 
   Future<void> _submitReply() async {
+    if (_sendingReply) return;
     final text = _replyCtrl.text.trim();
     if (text.isEmpty) return;
 
-    final modResult = await ModerationService.moderateMessage(text);
-    if (!modResult.approved) {
+    setState(() => _sendingReply = true);
+    try {
+      final modResult = await ModerationService.moderateMessage(text);
+      if (!modResult.approved) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(modResult.reason ?? 'Content not allowed'),
+            backgroundColor: Colors.red,
+          ),
+        );
+        return;
+      }
+
+      if (!mounted) return;
+
+      final cleaned = ModerationService.cleanTone(text);
+      final wasCleaned = cleaned != text;
+
+      await context.read<AppState>().addHuddleReply(
+            postId: widget.post.id,
+            text: cleaned,
+          );
+      if (!mounted) return;
+      _replyCtrl.clear();
+      FocusScope.of(context).unfocus();
+
+      if (wasCleaned && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Your reply was adjusted to keep things respectful.',
+              style: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w600),
+            ),
+            backgroundColor: const Color(0xFFF59E0B),
+            duration: const Duration(seconds: 3),
+          ),
+        );
+      }
+    } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(modResult.reason ?? 'Content not allowed'),
+          content: Text('Reply failed to send. Please try again. ($e)'),
           backgroundColor: Colors.red,
         ),
       );
-      return;
+    } finally {
+      if (mounted) setState(() => _sendingReply = false);
     }
+  }
 
-    if (!mounted) return;
-
-    final cleaned = ModerationService.cleanTone(text);
-    final wasCleaned = cleaned != text;
-
-    await context.read<AppState>().addHuddleReply(
-          postId: widget.post.id,
-          text: cleaned,
-        );
-    if (!mounted) return;
-    _replyCtrl.clear();
-    FocusScope.of(context).unfocus();
-
-    if (wasCleaned && mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            'Your reply was adjusted to keep things respectful.',
-            style: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w600),
+  Future<void> _openPrivateChat(AppState state) async {
+    if (_openingDm) return;
+    setState(() => _openingDm = true);
+    try {
+      final conv = await state.getOrCreateConversation(
+        otherUserId: widget.post.authorId,
+        otherUserName: widget.post.authorName,
+        contextLabel: 'Huddle: ${widget.post.tag.label}',
+        scopeKey: 'huddle:${widget.post.id}',
+      );
+      if (!mounted) return;
+      Navigator.of(context).push(
+        SmoothPageRoute(
+          builder: (_) => ChatScreen(
+            conversationId: conv.id,
+            otherUserName: conv.otherUserName,
+            contextLabel: conv.contextLabel,
           ),
-          backgroundColor: const Color(0xFFF59E0B),
-          duration: const Duration(seconds: 3),
         ),
       );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Could not open private chat. Please try again. ($e)'),
+          behavior: SnackBarBehavior.floating,
+          backgroundColor: const Color(0xFFDC2626),
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _openingDm = false);
     }
   }
 
@@ -577,6 +628,25 @@ class _HuddlePostCardState extends State<_HuddlePostCard> {
                         ],
                       ),
                     ),
+                    if (!isOwner)
+                      IconButton(
+                        tooltip: 'Message privately',
+                        icon: _openingDm
+                            ? const SizedBox(
+                                width: 18,
+                                height: 18,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
+                              )
+                            : const Icon(
+                                Icons.mail_outline_rounded,
+                                size: 18,
+                                color: AppColors.indigo600,
+                              ),
+                        onPressed: () => _openPrivateChat(state),
+                        visualDensity: VisualDensity.compact,
+                      ),
                     if (!isOwner)
                       IconButton(
                         tooltip: 'Safety actions',
@@ -741,15 +811,34 @@ class _HuddlePostCardState extends State<_HuddlePostCard> {
                                       ),
                                       const SizedBox(width: 8),
                                       Material(
-                                        color: const Color(0xFFF59E0B),
+                                        color: _sendingReply
+                                            ? const Color(0xFF94A3B8)
+                                            : const Color(0xFFF59E0B),
                                         borderRadius: BorderRadius.circular(10),
                                         child: InkWell(
-                                          onTap: _submitReply,
+                                          onTap: _sendingReply ? null : _submitReply,
                                           borderRadius: BorderRadius.circular(10),
-                                          child: const Padding(
-                                            padding: EdgeInsets.all(8),
-                                            child: Icon(Icons.send_rounded,
-                                                size: 18, color: Colors.white),
+                                          child: Padding(
+                                            padding: const EdgeInsets.all(8),
+                                            child: _sendingReply
+                                                ? const SizedBox(
+                                                    width: 18,
+                                                    height: 18,
+                                                    child:
+                                                        CircularProgressIndicator(
+                                                      strokeWidth: 2,
+                                                      valueColor:
+                                                          AlwaysStoppedAnimation<
+                                                              Color>(
+                                                        Colors.white,
+                                                      ),
+                                                    ),
+                                                  )
+                                                : const Icon(
+                                                    Icons.send_rounded,
+                                                    size: 18,
+                                                    color: Colors.white,
+                                                  ),
                                           ),
                                         ),
                                       ),

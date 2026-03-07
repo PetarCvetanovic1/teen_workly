@@ -15,6 +15,7 @@ import 'job_detail_screen.dart';
 import 'chat_screen.dart';
 import 'login_screen.dart';
 import 'post_service_screen.dart';
+import 'contact_screen.dart';
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
@@ -124,7 +125,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     ),
                   ),
                 ),
-                if (state.hasVaultGoal) ...[
+                if (state.isVaultEligible && state.hasVaultGoal) ...[
                   const SizedBox(height: 16),
                   _VaultGoalCard(
                     isDark: isDark,
@@ -133,6 +134,41 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     target: state.vaultTargetAmount ?? 0,
                     progress: state.vaultProgress,
                     nudge: state.vaultNudgeMessage,
+                  ),
+                ] else if (state.isVaultEligible) ...[
+                  const SizedBox(height: 16),
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        colors: [
+                          AppColors.indigo600.withValues(alpha: 0.10),
+                          const Color(0xFF7C3AED).withValues(alpha: 0.08),
+                        ],
+                      ),
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(
+                        color: AppColors.indigo600.withValues(alpha: 0.22),
+                      ),
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.savings_rounded,
+                            size: 18, color: AppColors.indigo600),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            'Vault is available for you. Set a goal in Profile to start tracking it.',
+                            style: GoogleFonts.plusJakartaSans(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w700,
+                              color: isDark ? Colors.white : AppColors.slate900,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                 ],
                 const SizedBox(height: 16),
@@ -297,6 +333,86 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     ),
                   ],
                 ),
+                const SizedBox(height: 12),
+                Material(
+                  color: Colors.transparent,
+                  borderRadius: BorderRadius.circular(16),
+                  child: Ink(
+                    decoration: BoxDecoration(
+                      gradient: const LinearGradient(
+                        colors: [Color(0xFF7C3AED), AppColors.indigo600],
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                      ),
+                      borderRadius: BorderRadius.circular(16),
+                      boxShadow: [
+                        BoxShadow(
+                          color: const Color(0xFF7C3AED).withValues(alpha: 0.25),
+                          blurRadius: 14,
+                          offset: const Offset(0, 4),
+                        ),
+                      ],
+                    ),
+                    child: InkWell(
+                      borderRadius: BorderRadius.circular(16),
+                      onTap: () => Navigator.of(context).push(
+                        appRoute(
+                          builder: (_) => const JobHistoryScreen(),
+                          requiresAuth: true,
+                        ),
+                      ),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 14, vertical: 12),
+                        child: Row(
+                          children: [
+                            Container(
+                              width: 34,
+                              height: 34,
+                              decoration: BoxDecoration(
+                                color: Colors.white.withValues(alpha: 0.18),
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              child: const Icon(
+                                Icons.history_rounded,
+                                size: 18,
+                                color: Colors.white,
+                              ),
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    'Finished Jobs History',
+                                    style: GoogleFonts.plusJakartaSans(
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.w800,
+                                      color: Colors.white,
+                                    ),
+                                  ),
+                                  Text(
+                                    'See completed jobs, payouts, and ratings',
+                                    style: GoogleFonts.plusJakartaSans(
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w600,
+                                      color: Colors.white.withValues(alpha: 0.9),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            const Icon(
+                              Icons.chevron_right_rounded,
+                              color: Colors.white,
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
                 const SizedBox(height: 16),
                 Row(
                   children: [
@@ -357,13 +473,26 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                 final left = state.reportSuspensionTimeLeft(
                                     state.currentUserId);
                                 final days = (left.inHours / 24).ceil();
-                                final count = state.uniqueReportCountForUser(
+                                final dayCount = state.reportCountForUser(
+                                  state.currentUserId,
+                                  window: const Duration(days: 1),
+                                );
+                                final weekCount = state.reportCountForUser(
+                                  state.currentUserId,
+                                  window: const Duration(days: 7),
+                                );
+                                final allTimeCount = state.reportCountForUser(
                                     state.currentUserId);
+                                final permanent = state
+                                    .isUserReportPermanentlyBanned(
+                                        state.currentUserId);
                                 return Text(
-                                  'You\'ve been reported by $count '
-                                  'user${count == 1 ? '' : 's'}. '
-                                  'Suspension ends in ${days > 0 ? "$days day${days == 1 ? "" : "s"}" : "a few hours"}. '
-                                  'Reports reset monthly.',
+                                  permanent
+                                      ? 'Daily reports: $dayCount · Weekly reports: $weekCount · All-time reports: $allTimeCount. '
+                                          'You reached the 20 all-time limit, so posting is suspended.'
+                                      : 'Daily reports: $dayCount · Weekly reports: $weekCount · All-time reports: $allTimeCount. '
+                                          'Suspension ends in ${days > 0 ? "$days day${days == 1 ? "" : "s"}" : "a few hours"}. '
+                                          'Limits: 3/day, 10/week, 20 all-time.',
                                   style: GoogleFonts.plusJakartaSans(
                                     fontSize: 12,
                                     fontWeight: FontWeight.w500,
@@ -371,6 +500,32 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                   ),
                                 );
                               }),
+                              const SizedBox(height: 10),
+                              Align(
+                                alignment: Alignment.centerLeft,
+                                child: TextButton.icon(
+                                  onPressed: () => Navigator.of(context).push(
+                                    appRoute(
+                                      builder: (_) => const ContactScreen.prefilled(
+                                        initialSubject:
+                                            'Ban appeal - report suspension',
+                                        initialMessage:
+                                            'I think my report ban may be unfair.\n\nWhat happened:\n- \n\nWhere to review:\n- (job/service/post/conversation ID)\n\nAnything else that may help:\n- ',
+                                      ),
+                                      requiresAuth: true,
+                                    ),
+                                  ),
+                                  icon: const Icon(Icons.mail_outline_rounded,
+                                      size: 16),
+                                  label: Text(
+                                    'Think this is unfair? Contact us',
+                                    style: GoogleFonts.plusJakartaSans(
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                                  ),
+                                ),
+                              ),
                             ],
                           ),
                         ),
@@ -1218,136 +1373,150 @@ class _JobCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final surface = isDark ? const Color(0xFF1E293B) : Colors.white;
+    final tint = badgeColor.withValues(alpha: isDark ? 0.11 : 0.06);
+    final edge = badgeColor.withValues(alpha: isDark ? 0.22 : 0.18);
     return Padding(
       padding: const EdgeInsets.only(bottom: 10),
       child: Material(
-        color: isDark ? const Color(0xFF1E293B) : Colors.white,
+        color: Colors.transparent,
         borderRadius: BorderRadius.circular(18),
         elevation: isDark ? 0 : 1,
         shadowColor: Colors.black.withValues(alpha: 0.06),
-        child: InkWell(
-          onTap: () => Navigator.of(context).push(
-            appRoute(
-              builder: (_) => JobDetailScreen(job: job),
-              requiresAuth: true,
+        child: Ink(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [tint, surface],
             ),
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(color: edge),
           ),
-          borderRadius: BorderRadius.circular(18),
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        job.title,
-                        style: GoogleFonts.plusJakartaSans(
-                          fontSize: 15,
-                          fontWeight: FontWeight.w700,
-                          color: isDark ? Colors.white : AppColors.slate900,
+          child: InkWell(
+            onTap: () => Navigator.of(context).push(
+              appRoute(
+                builder: (_) => JobDetailScreen(job: job),
+                requiresAuth: true,
+              ),
+            ),
+            borderRadius: BorderRadius.circular(18),
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          job.title,
+                          style: GoogleFonts.plusJakartaSans(
+                            fontSize: 15,
+                            fontWeight: FontWeight.w700,
+                            color: isDark ? Colors.white : AppColors.slate900,
+                          ),
                         ),
                       ),
-                    ),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 10, vertical: 4),
-                      decoration: BoxDecoration(
-                        color: badgeColor.withValues(alpha: 0.12),
-                        borderRadius: BorderRadius.circular(100),
-                      ),
-                      child: Text(
-                        badge,
-                        style: GoogleFonts.plusJakartaSans(
-                          fontSize: 9,
-                          fontWeight: FontWeight.w800,
-                          letterSpacing: 0.5,
-                          color: badgeColor,
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 10, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: badgeColor.withValues(alpha: 0.12),
+                          borderRadius: BorderRadius.circular(100),
+                        ),
+                        child: Text(
+                          badge,
+                          style: GoogleFonts.plusJakartaSans(
+                            fontSize: 9,
+                            fontWeight: FontWeight.w800,
+                            letterSpacing: 0.5,
+                            color: badgeColor,
+                          ),
                         ),
                       ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 6),
-                Wrap(
-                  spacing: 12,
-                  runSpacing: 8,
-                  crossAxisAlignment: WrapCrossAlignment.center,
-                  children: [
-                    Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(Icons.location_on_outlined,
-                            size: 14, color: const Color(0xFF94A3B8)),
-                        const SizedBox(width: 4),
-                        ConstrainedBox(
-                          constraints: const BoxConstraints(maxWidth: 230),
-                          child: Text(
-                            job.displayLocation,
-                            softWrap: true,
+                    ],
+                  ),
+                  const SizedBox(height: 6),
+                  Wrap(
+                    spacing: 12,
+                    runSpacing: 8,
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    children: [
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.location_on_outlined,
+                              size: 14, color: const Color(0xFF94A3B8)),
+                          const SizedBox(width: 4),
+                          ConstrainedBox(
+                            constraints: const BoxConstraints(maxWidth: 230),
+                            child: Text(
+                              job.displayLocation,
+                              softWrap: true,
+                              style: GoogleFonts.plusJakartaSans(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w500,
+                                color: const Color(0xFF94A3B8),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.work_outline_rounded,
+                              size: 14, color: const Color(0xFF94A3B8)),
+                          const SizedBox(width: 4),
+                          Text(
+                            job.type,
                             style: GoogleFonts.plusJakartaSans(
                               fontSize: 12,
                               fontWeight: FontWeight.w500,
                               color: const Color(0xFF94A3B8),
                             ),
                           ),
-                        ),
-                      ],
-                    ),
-                    Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(Icons.work_outline_rounded,
-                            size: 14, color: const Color(0xFF94A3B8)),
-                        const SizedBox(width: 4),
-                        Text(
-                          job.type,
-                          style: GoogleFonts.plusJakartaSans(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w500,
-                            color: const Color(0xFF94A3B8),
-                          ),
-                        ),
-                      ],
-                    ),
-                    if (onAction != null)
-                      GestureDetector(
-                        onTap: onAction,
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 10, vertical: 5),
-                          decoration: BoxDecoration(
-                            color: (actionColor ?? const Color(0xFFDC2626))
-                                .withValues(alpha: 0.1),
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(
-                                actionIcon ?? Icons.close_rounded,
-                                size: 13,
-                                color:
-                                    actionColor ?? const Color(0xFFDC2626),
-                              ),
-                              const SizedBox(width: 4),
-                              Text(
-                                actionLabel ?? 'Remove',
-                                style: GoogleFonts.plusJakartaSans(
-                                  fontSize: 10,
-                                  fontWeight: FontWeight.w800,
-                                  color: actionColor ??
-                                      const Color(0xFFDC2626),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
+                        ],
                       ),
-                  ],
-                ),
-              ],
+                      if (onAction != null)
+                        GestureDetector(
+                          onTap: onAction,
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 10, vertical: 5),
+                            decoration: BoxDecoration(
+                              color: (actionColor ?? const Color(0xFFDC2626))
+                                  .withValues(alpha: 0.1),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(
+                                  actionIcon ?? Icons.close_rounded,
+                                  size: 13,
+                                  color:
+                                      actionColor ?? const Color(0xFFDC2626),
+                                ),
+                                const SizedBox(width: 4),
+                                Text(
+                                  actionLabel ?? 'Remove',
+                                  style: GoogleFonts.plusJakartaSans(
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.w800,
+                                    color: actionColor ??
+                                        const Color(0xFFDC2626),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                ],
+              ),
             ),
           ),
         ),
@@ -1373,13 +1542,22 @@ class _ServiceCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    const accent = Color(0xFF7C3AED);
+    final surface = isDark ? const Color(0xFF1E293B) : Colors.white;
+    final tint = accent.withValues(alpha: isDark ? 0.11 : 0.06);
+    final edge = accent.withValues(alpha: isDark ? 0.22 : 0.18);
     return Padding(
       padding: const EdgeInsets.only(bottom: 10),
       child: Container(
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
-          color: isDark ? const Color(0xFF1E293B) : Colors.white,
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [tint, surface],
+          ),
           borderRadius: BorderRadius.circular(18),
+          border: Border.all(color: edge),
           boxShadow: isDark
               ? null
               : [
@@ -2696,5 +2874,362 @@ class _LimitIndicator extends StatelessWidget {
         ],
       ),
     );
+  }
+}
+
+enum _JobHistoryFilter { all, worked, posted }
+
+class JobHistoryScreen extends StatefulWidget {
+  const JobHistoryScreen({super.key});
+
+  @override
+  State<JobHistoryScreen> createState() => _JobHistoryScreenState();
+}
+
+class _JobHistoryScreenState extends State<JobHistoryScreen> {
+  _JobHistoryFilter _filter = _JobHistoryFilter.all;
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final state = context.watch<AppState>();
+    final myId = state.currentUserId;
+    final completed = state.jobs
+        .where((j) =>
+            j.status == JobStatus.completed &&
+            (j.posterId == myId || j.hiredId == myId))
+        .toList()
+      ..sort((a, b) {
+        final aTime = a.completedAt ?? a.createdAt;
+        final bTime = b.completedAt ?? b.createdAt;
+        return bTime.compareTo(aTime);
+      });
+    final filtered = completed.where((j) {
+      if (_filter == _JobHistoryFilter.worked) return j.hiredId == myId;
+      if (_filter == _JobHistoryFilter.posted) return j.posterId == myId;
+      return true;
+    }).toList();
+
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Finished Jobs'),
+      ),
+      body: completed.isEmpty
+          ? Center(
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: Text(
+                  'No finished jobs yet. Once you complete jobs, your history will appear here.',
+                  textAlign: TextAlign.center,
+                  style: GoogleFonts.plusJakartaSans(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: const Color(0xFF94A3B8),
+                  ),
+                ),
+              ),
+            )
+          : Column(
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: _historyFilterChip(
+                          label: 'All',
+                          selected: _filter == _JobHistoryFilter.all,
+                          onTap: () => setState(() => _filter = _JobHistoryFilter.all),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: _historyFilterChip(
+                          label: 'Worked',
+                          selected: _filter == _JobHistoryFilter.worked,
+                          onTap: () =>
+                              setState(() => _filter = _JobHistoryFilter.worked),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: _historyFilterChip(
+                          label: 'Posted',
+                          selected: _filter == _JobHistoryFilter.posted,
+                          onTap: () =>
+                              setState(() => _filter = _JobHistoryFilter.posted),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Expanded(
+                  child: filtered.isEmpty
+                      ? Center(
+                          child: Padding(
+                            padding: const EdgeInsets.all(24),
+                            child: Text(
+                              _filter == _JobHistoryFilter.worked
+                                  ? 'No worked jobs finished yet.'
+                                  : _filter == _JobHistoryFilter.posted
+                                      ? 'No posted jobs finished yet.'
+                                      : 'No finished jobs yet.',
+                              textAlign: TextAlign.center,
+                              style: GoogleFonts.plusJakartaSans(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w600,
+                                color: const Color(0xFF94A3B8),
+                              ),
+                            ),
+                          ),
+                        )
+                      : ListView.builder(
+                          padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+                          itemCount: filtered.length,
+                          itemBuilder: (context, index) {
+                            final job = filtered[index];
+                            final completedAt = job.completedAt ?? job.createdAt;
+                            final iWorked = job.hiredId == myId;
+                            final iPosted = job.posterId == myId;
+                            final roleLabel = iWorked
+                                ? 'You worked this job'
+                                : iPosted
+                                    ? 'You posted this job'
+                                    : 'Completed';
+                            final roleColor = iWorked
+                                ? const Color(0xFF059669)
+                                : const Color(0xFF7C3AED);
+                            final moneyLabel = iWorked
+                                ? 'You earned \$${job.payment.toStringAsFixed(0)}'
+                                : 'You paid \$${job.payment.toStringAsFixed(0)}';
+
+                            final ratingForYou = state.reviews.cast<Review?>().firstWhere(
+                                  (r) =>
+                                      r != null &&
+                                      r.jobId == job.id &&
+                                      r.workerId == myId,
+                                  orElse: () => null,
+                                );
+                            final ratingByYou = state.reviews.cast<Review?>().firstWhere(
+                                  (r) =>
+                                      r != null &&
+                                      r.jobId == job.id &&
+                                      r.reviewerId == myId,
+                                  orElse: () => null,
+                                );
+                            final ratingText = iPosted
+                                ? (ratingByYou != null
+                                    ? 'You rated ${ratingByYou.workerName} ${ratingByYou.stars} stars'
+                                    : 'You have not rated yet')
+                                : (ratingForYou != null
+                                    ? 'You got ${ratingForYou.stars} / 5'
+                                    : 'No rating yet');
+                            final ratingColor = (iPosted && ratingByYou != null) ||
+                                    (!iPosted && ratingForYou != null)
+                                ? const Color(0xFFEAB308)
+                                : const Color(0xFF94A3B8);
+
+                            return Padding(
+                              padding: const EdgeInsets.only(bottom: 10),
+                              child: Material(
+                                color: Colors.transparent,
+                                borderRadius: BorderRadius.circular(16),
+                                child: Ink(
+                                  decoration: BoxDecoration(
+                                    gradient: LinearGradient(
+                                      begin: Alignment.topLeft,
+                                      end: Alignment.bottomRight,
+                                      colors: [
+                                        roleColor.withValues(
+                                            alpha: isDark ? 0.11 : 0.06),
+                                        isDark
+                                            ? const Color(0xFF1E293B)
+                                            : Colors.white,
+                                      ],
+                                    ),
+                                    borderRadius: BorderRadius.circular(16),
+                                    border: Border.all(
+                                      color: roleColor.withValues(
+                                          alpha: isDark ? 0.24 : 0.18),
+                                    ),
+                                  ),
+                                  child: InkWell(
+                                    borderRadius: BorderRadius.circular(16),
+                                    onTap: () => Navigator.of(context).push(
+                                      appRoute(
+                                        builder: (_) => JobDetailScreen(job: job),
+                                        requiresAuth: true,
+                                      ),
+                                    ),
+                                    child: Padding(
+                                      padding: const EdgeInsets.all(14),
+                                      child: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          Row(
+                                            children: [
+                                              Expanded(
+                                                child: Text(
+                                                  job.title,
+                                                  style: GoogleFonts.plusJakartaSans(
+                                                    fontSize: 15,
+                                                    fontWeight: FontWeight.w800,
+                                                    color: isDark
+                                                        ? Colors.white
+                                                        : AppColors.slate900,
+                                                  ),
+                                                ),
+                                              ),
+                                              Container(
+                                                padding:
+                                                    const EdgeInsets.symmetric(
+                                                        horizontal: 8, vertical: 3),
+                                                decoration: BoxDecoration(
+                                                  color: roleColor.withValues(
+                                                      alpha: 0.12),
+                                                  borderRadius:
+                                                      BorderRadius.circular(999),
+                                                ),
+                                                child: Text(
+                                                  roleLabel,
+                                                  style: GoogleFonts.plusJakartaSans(
+                                                    fontSize: 10,
+                                                    fontWeight: FontWeight.w800,
+                                                    color: roleColor,
+                                                  ),
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                          const SizedBox(height: 8),
+                                          Text(
+                                            job.displayLocation,
+                                            style: GoogleFonts.plusJakartaSans(
+                                              fontSize: 12,
+                                              fontWeight: FontWeight.w600,
+                                              color: const Color(0xFF94A3B8),
+                                            ),
+                                          ),
+                                          const SizedBox(height: 8),
+                                          Wrap(
+                                            spacing: 8,
+                                            runSpacing: 8,
+                                            children: [
+                                              _historyPill(
+                                                icon: Icons.attach_money_rounded,
+                                                text: moneyLabel,
+                                                color: const Color(0xFF059669),
+                                              ),
+                                              _historyPill(
+                                                icon: Icons.star_rounded,
+                                                text: ratingText,
+                                                color: ratingColor,
+                                              ),
+                                              _historyPill(
+                                                icon: Icons.schedule_rounded,
+                                                text: _formatDateTime(completedAt),
+                                                color: const Color(0xFF64748B),
+                                              ),
+                                            ],
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            );
+                          },
+                        ),
+                ),
+              ],
+            ),
+    );
+  }
+
+  Widget _historyFilterChip({
+    required String label,
+    required bool selected,
+    required VoidCallback onTap,
+  }) {
+    return Material(
+      color: selected ? AppColors.indigo600 : Colors.transparent,
+      borderRadius: BorderRadius.circular(10),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(10),
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 9),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(
+              color: selected
+                  ? AppColors.indigo600
+                  : const Color(0xFF94A3B8).withValues(alpha: 0.5),
+            ),
+          ),
+          child: Center(
+            child: Text(
+              label,
+              style: GoogleFonts.plusJakartaSans(
+                fontSize: 12,
+                fontWeight: FontWeight.w800,
+                color: selected ? Colors.white : const Color(0xFF94A3B8),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  static Widget _historyPill({
+    required IconData icon,
+    required String text,
+    required Color color,
+  }) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 12, color: color),
+          const SizedBox(width: 4),
+          Text(
+            text,
+            style: GoogleFonts.plusJakartaSans(
+              fontSize: 10,
+              fontWeight: FontWeight.w700,
+              color: color,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  static String _formatDateTime(DateTime dt) {
+    const months = <String>[
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec',
+    ];
+    final month = months[dt.month - 1];
+    final day = dt.day.toString();
+    final year = dt.year.toString();
+    return '$month $day, $year';
   }
 }

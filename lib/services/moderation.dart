@@ -37,6 +37,7 @@ class ModerationService {
     'brainrot', 'brain rot', 'edging',
     'motherfucker', 'mother fucker', 'mfer', 'mf',
     'bullshit', 'bs', 'wtf', 'stfu', 'douche', 'douchebag',
+    'suck', 'sucks', 'sucking', 'tuch',
     'jackass', 'prick', 'pussy', 'cock',
     'chink', 'kike', 'spic', 'dih', 'puh', 'bih', 'fuh', 'buh',
     'femboy', 'femboys', 'furry', 'furries', 'futa', 'trap',
@@ -62,7 +63,7 @@ class ModerationService {
     r'\b(b+[\W_]*i+[\W_]*c+[\W_]*h+)\b',
     r'\b(b+[\W_]*e+[\W_]*t+[\W_]*c+[\W_]*h+)\b',
     r'\b(d+[\W_]*a+[\W_]*d+[\W_]*y+)\b',
-    r'\b(g+[\W_]*o{1,20}+[\W_]*n+s*)\b',
+    r'\b(g+[\W_]*o{1,20}[\W_]*n+s*)\b',
     r'\b(your|ur|my|his|her|their)\s*(but|butt|booty|ass)\b',
     r'\b(c+[\W_]*u+[\W_]*n+[\W_]*t+)\b',
     r'\b(a+[\W_]*s+[\W_]*s+[\W_]*h+[\W_]*o+[\W_]*l+[\W_]*e+)\b',
@@ -84,6 +85,8 @@ class ModerationService {
     r'\b(come\s+alone|no\s+parents|dont\s+tell\s+anyone|do\s+not\s+tell\s+anyone)\b',
     r'\b(send\s+(pics|photos|nudes)|show\s+me\s+your\s+body)\b',
     r'\b(overnight\s+stay|sleep\s+over\s+alone|private\s+meet)\b',
+    r'\b(gon+a|gonn+a|going\s+to)\s+(touch|tuch)\s+(you|u)\b',
+    r'\b(touch|tuch)\s+(you|u)\b',
 
     // Violence / self-harm
     r'\b(kill|murder|rape|rapist|molest|pedo|pedophile)\b',
@@ -108,7 +111,7 @@ class ModerationService {
     'rape', 'rapist', 'molest', 'pedo', 'pedophile',
     'dih', 'puh', 'bih', 'fuh', 'buh', 'nethnyaho',
     'kys', 'kms', 'selfharm', 'suicide',
-    'femboy', 'furry', 'hentai',
+    'femboy', 'furry', 'hentai', 'suck', 'tuch',
   ];
 
   // Common shorthand/abbreviations used to bypass filters.

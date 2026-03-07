@@ -9,7 +9,19 @@ import '../services/contact_email_service.dart';
 import 'home_screen.dart';
 
 class ContactScreen extends StatefulWidget {
-  const ContactScreen({super.key});
+  final String? initialSubject;
+  final String? initialMessage;
+
+  const ContactScreen({
+    super.key,
+    this.initialSubject,
+    this.initialMessage,
+  });
+  const ContactScreen.prefilled({
+    super.key,
+    this.initialSubject,
+    this.initialMessage,
+  });
 
   @override
   State<ContactScreen> createState() => _ContactScreenState();
@@ -31,6 +43,17 @@ class _ContactScreenState extends State<ContactScreen> {
     _subjectCtrl.dispose();
     _messageCtrl.dispose();
     super.dispose();
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    if ((widget.initialSubject ?? '').trim().isNotEmpty) {
+      _subjectCtrl.text = widget.initialSubject!.trim();
+    }
+    if ((widget.initialMessage ?? '').trim().isNotEmpty) {
+      _messageCtrl.text = widget.initialMessage!.trim();
+    }
   }
 
   @override

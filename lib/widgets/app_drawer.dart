@@ -126,101 +126,107 @@ class AppDrawer extends StatelessWidget {
                     ),
                   ),
                 ],
-                const Divider(height: 24),
-                _DrawerTile(
-                  icon: Icons.home_rounded,
-                  label: 'Homepage',
-                  onTap: () {
-                    Navigator.pop(context);
-                    Navigator.of(context).pushAndRemoveUntil(
-                      appRoute(builder: (_) => const HomeScreen()),
-                      (_) => false,
-                    );
-                  },
-                ),
-                _DrawerTile(
-                  icon: Icons.add_circle_outline_rounded,
-                  label: 'Post a Job',
-                  onTap: () => replaceAfterClose(
-                    const PostJobScreen(),
-                    requiresAuth: true,
+                Expanded(
+                  child: ListView(
+                    padding: EdgeInsets.zero,
+                    children: [
+                      const Divider(height: 24),
+                      _DrawerTile(
+                        icon: Icons.home_rounded,
+                        label: 'Homepage',
+                        onTap: () {
+                          Navigator.pop(context);
+                          Navigator.of(context).pushAndRemoveUntil(
+                            appRoute(builder: (_) => const HomeScreen()),
+                            (_) => false,
+                          );
+                        },
+                      ),
+                      _DrawerTile(
+                        icon: Icons.add_circle_outline_rounded,
+                        label: 'Post a Job',
+                        onTap: () => replaceAfterClose(
+                          const PostJobScreen(),
+                          requiresAuth: true,
+                        ),
+                      ),
+                      _DrawerTile(
+                        icon: Icons.groups_rounded,
+                        label: 'The Huddle',
+                        onTap: () => replaceAfterClose(
+                          const HuddleScreen(),
+                          requiresAuth: true,
+                        ),
+                      ),
+                      _DrawerTile(
+                        icon: Icons.handyman_rounded,
+                        label: 'Post a Service',
+                        onTap: () => replaceAfterClose(
+                          const PostServiceScreen(),
+                          requiresAuth: true,
+                        ),
+                      ),
+                      _DrawerTile(
+                        icon: Icons.search_rounded,
+                        label: 'Find a Job',
+                        onTap: () => replaceAfterClose(const JobsScreen()),
+                      ),
+                      _DrawerTile(
+                        icon: Icons.dashboard_rounded,
+                        label: 'Dashboard',
+                        onTap: () => replaceAfterClose(
+                          const DashboardScreen(),
+                          requiresAuth: true,
+                        ),
+                      ),
+                      _DrawerTile(
+                        icon: Icons.chat_rounded,
+                        label: 'Messages',
+                        onTap: () => replaceAfterClose(
+                          const ConversationsScreen(),
+                          requiresAuth: true,
+                        ),
+                      ),
+                      if (loggedIn)
+                        _DrawerTile(
+                          icon: Icons.person_rounded,
+                          label: 'My Profile',
+                          onTap: () => replaceAfterClose(
+                            const ProfileScreen(),
+                            requiresAuth: true,
+                          ),
+                        ),
+                      const Divider(height: 24),
+                      _DrawerTile(
+                        icon: Icons.mail_outline_rounded,
+                        label: 'Contact Us',
+                        onTap: () => replaceAfterClose(const ContactScreen()),
+                      ),
+                      _DrawerTile(
+                        icon: Icons.settings_rounded,
+                        label: 'Settings',
+                        onTap: () => replaceAfterClose(
+                          const SettingsScreen(),
+                          requiresAuth: true,
+                        ),
+                      ),
+                      if (!loggedIn) ...[
+                        const Divider(height: 24),
+                        _DrawerTile(
+                          icon: Icons.login_rounded,
+                          label: 'Log in',
+                          onTap: () => replaceAfterClose(const LoginScreen()),
+                        ),
+                        _DrawerTile(
+                          icon: Icons.person_add_rounded,
+                          label: 'Join now',
+                          onTap: () => replaceAfterClose(const SignUpScreen()),
+                        ),
+                      ],
+                    ],
                   ),
                 ),
-                _DrawerTile(
-                  icon: Icons.groups_rounded,
-                  label: 'The Huddle',
-                  onTap: () => replaceAfterClose(
-                    const HuddleScreen(),
-                    requiresAuth: true,
-                  ),
-                ),
-                _DrawerTile(
-                  icon: Icons.handyman_rounded,
-                  label: 'Post a Service',
-                  onTap: () => replaceAfterClose(
-                    const PostServiceScreen(),
-                    requiresAuth: true,
-                  ),
-                ),
-                _DrawerTile(
-                  icon: Icons.search_rounded,
-                  label: 'Find a Job',
-                  onTap: () => replaceAfterClose(const JobsScreen()),
-                ),
-                _DrawerTile(
-                  icon: Icons.dashboard_rounded,
-                  label: 'Dashboard',
-                  onTap: () => replaceAfterClose(
-                    const DashboardScreen(),
-                    requiresAuth: true,
-                  ),
-                ),
-                _DrawerTile(
-                  icon: Icons.chat_rounded,
-                  label: 'Messages',
-                  onTap: () => replaceAfterClose(
-                    const ConversationsScreen(),
-                    requiresAuth: true,
-                  ),
-                ),
-                if (loggedIn)
-                  _DrawerTile(
-                    icon: Icons.person_rounded,
-                    label: 'My Profile',
-                    onTap: () => replaceAfterClose(
-                      const ProfileScreen(),
-                      requiresAuth: true,
-                    ),
-                  ),
-                const Divider(height: 24),
-                _DrawerTile(
-                  icon: Icons.mail_outline_rounded,
-                  label: 'Contact Us',
-                  onTap: () => replaceAfterClose(const ContactScreen()),
-                ),
-                _DrawerTile(
-                  icon: Icons.settings_rounded,
-                  label: 'Settings',
-                  onTap: () => replaceAfterClose(
-                    const SettingsScreen(),
-                    requiresAuth: true,
-                  ),
-                ),
-                if (!loggedIn) ...[
-                  const Divider(height: 24),
-                  _DrawerTile(
-                    icon: Icons.login_rounded,
-                    label: 'Log in',
-                  onTap: () => replaceAfterClose(const LoginScreen()),
-                  ),
-                  _DrawerTile(
-                    icon: Icons.person_add_rounded,
-                    label: 'Join now',
-                  onTap: () => replaceAfterClose(const SignUpScreen()),
-                  ),
-                ],
                 if (loggedIn) ...[
-                  const Spacer(),
                   const Divider(height: 1),
                   _DrawerTile(
                     icon: Icons.logout_rounded,

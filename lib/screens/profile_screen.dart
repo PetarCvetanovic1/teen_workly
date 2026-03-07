@@ -327,9 +327,32 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     ],
                   ),
                 ],
-                if (state.hasVaultGoal) ...[
+                if (state.isVaultEligible && state.hasVaultGoal) ...[
                   const SizedBox(height: 12),
                   _vaultGoalCard(isDark, state),
+                ] else if (state.isVaultEligible) ...[
+                  const SizedBox(height: 12),
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: isDark
+                          ? AppColors.indigo600.withValues(alpha: 0.18)
+                          : AppColors.indigo600.withValues(alpha: 0.08),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: AppColors.indigo600.withValues(alpha: 0.28),
+                      ),
+                    ),
+                    child: Text(
+                      'Vault is available for you. Add a goal and target amount below.',
+                      style: GoogleFonts.plusJakartaSans(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                        color: isDark ? Colors.white : AppColors.slate900,
+                      ),
+                    ),
+                  ),
                 ],
                 const SizedBox(height: 24),
                 // AI Profile Builder button
@@ -437,7 +460,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 const SizedBox(height: 24),
                 // Profile info cards or edit form
                 if (_isEditing)
-                  _buildEditForm(isDark)
+                  _buildEditForm(isDark, state.isVaultEligible)
                 else
                   _buildProfileView(isDark, p),
                 const SizedBox(height: 48),
@@ -581,7 +604,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
-  Widget _buildEditForm(bool isDark) {
+  Widget _buildEditForm(bool isDark, bool showVaultFields) {
     return Container(
       padding: const EdgeInsets.all(24),
       decoration: BoxDecoration(
@@ -615,15 +638,18 @@ class _ProfileScreenState extends State<ProfileScreen> {
           _formField(_ageCtrl, '16', isDark,
               keyboardType: TextInputType.number),
           const SizedBox(height: 20),
-          _formLabel('VAULT GOAL'),
-          const SizedBox(height: 8),
-          _formField(_vaultGoalCtrl, 'e.g. Switzerland trip', isDark),
-          const SizedBox(height: 20),
-          _formLabel('TARGET AMOUNT (\$)'),
-          const SizedBox(height: 8),
-          _formField(_vaultTargetCtrl, 'e.g. 1200', isDark,
-              keyboardType: const TextInputType.numberWithOptions(decimal: true)),
-          const SizedBox(height: 20),
+          if (showVaultFields) ...[
+            _formLabel('VAULT GOAL'),
+            const SizedBox(height: 8),
+            _formField(_vaultGoalCtrl, 'e.g. Switzerland trip', isDark),
+            const SizedBox(height: 20),
+            _formLabel('TARGET AMOUNT (\$)'),
+            const SizedBox(height: 8),
+            _formField(_vaultTargetCtrl, 'e.g. 1200', isDark,
+                keyboardType:
+                    const TextInputType.numberWithOptions(decimal: true)),
+            const SizedBox(height: 20),
+          ],
           _formLabel('SKILLS'),
           const SizedBox(height: 8),
           Wrap(
@@ -738,16 +764,21 @@ class _ProfileScreenState extends State<ProfileScreen> {
       return;
     }
 
+    final parsedAge = int.tryParse(_ageCtrl.text.trim());
+    final vaultEligibleForAge = parsedAge == null || parsedAge < 20;
+
     context.read<AppState>().updateProfile(
           name: _nameCtrl.text.trim(),
           location: _locationCtrl.text.trim(),
           school: _schoolCtrl.text.trim(),
-          age: int.tryParse(_ageCtrl.text.trim()),
+          age: parsedAge,
           bio: _bioCtrl.text.trim(),
-          vaultGoal: _vaultGoalCtrl.text.trim(),
-          vaultTargetAmount: _vaultTargetCtrl.text.trim().isEmpty
-              ? 0
-              : double.tryParse(_vaultTargetCtrl.text.trim()),
+          vaultGoal: vaultEligibleForAge ? _vaultGoalCtrl.text.trim() : '',
+          vaultTargetAmount: vaultEligibleForAge
+              ? (_vaultTargetCtrl.text.trim().isEmpty
+                  ? 0
+                  : double.tryParse(_vaultTargetCtrl.text.trim()))
+              : 0,
           skills: Set.from(_skills),
           interests: Set.from(_interests),
         );

@@ -536,6 +536,16 @@ class HomeScreen extends StatelessWidget {
                       ),
                     ),
                   ),
+                const SizedBox(height: 20),
+                Text(
+                  '© 2026 TeenWorkly',
+                  textAlign: TextAlign.center,
+                  style: GoogleFonts.plusJakartaSans(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                    color: const Color(0xFF94A3B8),
+                  ),
+                ),
                 const SizedBox(height: 48),
               ],
                 ),
@@ -629,8 +639,7 @@ class _SignedInHomeHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final name = state.profile?.name ?? 'there';
-    final age = state.profile?.age;
-    final showVault = age == null || age <= 20;
+    final showVault = state.isVaultEligible;
     final goal = state.vaultGoal?.trim() ?? '';
     final hasGoal = state.hasVaultGoal && goal.isNotEmpty;
     final remaining = state.vaultRemainingAmount.toStringAsFixed(0);
@@ -822,8 +831,8 @@ class _HomeActivityPanel extends StatelessWidget {
                     _activitySection(
                       context: context,
                       title: 'Jobs you applied to',
-                      tint: const Color(0xFFDBEAFE),
-                      border: const Color(0xFF93C5FD),
+                      tint: const Color(0xFFFFEDD5),
+                      border: const Color(0xFFFDBA74),
                       isDark: isDark,
                       child: Column(
                         children: applied.take(2).map((job) {
@@ -835,7 +844,7 @@ class _HomeActivityPanel extends StatelessWidget {
                               title: job.title,
                               subtitle: job.displayLocation,
                               detailText: 'Your application is active',
-                              detailColor: const Color(0xFF2563EB),
+                              detailColor: const Color(0xFFEA580C),
                               statusText: _appliedStatusLabel(job),
                               statusColor: _appliedStatusColor(job),
                               onTap: () => Navigator.of(context).push(
@@ -853,8 +862,8 @@ class _HomeActivityPanel extends StatelessWidget {
                     _activitySection(
                       context: context,
                       title: 'Jobs you posted',
-                      tint: const Color(0xFFFFEDD5),
-                      border: const Color(0xFFFDBA74),
+                      tint: const Color(0xFFDCFCE7),
+                      border: const Color(0xFF86EFAC),
                       isDark: isDark,
                       child: Column(
                         children: posted.take(2).map((job) {
@@ -999,7 +1008,7 @@ class _HomeActivityPanel extends StatelessWidget {
   }
 
   Color _appliedStatusColor(Job job) {
-    if (job.status == JobStatus.open) return const Color(0xFF2563EB); // Applied
+    if (job.status == JobStatus.open) return const Color(0xFFEA580C); // Applied
     if (job.status == JobStatus.inProgress) return const Color(0xFF059669); // Accepted
     if (job.status == JobStatus.pendingCompletion) {
       return const Color(0xFFF59E0B); // Pending completion
@@ -1008,7 +1017,7 @@ class _HomeActivityPanel extends StatelessWidget {
   }
 
   Color _postedStatusColor(Job job) {
-    if (job.status == JobStatus.open) return const Color(0xFFEA580C); // Posted
+    if (job.status == JobStatus.open) return const Color(0xFF059669); // Open
     if (job.status == JobStatus.inProgress) return const Color(0xFF7C3AED); // In progress
     if (job.status == JobStatus.pendingCompletion) {
       return const Color(0xFFF59E0B); // Pending confirmation
@@ -1136,15 +1145,25 @@ class _HomeActivityPanel extends StatelessWidget {
     required bool isDark,
     required Widget child,
   }) {
+    final surface = isDark ? const Color(0xFF0F172A) : Colors.white;
+    final tintColor = isDark
+        ? border.withValues(alpha: 0.10)
+        : tint.withValues(alpha: 0.22);
     return Container(
       width: double.infinity,
       margin: const EdgeInsets.only(bottom: 10),
       padding: const EdgeInsets.all(10),
       decoration: BoxDecoration(
-        color: isDark ? const Color(0xFF0F172A) : tint.withValues(alpha: 0.45),
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [tintColor, surface],
+        ),
         borderRadius: BorderRadius.circular(12),
         border: Border.all(
-          color: isDark ? const Color(0xFF334155) : border,
+          color: isDark
+              ? border.withValues(alpha: 0.28)
+              : border.withValues(alpha: 0.45),
         ),
       ),
       child: Column(
@@ -1177,19 +1196,22 @@ class _HomeActivityPanel extends StatelessWidget {
     required VoidCallback onTap,
     required bool isDark,
   }) {
+    final surface = isDark ? const Color(0xFF1E293B) : Colors.white;
+    final tint = statusColor.withValues(alpha: isDark ? 0.10 : 0.05);
+    final edge = statusColor.withValues(alpha: isDark ? 0.22 : 0.16);
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(10),
       child: Container(
         padding: const EdgeInsets.all(10),
         decoration: BoxDecoration(
-          color: isDark
-              ? const Color(0xFF1E293B)
-              : Colors.white.withValues(alpha: 0.85),
-          borderRadius: BorderRadius.circular(10),
-          border: Border.all(
-            color: isDark ? const Color(0xFF334155) : AppColors.slate200,
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [tint, surface],
           ),
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: edge),
         ),
         child: Row(
           children: [
@@ -1442,64 +1464,108 @@ class _LatestJobCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final accent = _statusColor();
+    final surface = isDark ? const Color(0xFF1E293B) : Colors.white;
+    final tint = accent.withValues(alpha: isDark ? 0.11 : 0.06);
+    final edge = accent.withValues(alpha: isDark ? 0.22 : 0.18);
     return Material(
-      color: isDark ? const Color(0xFF1E293B) : Colors.white,
+      color: Colors.transparent,
       borderRadius: BorderRadius.circular(18),
       elevation: isDark ? 0 : 1,
       shadowColor: Colors.black.withValues(alpha: 0.06),
-      child: InkWell(
-        onTap: () => Navigator.of(context).push(
-          SmoothPageRoute(builder: (_) => JobDetailScreen(job: job)),
+      child: Ink(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [tint, surface],
+          ),
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(color: edge),
         ),
-        borderRadius: BorderRadius.circular(18),
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Row(
-            children: [
-              Container(
-                width: 44,
-                height: 44,
-                decoration: BoxDecoration(
-                  color: AppColors.indigo600.withValues(alpha: 0.12),
-                  borderRadius: BorderRadius.circular(14),
+        child: InkWell(
+          onTap: () => Navigator.of(context).push(
+            SmoothPageRoute(builder: (_) => JobDetailScreen(job: job)),
+          ),
+          borderRadius: BorderRadius.circular(18),
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Row(
+              children: [
+                Container(
+                  width: 44,
+                  height: 44,
+                  decoration: BoxDecoration(
+                    color: accent.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  child: Icon(Icons.work_outline_rounded,
+                      color: accent, size: 22),
                 ),
-                child: const Icon(Icons.work_outline_rounded,
-                    color: AppColors.indigo600, size: 22),
-              ),
-              const SizedBox(width: 14),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      job.title,
-                      style: GoogleFonts.plusJakartaSans(
-                        fontSize: 15,
-                        fontWeight: FontWeight.w700,
-                        color: isDark ? Colors.white : AppColors.slate900,
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        job.title,
+                        style: GoogleFonts.plusJakartaSans(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w700,
+                          color: isDark ? Colors.white : AppColors.slate900,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        '${job.displayLocation} · ${job.type}',
+                        style: GoogleFonts.plusJakartaSans(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w500,
+                          color: const Color(0xFF94A3B8),
+                        ),
+                      ),
+                    const SizedBox(height: 4),
+                    Container(
+                      padding:
+                          const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: accent.withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                      child: Text(
+                        _statusLabel(),
+                        style: GoogleFonts.plusJakartaSans(
+                          fontSize: 10,
+                          fontWeight: FontWeight.w700,
+                          color: accent,
+                        ),
                       ),
                     ),
-                    const SizedBox(height: 2),
-                    Text(
-                      '${job.displayLocation} · ${job.type}',
-                      style: GoogleFonts.plusJakartaSans(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w500,
-                        color: const Color(0xFF94A3B8),
-                      ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
-              ),
-              Icon(
-                Icons.chevron_right_rounded,
-                color: isDark ? const Color(0xFF334155) : AppColors.slate200,
-              ),
-            ],
+                Icon(
+                  Icons.chevron_right_rounded,
+                  color: isDark ? const Color(0xFF334155) : AppColors.slate200,
+                ),
+              ],
+            ),
           ),
         ),
       ),
     );
+  }
+
+  String _statusLabel() {
+    if (job.status == JobStatus.inProgress) return 'In progress';
+    if (job.status == JobStatus.pendingCompletion) return 'Pending completion';
+    return 'Open';
+  }
+
+  Color _statusColor() {
+    if (job.status == JobStatus.inProgress) return const Color(0xFF7C3AED);
+    if (job.status == JobStatus.pendingCompletion) return const Color(0xFFF59E0B);
+    return const Color(0xFF059669);
   }
 }
 
@@ -1510,76 +1576,91 @@ class _LatestServiceCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    const accent = Color(0xFF7C3AED);
+    final surface = isDark ? const Color(0xFF1E293B) : Colors.white;
+    final tint = accent.withValues(alpha: isDark ? 0.11 : 0.06);
+    final edge = accent.withValues(alpha: isDark ? 0.22 : 0.18);
     return Material(
-      color: isDark ? const Color(0xFF1E293B) : Colors.white,
+      color: Colors.transparent,
       borderRadius: BorderRadius.circular(18),
       elevation: isDark ? 0 : 1,
       shadowColor: Colors.black.withValues(alpha: 0.06),
-      child: InkWell(
-        onTap: () => Navigator.of(context).push(
-          SmoothPageRoute(
-              builder: (_) => ServiceDetailScreen(service: service)),
+      child: Ink(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [tint, surface],
+          ),
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(color: edge),
         ),
-        borderRadius: BorderRadius.circular(18),
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Row(
-            children: [
-              Container(
-                width: 44,
-                height: 44,
-                decoration: BoxDecoration(
-                  gradient: const LinearGradient(
-                    colors: [Color(0xFF7C3AED), AppColors.indigo600],
-                  ),
-                  borderRadius: BorderRadius.circular(14),
-                ),
-                child: Center(
-                  child: Text(
-                    (service.providerName as String)
-                        .split(' ')
-                        .map((w) => w.isEmpty ? '' : w[0])
-                        .take(2)
-                        .join()
-                        .toUpperCase(),
-                    style: GoogleFonts.plusJakartaSans(
-                      fontSize: 15,
-                      fontWeight: FontWeight.w800,
-                      color: Colors.white,
+        child: InkWell(
+          onTap: () => Navigator.of(context).push(
+            SmoothPageRoute(
+                builder: (_) => ServiceDetailScreen(service: service)),
+          ),
+          borderRadius: BorderRadius.circular(18),
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Row(
+              children: [
+                Container(
+                  width: 44,
+                  height: 44,
+                  decoration: BoxDecoration(
+                    gradient: const LinearGradient(
+                      colors: [Color(0xFF7C3AED), AppColors.indigo600],
                     ),
+                    borderRadius: BorderRadius.circular(14),
                   ),
-                ),
-              ),
-              const SizedBox(width: 14),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      service.providerName,
+                  child: Center(
+                    child: Text(
+                      (service.providerName as String)
+                          .split(' ')
+                          .map((w) => w.isEmpty ? '' : w[0])
+                          .take(2)
+                          .join()
+                          .toUpperCase(),
                       style: GoogleFonts.plusJakartaSans(
                         fontSize: 15,
-                        fontWeight: FontWeight.w700,
-                        color: isDark ? Colors.white : AppColors.slate900,
+                        fontWeight: FontWeight.w800,
+                        color: Colors.white,
                       ),
                     ),
-                    const SizedBox(height: 2),
-                    Text(
-                      (service.skills as Set<String>).join(' · '),
-                      style: GoogleFonts.plusJakartaSans(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w600,
-                        color: const Color(0xFF7C3AED),
-                      ),
-                    ),
-                  ],
+                  ),
                 ),
-              ),
-              Icon(
-                Icons.chevron_right_rounded,
-                color: isDark ? const Color(0xFF334155) : AppColors.slate200,
-              ),
-            ],
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        service.providerName,
+                        style: GoogleFonts.plusJakartaSans(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w700,
+                          color: isDark ? Colors.white : AppColors.slate900,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        (service.skills as Set<String>).join(' · '),
+                        style: GoogleFonts.plusJakartaSans(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          color: const Color(0xFF7C3AED),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Icon(
+                  Icons.chevron_right_rounded,
+                  color: isDark ? const Color(0xFF334155) : AppColors.slate200,
+                ),
+              ],
+            ),
           ),
         ),
       ),

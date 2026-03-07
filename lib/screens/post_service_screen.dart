@@ -12,6 +12,8 @@ import '../widgets/tw_app_bar.dart';
 import '../widgets/content_wrap.dart';
 import 'home_screen.dart';
 import 'login_screen.dart';
+import 'contact_screen.dart';
+import 'dashboard_screen.dart';
 
 const _skills = [
   'Lawn Care',
@@ -850,33 +852,7 @@ class _PostServiceScreenState extends State<PostServiceScreen> {
 
     final appState = context.read<AppState>();
     if (appState.amReportSuspended) {
-      final left = appState.reportSuspensionTimeLeft(appState.currentUserId);
-      final days = (left.inHours / 24).ceil();
-      if (!mounted) return;
-      showDialog(
-        context: context,
-        builder: (ctx) => AlertDialog(
-          shape:
-              RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-          title: const Row(
-            children: [
-              Icon(Icons.block_rounded, color: Color(0xFFDC2626)),
-              SizedBox(width: 8),
-              Text('Account Suspended'),
-            ],
-          ),
-          content: Text(
-            'Your account has been suspended due to multiple reports. '
-            'Suspension ends in ${days > 0 ? "$days day${days == 1 ? "" : "s"}" : "a few hours"}.',
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: const Text('OK'),
-            ),
-          ],
-        ),
-      );
+      _showReportBanAppealDialog(appState);
       return;
     }
 
@@ -963,7 +939,10 @@ class _PostServiceScreenState extends State<PostServiceScreen> {
             RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       ),
     );
-    Navigator.of(context).pop();
+    Navigator.of(context).pushAndRemoveUntil(
+      SmoothPageRoute(builder: (_) => const DashboardScreen()),
+      (_) => false,
+    );
   }
 
   void _showModerationWarning(String reason) {
@@ -1023,6 +1002,66 @@ class _PostServiceScreenState extends State<PostServiceScreen> {
                 color: Colors.white,
               ),
             ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showReportBanAppealDialog(AppState state) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final isPermanent = state.isUserReportPermanentlyBanned(state.currentUserId);
+    final left = state.reportSuspensionTimeLeft(state.currentUserId);
+    final days = (left.inHours / 24).ceil();
+    final statusText = isPermanent
+        ? 'Your account is currently suspended from posting due to report limits (20 all-time).'
+        : 'Your account is currently suspended from posting due to report limits. '
+            'Time left: ${days > 0 ? "$days day${days == 1 ? "" : "s"}" : "a few hours"}.';
+
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        backgroundColor: isDark ? const Color(0xFF1E293B) : Colors.white,
+        title: const Row(
+          children: [
+            Icon(Icons.gavel_rounded, color: Color(0xFFDC2626)),
+            SizedBox(width: 8),
+            Expanded(child: Text('Posting Suspended')),
+          ],
+        ),
+        content: Text(
+          '$statusText\n\nIf you think this ban is unfair, contact us and explain what happened and where we should review.',
+          style: GoogleFonts.plusJakartaSans(
+            fontSize: 13,
+            fontWeight: FontWeight.w600,
+            color: const Color(0xFF94A3B8),
+            height: 1.45,
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Close'),
+          ),
+          FilledButton.icon(
+            onPressed: () {
+              Navigator.pop(ctx);
+              Navigator.of(context).push(
+                SmoothPageRoute(
+                  builder: (_) => const ContactScreen.prefilled(
+                    initialSubject: 'Ban appeal - report suspension',
+                    initialMessage:
+                        'I think my report ban may be unfair.\n\nWhat happened:\n- \n\nWhere to review:\n- (job/service/post/conversation ID)\n\nAnything else that may help:\n- ',
+                  ),
+                ),
+              );
+            },
+            icon: const Icon(Icons.mail_outline_rounded, size: 16),
+            style: FilledButton.styleFrom(
+              backgroundColor: AppColors.indigo600,
+            ),
+            label: const Text('Contact us'),
           ),
         ],
       ),

@@ -7,6 +7,7 @@ import 'package:google_sign_in/google_sign_in.dart';
 import '../models/models.dart';
 import '../services/firestore_service.dart';
 import '../services/notification_service.dart';
+import '../services/moderation.dart';
 
 class _JobSnapshot {
   final int applicantCount;
@@ -172,6 +173,7 @@ class AppState extends ChangeNotifier {
           _blockedUserIds.add(r.reportedUserId!);
         }
       }
+      _evaluateReportSuspension(currentUserId);
       notifyListeners();
     });
     _reviewsSub = FirestoreService.reviewsStream().listen((data) {
@@ -971,7 +973,13 @@ class AppState extends ChangeNotifier {
 
   String? get vaultGoal => _profile?.vaultGoal;
   double? get vaultTargetAmount => _profile?.vaultTargetAmount;
+  bool get isVaultEligible {
+    final age = _profile?.age;
+    if (age == null) return true;
+    return age < 20;
+  }
   bool get hasVaultGoal =>
+      isVaultEligible &&
       (vaultGoal ?? '').trim().isNotEmpty &&
       (vaultTargetAmount ?? 0) > 0;
   double get vaultSavedAmount => moneyEarned;
@@ -1325,19 +1333,32 @@ class AppState extends ChangeNotifier {
   // ── Report / Block ──
 
   final Map<String, DateTime> _reportSuspensions = {};
-  static const _reportWindow = Duration(days: 30);
+  static final DateTime _maxBanDate = DateTime(9999, 12, 31);
+  static const _reportWindow = Duration(days: 7);
 
   bool hasAlreadyReported(String targetId) {
     return _reports.any(
         (r) => r.targetId == targetId && r.reporterId == currentUserId);
   }
 
+  int reportCountForUser(
+    String userId, {
+    Duration? window,
+  }) {
+    final cutoff = window == null ? null : DateTime.now().subtract(window);
+    return _reports.where((r) {
+      if (r.reportedUserId != userId) return false;
+      if (cutoff == null) return true;
+      return r.createdAt.isAfter(cutoff);
+    }).length;
+  }
+
   int uniqueReportCountForUser(String userId) {
     final cutoff = DateTime.now().subtract(_reportWindow);
-    final recent = _reports.where((r) =>
-        r.reportedUserId == userId && r.createdAt.isAfter(cutoff));
-    final uniqueReporters = recent.map((r) => r.reporterId).toSet();
-    return uniqueReporters.length;
+    final recent = _reports.where(
+      (r) => r.reportedUserId == userId && r.createdAt.isAfter(cutoff),
+    );
+    return recent.map((r) => r.reporterId).toSet().length;
   }
 
   bool isUserReportSuspended(String userId) {
@@ -1347,9 +1368,17 @@ class AppState extends ChangeNotifier {
 
   DateTime? reportSuspensionEnd(String userId) => _reportSuspensions[userId];
 
+  bool isUserReportPermanentlyBanned(String userId) {
+    final end = _reportSuspensions[userId];
+    return end != null && end.isAtSameMomentAs(_maxBanDate);
+  }
+
   Duration reportSuspensionTimeLeft(String userId) {
     final expiry = _reportSuspensions[userId];
     if (expiry == null || DateTime.now().isAfter(expiry)) return Duration.zero;
+    if (expiry.isAtSameMomentAs(_maxBanDate)) {
+      return const Duration(days: 365000);
+    }
     return expiry.difference(DateTime.now());
   }
 
@@ -1383,17 +1412,28 @@ class AppState extends ChangeNotifier {
   }
 
   void _evaluateReportSuspension(String userId) {
-    final count = uniqueReportCountForUser(userId);
+    final dayCount = reportCountForUser(
+      userId,
+      window: const Duration(days: 1),
+    );
+    final weekCount = reportCountForUser(
+      userId,
+      window: const Duration(days: 7),
+    );
+    final allTimeCount = reportCountForUser(userId);
     Duration? duration;
-    if (count >= 20) {
-      duration = const Duration(days: 7);
-    } else if (count >= 10) {
+    if (allTimeCount >= 20) {
+      _reportSuspensions[userId] = _maxBanDate;
+      return;
+    } else if (weekCount >= 10) {
       duration = const Duration(days: 3);
-    } else if (count >= 5) {
+    } else if (dayCount >= 3) {
       duration = const Duration(days: 1);
     }
     if (duration != null) {
       _reportSuspensions[userId] = DateTime.now().add(duration);
+    } else {
+      _reportSuspensions.remove(userId);
     }
   }
 
@@ -1511,6 +1551,10 @@ class AppState extends ChangeNotifier {
       throw Exception('Messaging is restricted while your account is under review.');
     }
     final trimmed = text.trim();
+    final moderation = await ModerationService.moderateMessage(trimmed);
+    if (!moderation.approved) {
+      throw Exception(moderation.reason ?? 'Message blocked by safety checks.');
+    }
     if (_phoneRe.hasMatch(trimmed) ||
         _emailRe.hasMatch(trimmed) ||
         _socialRe.hasMatch(trimmed)) {

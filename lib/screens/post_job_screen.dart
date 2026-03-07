@@ -14,6 +14,7 @@ import '../services/moderation.dart';
 import 'home_screen.dart';
 import 'jobs_screen.dart';
 import 'login_screen.dart';
+import 'contact_screen.dart';
 
 const _jobTypes = ['Part-time', 'Seasonal', 'One-time'];
 
@@ -629,12 +630,7 @@ class _PostJobScreenState extends State<PostJobScreen> {
       } catch (_) {}
 
       if (state.amReportSuspended) {
-        final left = state.reportSuspensionTimeLeft(state.currentUserId);
-        final days = (left.inHours / 24).ceil();
-        _showModerationWarning(
-          'Your account has been suspended due to multiple reports from other users. '
-          'Suspension ends in ${days > 0 ? "$days day${days == 1 ? "" : "s"}" : "a few hours"}.',
-        );
+        _showReportBanAppealDialog(state);
         return;
       }
 
@@ -805,6 +801,66 @@ class _PostJobScreenState extends State<PostJobScreen> {
                 color: Colors.white,
               ),
             ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showReportBanAppealDialog(AppState state) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final isPermanent = state.isUserReportPermanentlyBanned(state.currentUserId);
+    final left = state.reportSuspensionTimeLeft(state.currentUserId);
+    final days = (left.inHours / 24).ceil();
+    final statusText = isPermanent
+        ? 'Your account is currently suspended from posting due to report limits (20 all-time).'
+        : 'Your account is currently suspended from posting due to report limits. '
+            'Time left: ${days > 0 ? "$days day${days == 1 ? "" : "s"}" : "a few hours"}.';
+
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        backgroundColor: isDark ? const Color(0xFF1E293B) : Colors.white,
+        title: const Row(
+          children: [
+            Icon(Icons.gavel_rounded, color: Color(0xFFDC2626)),
+            SizedBox(width: 8),
+            Expanded(child: Text('Posting Suspended')),
+          ],
+        ),
+        content: Text(
+          '$statusText\n\nIf you think this ban is unfair, contact us and explain what happened and where we should review.',
+          style: GoogleFonts.plusJakartaSans(
+            fontSize: 13,
+            fontWeight: FontWeight.w600,
+            color: const Color(0xFF94A3B8),
+            height: 1.45,
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Close'),
+          ),
+          FilledButton.icon(
+            onPressed: () {
+              Navigator.pop(ctx);
+              Navigator.of(context).push(
+                SmoothPageRoute(
+                  builder: (_) => const ContactScreen.prefilled(
+                    initialSubject: 'Ban appeal - report suspension',
+                    initialMessage:
+                        'I think my report ban may be unfair.\n\nWhat happened:\n- \n\nWhere to review:\n- (job/service/post/conversation ID)\n\nAnything else that may help:\n- ',
+                  ),
+                ),
+              );
+            },
+            icon: const Icon(Icons.mail_outline_rounded, size: 16),
+            style: FilledButton.styleFrom(
+              backgroundColor: AppColors.indigo600,
+            ),
+            label: const Text('Contact us'),
           ),
         ],
       ),

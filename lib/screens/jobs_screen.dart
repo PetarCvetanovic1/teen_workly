@@ -1594,172 +1594,36 @@ class _ServiceListTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    const accent = Color(0xFF7C3AED);
+    final surface = isDark ? const Color(0xFF1E293B) : Colors.white;
+    final tint = accent.withValues(alpha: isDark ? 0.11 : 0.06);
+    final edge = accent.withValues(alpha: isDark ? 0.22 : 0.18);
     return Padding(
       padding: const EdgeInsets.only(bottom: 10),
       child: Material(
-        color: isDark ? const Color(0xFF1E293B) : Colors.white,
+        color: Colors.transparent,
         borderRadius: BorderRadius.circular(18),
         elevation: isDark ? 0 : 1,
         shadowColor: Colors.black.withValues(alpha: 0.06),
-        child: InkWell(
-          onTap: () => Navigator.of(context).push(
-            SmoothPageRoute(
-              builder: (_) => ServiceDetailScreen(service: service),
+        child: Ink(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [tint, surface],
             ),
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(color: edge),
           ),
-          onLongPress: service.providerId == currentUserId
-              ? null
-              : () => showSafetyActionsSheet(
-                    context,
-                    targetType: 'Service',
-                    targetId: service.id,
-                    userId: service.providerId,
-                    userName: service.providerName,
-                    onHide: () => context.read<AppState>().hideService(service.id),
-                  ),
-          onSecondaryTapUp: service.providerId == currentUserId
-              ? null
-              : (_) => showSafetyActionsSheet(
-                    context,
-                    targetType: 'Service',
-                    targetId: service.id,
-                    userId: service.providerId,
-                    userName: service.providerName,
-                    onHide: () => context.read<AppState>().hideService(service.id),
-                  ),
-          borderRadius: BorderRadius.circular(18),
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Row(
-              children: [
-                Container(
-                  width: 44,
-                  height: 44,
-                  decoration: BoxDecoration(
-                    gradient: const LinearGradient(
-                      colors: [Color(0xFF7C3AED), AppColors.indigo600],
-                    ),
-                    borderRadius: BorderRadius.circular(14),
-                  ),
-                  child: Center(
-                    child: Text(
-                      service.providerName
-                          .split(' ')
-                          .map((w) => w.isEmpty ? '' : w[0])
-                          .take(2)
-                          .join()
-                          .toUpperCase(),
-                      style: GoogleFonts.plusJakartaSans(
-                        fontSize: 15,
-                        fontWeight: FontWeight.w800,
-                        color: Colors.white,
-                      ),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 14),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        service.providerName,
-                        style: GoogleFonts.plusJakartaSans(
-                          fontSize: 15,
-                          fontWeight: FontWeight.w700,
-                          color: isDark ? Colors.white : AppColors.slate900,
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        service.skills.join(' · '),
-                        style: GoogleFonts.plusJakartaSans(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600,
-                          color: const Color(0xFF7C3AED),
-                        ),
-                      ),
-                      const SizedBox(height: 2),
-                      Wrap(
-                        spacing: 8,
-                        runSpacing: 6,
-                        crossAxisAlignment: WrapCrossAlignment.center,
-                        children: [
-                          Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              const Icon(Icons.location_on_outlined,
-                                  size: 12, color: Color(0xFF94A3B8)),
-                              const SizedBox(width: 3),
-                              ConstrainedBox(
-                                constraints: BoxConstraints(
-                                  maxWidth:
-                                      MediaQuery.of(context).size.width * 0.45,
-                                ),
-                                child: Text(
-                                  service.displayLocation,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: GoogleFonts.plusJakartaSans(
-                                    fontSize: 11,
-                                    fontWeight: FontWeight.w500,
-                                    color: const Color(0xFF94A3B8),
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                          if (service.priceRangeLabel.isNotEmpty)
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 8, vertical: 2),
-                              decoration: BoxDecoration(
-                                color: const Color(0xFF059669)
-                                    .withValues(alpha: 0.1),
-                                borderRadius: BorderRadius.circular(6),
-                              ),
-                              child: Text(
-                                service.priceRangeLabel,
-                                style: GoogleFonts.plusJakartaSans(
-                                  fontSize: 10,
-                                  fontWeight: FontWeight.w700,
-                                  color: const Color(0xFF059669),
-                                ),
-                              ),
-                            ),
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 8, vertical: 2),
-                            decoration: BoxDecoration(
-                              color:
-                                  const Color(0xFF2563EB).withValues(alpha: 0.1),
-                              borderRadius: BorderRadius.circular(6),
-                            ),
-                            child: Text(
-                              '${service.workRadiusKm.toStringAsFixed(0)} km radius',
-                              style: GoogleFonts.plusJakartaSans(
-                                fontSize: 10,
-                                fontWeight: FontWeight.w700,
-                                color: const Color(0xFF2563EB),
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-                if (service.providerId == currentUserId)
-                  Icon(
-                    Icons.chevron_right_rounded,
-                    color:
-                        isDark ? const Color(0xFF334155) : AppColors.slate200,
-                  )
-                else
-                  IconButton(
-                    tooltip: 'Safety actions',
-                    icon: const Icon(Icons.shield_outlined,
-                        color: Color(0xFFDC2626)),
-                    onPressed: () => showSafetyActionsSheet(
+          child: InkWell(
+            onTap: () => Navigator.of(context).push(
+              SmoothPageRoute(
+                builder: (_) => ServiceDetailScreen(service: service),
+              ),
+            ),
+            onLongPress: service.providerId == currentUserId
+                ? null
+                : () => showSafetyActionsSheet(
                       context,
                       targetType: 'Service',
                       targetId: service.id,
@@ -1767,8 +1631,159 @@ class _ServiceListTile extends StatelessWidget {
                       userName: service.providerName,
                       onHide: () => context.read<AppState>().hideService(service.id),
                     ),
+            onSecondaryTapUp: service.providerId == currentUserId
+                ? null
+                : (_) => showSafetyActionsSheet(
+                      context,
+                      targetType: 'Service',
+                      targetId: service.id,
+                      userId: service.providerId,
+                      userName: service.providerName,
+                      onHide: () => context.read<AppState>().hideService(service.id),
+                    ),
+            borderRadius: BorderRadius.circular(18),
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Row(
+                children: [
+                  Container(
+                    width: 44,
+                    height: 44,
+                    decoration: BoxDecoration(
+                      gradient: const LinearGradient(
+                        colors: [Color(0xFF7C3AED), AppColors.indigo600],
+                      ),
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                    child: Center(
+                      child: Text(
+                        service.providerName
+                            .split(' ')
+                            .map((w) => w.isEmpty ? '' : w[0])
+                            .take(2)
+                            .join()
+                            .toUpperCase(),
+                        style: GoogleFonts.plusJakartaSans(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w800,
+                          color: Colors.white,
+                        ),
+                      ),
+                    ),
                   ),
-              ],
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          service.providerName,
+                          style: GoogleFonts.plusJakartaSans(
+                            fontSize: 15,
+                            fontWeight: FontWeight.w700,
+                            color: isDark ? Colors.white : AppColors.slate900,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          service.skills.join(' · '),
+                          style: GoogleFonts.plusJakartaSans(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                            color: const Color(0xFF7C3AED),
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 6,
+                          crossAxisAlignment: WrapCrossAlignment.center,
+                          children: [
+                            Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const Icon(Icons.location_on_outlined,
+                                    size: 12, color: Color(0xFF94A3B8)),
+                                const SizedBox(width: 3),
+                                ConstrainedBox(
+                                  constraints: BoxConstraints(
+                                    maxWidth:
+                                        MediaQuery.of(context).size.width * 0.45,
+                                  ),
+                                  child: Text(
+                                    service.displayLocation,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: GoogleFonts.plusJakartaSans(
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w500,
+                                      color: const Color(0xFF94A3B8),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            if (service.priceRangeLabel.isNotEmpty)
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 8, vertical: 2),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFF059669)
+                                      .withValues(alpha: 0.1),
+                                  borderRadius: BorderRadius.circular(6),
+                                ),
+                                child: Text(
+                                  service.priceRangeLabel,
+                                  style: GoogleFonts.plusJakartaSans(
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.w700,
+                                    color: const Color(0xFF059669),
+                                  ),
+                                ),
+                              ),
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 8, vertical: 2),
+                              decoration: BoxDecoration(
+                                color:
+                                    const Color(0xFF2563EB).withValues(alpha: 0.1),
+                                borderRadius: BorderRadius.circular(6),
+                              ),
+                              child: Text(
+                                '${service.workRadiusKm.toStringAsFixed(0)} km radius',
+                                style: GoogleFonts.plusJakartaSans(
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w700,
+                                  color: const Color(0xFF2563EB),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                  if (service.providerId == currentUserId)
+                    Icon(
+                      Icons.chevron_right_rounded,
+                      color:
+                          isDark ? const Color(0xFF334155) : AppColors.slate200,
+                    )
+                  else
+                    IconButton(
+                      tooltip: 'Safety actions',
+                      icon: const Icon(Icons.shield_outlined,
+                          color: Color(0xFFDC2626)),
+                      onPressed: () => showSafetyActionsSheet(
+                        context,
+                        targetType: 'Service',
+                        targetId: service.id,
+                        userId: service.providerId,
+                        userName: service.providerName,
+                        onHide: () => context.read<AppState>().hideService(service.id),
+                      ),
+                    ),
+                ],
+              ),
             ),
           ),
         ),
@@ -1799,170 +1814,42 @@ class _JobListTile extends StatelessWidget {
   Color _statusColor() {
     if (job.status == JobStatus.inProgress) return const Color(0xFF7C3AED);
     if (job.status == JobStatus.pendingCompletion) return const Color(0xFFF59E0B);
-    if (job.applicantIds.contains(currentUserId)) return const Color(0xFF2563EB);
+    if (job.applicantIds.contains(currentUserId)) return const Color(0xFFEA580C);
     return const Color(0xFF059669);
   }
 
   @override
   Widget build(BuildContext context) {
+    final accent = _statusColor();
+    final surface = isDark ? const Color(0xFF1E293B) : Colors.white;
+    final tint = accent.withValues(alpha: isDark ? 0.11 : 0.06);
+    final edge = accent.withValues(alpha: isDark ? 0.22 : 0.18);
     return Padding(
       padding: const EdgeInsets.only(bottom: 10),
       child: Material(
-        color: isDark ? const Color(0xFF1E293B) : Colors.white,
+        color: Colors.transparent,
         borderRadius: BorderRadius.circular(18),
         elevation: isDark ? 0 : 1,
         shadowColor: Colors.black.withValues(alpha: 0.06),
-        child: InkWell(
-          onTap: () => Navigator.of(context).push(
-            SmoothPageRoute(
-              builder: (_) => JobDetailScreen(job: job),
+        child: Ink(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [tint, surface],
             ),
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(color: edge),
           ),
-          onLongPress: job.posterId == currentUserId
-              ? null
-              : () => showSafetyActionsSheet(
-                    context,
-                    targetType: 'Job',
-                    targetId: job.id,
-                    userId: job.posterId,
-                    userName: job.posterName,
-                    onHide: () => context.read<AppState>().hideJob(job.id),
-                  ),
-          onSecondaryTapUp: job.posterId == currentUserId
-              ? null
-              : (_) => showSafetyActionsSheet(
-                    context,
-                    targetType: 'Job',
-                    targetId: job.id,
-                    userId: job.posterId,
-                    userName: job.posterName,
-                    onHide: () => context.read<AppState>().hideJob(job.id),
-                  ),
-          borderRadius: BorderRadius.circular(18),
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Row(
-              children: [
-                Container(
-                  width: 44,
-                  height: 44,
-                  decoration: BoxDecoration(
-                    color: AppColors.indigo600.withValues(alpha: 0.12),
-                    borderRadius: BorderRadius.circular(14),
-                  ),
-                  child: const Icon(Icons.work_outline_rounded,
-                      color: AppColors.indigo600, size: 22),
-                ),
-                const SizedBox(width: 14),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        job.title,
-                        style: GoogleFonts.plusJakartaSans(
-                          fontSize: 15,
-                          fontWeight: FontWeight.w700,
-                          color: isDark ? Colors.white : AppColors.slate900,
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      Wrap(
-                        spacing: 8,
-                        runSpacing: 6,
-                        crossAxisAlignment: WrapCrossAlignment.center,
-                        children: [
-                          Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              const Icon(Icons.location_on_outlined,
-                                  size: 12, color: Color(0xFF94A3B8)),
-                              const SizedBox(width: 3),
-                              ConstrainedBox(
-                                constraints: BoxConstraints(
-                                  maxWidth:
-                                      MediaQuery.of(context).size.width * 0.45,
-                                ),
-                                child: Text(
-                                  job.displayLocation,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: GoogleFonts.plusJakartaSans(
-                                    fontSize: 11,
-                                    fontWeight: FontWeight.w500,
-                                    color: const Color(0xFF94A3B8),
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 8, vertical: 2),
-                            decoration: BoxDecoration(
-                              color:
-                                  AppColors.indigo600.withValues(alpha: 0.1),
-                              borderRadius: BorderRadius.circular(6),
-                            ),
-                            child: Text(
-                              job.type,
-                              style: GoogleFonts.plusJakartaSans(
-                                fontSize: 10,
-                                fontWeight: FontWeight.w700,
-                                color: AppColors.indigo600,
-                              ),
-                            ),
-                          ),
-                          if (job.payment > 0)
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 8, vertical: 2),
-                              decoration: BoxDecoration(
-                                color: const Color(0xFF059669)
-                                    .withValues(alpha: 0.1),
-                                borderRadius: BorderRadius.circular(6),
-                              ),
-                              child: Text(
-                                '\$${job.payment.toStringAsFixed(0)}',
-                                style: GoogleFonts.plusJakartaSans(
-                                  fontSize: 10,
-                                  fontWeight: FontWeight.w700,
-                                  color: const Color(0xFF059669),
-                                ),
-                              ),
-                            ),
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 8, vertical: 2),
-                            decoration: BoxDecoration(
-                              color: _statusColor().withValues(alpha: 0.12),
-                              borderRadius: BorderRadius.circular(6),
-                            ),
-                            child: Text(
-                              _statusLabel(),
-                              style: GoogleFonts.plusJakartaSans(
-                                fontSize: 10,
-                                fontWeight: FontWeight.w700,
-                                color: _statusColor(),
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-                if (job.posterId == currentUserId)
-                  Icon(
-                    Icons.chevron_right_rounded,
-                    color:
-                        isDark ? const Color(0xFF334155) : AppColors.slate200,
-                  )
-                else
-                  IconButton(
-                    tooltip: 'Safety actions',
-                    icon: const Icon(Icons.shield_outlined,
-                        color: Color(0xFFDC2626)),
-                    onPressed: () => showSafetyActionsSheet(
+          child: InkWell(
+            onTap: () => Navigator.of(context).push(
+              SmoothPageRoute(
+                builder: (_) => JobDetailScreen(job: job),
+              ),
+            ),
+            onLongPress: job.posterId == currentUserId
+                ? null
+                : () => showSafetyActionsSheet(
                       context,
                       targetType: 'Job',
                       targetId: job.id,
@@ -1970,8 +1857,151 @@ class _JobListTile extends StatelessWidget {
                       userName: job.posterName,
                       onHide: () => context.read<AppState>().hideJob(job.id),
                     ),
+            onSecondaryTapUp: job.posterId == currentUserId
+                ? null
+                : (_) => showSafetyActionsSheet(
+                      context,
+                      targetType: 'Job',
+                      targetId: job.id,
+                      userId: job.posterId,
+                      userName: job.posterName,
+                      onHide: () => context.read<AppState>().hideJob(job.id),
+                    ),
+            borderRadius: BorderRadius.circular(18),
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Row(
+                children: [
+                  Container(
+                    width: 44,
+                    height: 44,
+                    decoration: BoxDecoration(
+                      color: AppColors.indigo600.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                    child: const Icon(Icons.work_outline_rounded,
+                        color: AppColors.indigo600, size: 22),
                   ),
-              ],
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          job.title,
+                          style: GoogleFonts.plusJakartaSans(
+                            fontSize: 15,
+                            fontWeight: FontWeight.w700,
+                            color: isDark ? Colors.white : AppColors.slate900,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 6,
+                          crossAxisAlignment: WrapCrossAlignment.center,
+                          children: [
+                            Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const Icon(Icons.location_on_outlined,
+                                    size: 12, color: Color(0xFF94A3B8)),
+                                const SizedBox(width: 3),
+                                ConstrainedBox(
+                                  constraints: BoxConstraints(
+                                    maxWidth:
+                                        MediaQuery.of(context).size.width * 0.45,
+                                  ),
+                                  child: Text(
+                                    job.displayLocation,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: GoogleFonts.plusJakartaSans(
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w500,
+                                      color: const Color(0xFF94A3B8),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 8, vertical: 2),
+                              decoration: BoxDecoration(
+                                color:
+                                    AppColors.indigo600.withValues(alpha: 0.1),
+                                borderRadius: BorderRadius.circular(6),
+                              ),
+                              child: Text(
+                                job.type,
+                                style: GoogleFonts.plusJakartaSans(
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w700,
+                                  color: AppColors.indigo600,
+                                ),
+                              ),
+                            ),
+                            if (job.payment > 0)
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 8, vertical: 2),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFF059669)
+                                      .withValues(alpha: 0.1),
+                                  borderRadius: BorderRadius.circular(6),
+                                ),
+                                child: Text(
+                                  '\$${job.payment.toStringAsFixed(0)}',
+                                  style: GoogleFonts.plusJakartaSans(
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.w700,
+                                    color: const Color(0xFF059669),
+                                  ),
+                                ),
+                              ),
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 8, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: _statusColor().withValues(alpha: 0.12),
+                                borderRadius: BorderRadius.circular(6),
+                              ),
+                              child: Text(
+                                _statusLabel(),
+                                style: GoogleFonts.plusJakartaSans(
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w700,
+                                  color: _statusColor(),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                  if (job.posterId == currentUserId)
+                    Icon(
+                      Icons.chevron_right_rounded,
+                      color:
+                          isDark ? const Color(0xFF334155) : AppColors.slate200,
+                    )
+                  else
+                    IconButton(
+                      tooltip: 'Safety actions',
+                      icon: const Icon(Icons.shield_outlined,
+                          color: Color(0xFFDC2626)),
+                      onPressed: () => showSafetyActionsSheet(
+                        context,
+                        targetType: 'Job',
+                        targetId: job.id,
+                        userId: job.posterId,
+                        userName: job.posterName,
+                        onHide: () => context.read<AppState>().hideJob(job.id),
+                      ),
+                    ),
+                ],
+              ),
             ),
           ),
         ),

@@ -50,14 +50,18 @@ Future<void> showSafetyActionsSheet(
       return Container(
         margin: const EdgeInsets.all(16),
         padding: const EdgeInsets.fromLTRB(12, 12, 12, 8),
+        constraints: BoxConstraints(
+          maxHeight: MediaQuery.of(ctx).size.height * 0.8,
+        ),
         decoration: BoxDecoration(
           color: isDark ? const Color(0xFF1E293B) : Colors.white,
           borderRadius: BorderRadius.circular(18),
         ),
         child: SafeArea(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
               ListTile(
                 leading: const Icon(Icons.flag_outlined,
                     color: Color(0xFFDC2626)),
@@ -151,7 +155,8 @@ Future<void> showSafetyActionsSheet(
                   );
                 },
               ),
-            ],
+              ],
+            ),
           ),
         ),
       );
@@ -198,13 +203,17 @@ class _ReportSheetState extends State<_ReportSheet> {
       child: Container(
         margin: const EdgeInsets.all(16),
         padding: const EdgeInsets.all(24),
+        constraints: BoxConstraints(
+          maxHeight: MediaQuery.of(context).size.height * 0.9,
+        ),
         decoration: BoxDecoration(
           color: isDark ? const Color(0xFF1E293B) : Colors.white,
           borderRadius: BorderRadius.circular(28),
         ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
             Container(
               width: 40,
               height: 4,
@@ -433,7 +442,8 @@ class _ReportSheetState extends State<_ReportSheet> {
                 ),
               ),
             ),
-          ],
+            ],
+          ),
         ),
       ),
     );
