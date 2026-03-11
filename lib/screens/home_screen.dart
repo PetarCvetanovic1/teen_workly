@@ -32,6 +32,9 @@ class HomeScreen extends StatelessWidget {
     final appState = context.watch<AppState>();
     final isLoggedIn = appState.isLoggedIn;
     final profile = appState.profile;
+    final screenWidth = MediaQuery.of(context).size.width;
+    final contentWidthFactor =
+        screenWidth < 400 ? 1.0 : (screenWidth < 900 ? 1.0 : 0.8);
 
     return Scaffold(
       appBar: TwAppBar(
@@ -61,7 +64,7 @@ class HomeScreen extends StatelessWidget {
           child: SingleChildScrollView(
             child: Center(
               child: FractionallySizedBox(
-                widthFactor: 0.8,
+                widthFactor: contentWidthFactor,
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.center,
                   children: [
@@ -351,7 +354,7 @@ class HomeScreen extends StatelessWidget {
                             ),
                             const SizedBox(height: 4),
                             Text(
-                              'Lawn mowing, dog walking, tutoring, and more.',
+                              'Fresh opportunities near you. Tap one and go.',
                               style: theme.textTheme.bodyMedium?.copyWith(
                                 color: theme.colorScheme.onSurface
                                     .withValues(alpha: 0.6),
@@ -662,7 +665,7 @@ class _SignedInHomeHeader extends StatelessWidget {
             ),
             const SizedBox(height: 6),
             Text(
-              'Your personal TeenWorkly space',
+              'Ready to make moves today?',
               textAlign: TextAlign.center,
               style: GoogleFonts.plusJakartaSans(
                 fontSize: 14,
@@ -701,8 +704,8 @@ class _SignedInHomeHeader extends StatelessWidget {
                     const SizedBox(height: 6),
                     Text(
                       hasGoal
-                          ? 'You are only \$$remaining away. Keep going.'
-                          : 'Set your vault goal in Profile to track progress.',
+                          ? 'Only \$$remaining left - you got this.'
+                          : 'Set a vault goal in Profile and track your progress.',
                       style: GoogleFonts.plusJakartaSans(
                         fontSize: 12,
                         fontWeight: FontWeight.w600,
@@ -818,7 +821,7 @@ class _HomeActivityPanel extends StatelessWidget {
                   ),
                   const SizedBox(height: 4),
                   Text(
-                    'Applied jobs, posted jobs, messages, and Huddle updates.',
+                    'Everything important, all in one place.',
                     style: GoogleFonts.plusJakartaSans(
                       fontSize: 12,
                       fontWeight: FontWeight.w600,
@@ -921,12 +924,17 @@ class _HomeActivityPanel extends StatelessWidget {
                         children: myServices.take(2).map((service) {
                           final msgCount =
                               _serviceMessageCount(service, convos);
+                          final skills = service.skills.toList();
+                          final shortSkills = skills.take(2).join(' / ');
+                          final overflowTitle =
+                              skills.length > 2 ? '$shortSkills +_' : shortSkills;
                           return Padding(
                             padding: const EdgeInsets.only(bottom: 8),
                             child: _jobStateTile(
                               context: context,
                               icon: Icons.handyman_rounded,
-                              title: service.skills.join(', '),
+                              title: skills.join(' · '),
+                              overflowTitle: overflowTitle,
                               subtitle:
                                   '${service.displayLocation} · ${service.workRadiusKm.toStringAsFixed(0)} km',
                               detailText: 'People messaged: $msgCount',
@@ -950,7 +958,7 @@ class _HomeActivityPanel extends StatelessWidget {
                       context: context,
                       icon: Icons.mark_chat_unread_rounded,
                       title: 'New Huddle replies',
-                      subtitle: 'Someone replied to a Huddle post you started.',
+                      subtitle: 'Someone replied to one of your Huddle posts.',
                       onTap: () => Navigator.of(context).push(
                         appRoute(
                           builder: (_) => const HuddleScreen(),
@@ -1080,7 +1088,7 @@ class _HomeActivityPanel extends StatelessWidget {
         ),
       ),
       child: Text(
-        'No active applications or messages yet. Apply to a job or message a service provider and it will show here.',
+        'No updates yet. Apply to a job or start a chat and it will show up here.',
         style: GoogleFonts.plusJakartaSans(
           fontSize: 12,
           fontWeight: FontWeight.w600,
@@ -1208,6 +1216,7 @@ class _HomeActivityPanel extends StatelessWidget {
     required BuildContext context,
     required IconData icon,
     required String title,
+    String? overflowTitle,
     required String subtitle,
     required String detailText,
     Color? detailColor,
@@ -1221,122 +1230,160 @@ class _HomeActivityPanel extends StatelessWidget {
     final surface = isDark ? const Color(0xFF1E293B) : Colors.white;
     final tint = statusColor.withValues(alpha: isDark ? 0.10 : 0.05);
     final edge = statusColor.withValues(alpha: isDark ? 0.22 : 0.16);
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(10),
-      child: Container(
-        padding: const EdgeInsets.all(10),
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [tint, surface],
-          ),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final compact = constraints.maxWidth < 370;
+        final ultraCompact = constraints.maxWidth < 320;
+        return InkWell(
+          onTap: onTap,
           borderRadius: BorderRadius.circular(10),
-          border: Border.all(color: edge),
-        ),
-        child: Row(
-          children: [
-            Icon(icon, color: AppColors.indigo600, size: 18),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    title,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: GoogleFonts.plusJakartaSans(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w700,
-                      color: isDark ? Colors.white : AppColors.slate900,
-                    ),
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    subtitle,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: GoogleFonts.plusJakartaSans(
-                      fontSize: 11,
-                      fontWeight: FontWeight.w600,
-                      color: const Color(0xFF94A3B8),
-                    ),
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    detailText,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: GoogleFonts.plusJakartaSans(
-                      fontSize: 11,
-                      fontWeight: FontWeight.w700,
-                      color: detailColor ??
-                          (isDark
-                              ? const Color(0xFFCBD5E1)
-                              : const Color(0xFF64748B)),
-                    ),
-                  ),
-                ],
+          child: Container(
+            padding: EdgeInsets.all(ultraCompact ? 8 : 10),
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [tint, surface],
               ),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: edge),
             ),
-            const SizedBox(width: 8),
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.end,
+            child: Row(
               children: [
-                if (onActionTap != null)
-                  GestureDetector(
-                    onTap: onActionTap,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 10, vertical: 5),
-                      decoration: BoxDecoration(
-                        color: AppColors.indigo600,
-                        borderRadius: BorderRadius.circular(8),
+                Icon(icon, color: AppColors.indigo600, size: ultraCompact ? 16 : 18),
+                SizedBox(width: ultraCompact ? 8 : 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      LayoutBuilder(
+                        builder: (context, titleConstraints) {
+                          final titleStyle = GoogleFonts.plusJakartaSans(
+                            fontSize: ultraCompact ? 12 : 13,
+                            fontWeight: FontWeight.w700,
+                            color: isDark ? Colors.white : AppColors.slate900,
+                          );
+                          String resolvedTitle = title;
+                          if (!compact &&
+                              overflowTitle != null &&
+                              overflowTitle.trim().isNotEmpty) {
+                            final painter = TextPainter(
+                              text: TextSpan(text: title, style: titleStyle),
+                              maxLines: 1,
+                              textDirection: Directionality.of(context),
+                            )..layout(maxWidth: titleConstraints.maxWidth);
+                            if (painter.didExceedMaxLines) {
+                              resolvedTitle = overflowTitle;
+                            }
+                          }
+                          return Text(
+                            resolvedTitle,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: titleStyle,
+                          );
+                        },
                       ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          const Icon(
-                            Icons.chat_rounded,
-                            size: 12,
-                            color: Colors.white,
+                      if (!compact) ...[
+                        const SizedBox(height: 2),
+                        Text(
+                          subtitle,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: GoogleFonts.plusJakartaSans(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
+                            color: const Color(0xFF94A3B8),
                           ),
-                          const SizedBox(width: 4),
-                          Text(
-                            actionLabel ?? 'Message',
-                            style: GoogleFonts.plusJakartaSans(
-                              fontSize: 10,
-                              fontWeight: FontWeight.w800,
-                              color: Colors.white,
-                            ),
+                        ),
+                      ],
+                      if (!ultraCompact) ...[
+                        const SizedBox(height: 2),
+                        Text(
+                          detailText,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: GoogleFonts.plusJakartaSans(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w700,
+                            color: detailColor ??
+                                (isDark
+                                    ? const Color(0xFFCBD5E1)
+                                    : const Color(0xFF64748B)),
                           ),
-                        ],
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    if (onActionTap != null)
+                      GestureDetector(
+                        onTap: onActionTap,
+                        child: Container(
+                          padding: compact
+                              ? const EdgeInsets.all(6)
+                              : const EdgeInsets.symmetric(
+                                  horizontal: 10,
+                                  vertical: 5,
+                                ),
+                          decoration: BoxDecoration(
+                            color: AppColors.indigo600,
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Icon(
+                                Icons.chat_rounded,
+                                size: 12,
+                                color: Colors.white,
+                              ),
+                              if (!compact) ...[
+                                const SizedBox(width: 4),
+                                Text(
+                                  actionLabel ?? 'Message',
+                                  style: GoogleFonts.plusJakartaSans(
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.w800,
+                                    color: Colors.white,
+                                  ),
+                                ),
+                              ],
+                            ],
+                          ),
+                        ),
                       ),
-                    ),
-                  ),
-                if (onActionTap != null) const SizedBox(height: 6),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: statusColor.withValues(alpha: 0.14),
-                    borderRadius: BorderRadius.circular(999),
-                  ),
-                  child: Text(
-                    statusText,
-                    style: GoogleFonts.plusJakartaSans(
-                      fontSize: 10,
-                      fontWeight: FontWeight.w800,
-                      color: statusColor,
-                    ),
-                  ),
+                    if (onActionTap != null && !compact) const SizedBox(height: 6),
+                    if (!compact)
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 4,
+                        ),
+                        decoration: BoxDecoration(
+                          color: statusColor.withValues(alpha: 0.14),
+                          borderRadius: BorderRadius.circular(999),
+                        ),
+                        child: Text(
+                          statusText,
+                          style: GoogleFonts.plusJakartaSans(
+                            fontSize: 10,
+                            fontWeight: FontWeight.w800,
+                            color: statusColor,
+                          ),
+                        ),
+                      ),
+                  ],
                 ),
               ],
             ),
-          ],
-        ),
-      ),
+          ),
+        );
+      },
     );
   }
 

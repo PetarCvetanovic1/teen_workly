@@ -8,6 +8,7 @@ import '../state/app_state.dart';
 import '../widgets/app_drawer.dart';
 import '../widgets/tw_app_bar.dart';
 import '../widgets/content_wrap.dart';
+import '../widgets/walking_dog_loader.dart';
 import 'home_screen.dart';
 import 'chat_screen.dart';
 import 'login_screen.dart';
@@ -21,6 +22,118 @@ class ConversationsScreen extends StatefulWidget {
 
 class _ConversationsScreenState extends State<ConversationsScreen> {
   bool _loginRedirectQueued = false;
+
+  Future<void> _showHiddenConversations() async {
+    final state = context.read<AppState>();
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      builder: (ctx) => SafeArea(
+        child: SizedBox(
+          height: MediaQuery.of(context).size.height * 0.65,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 18, 20, 6),
+                child: Text(
+                  'Hidden chats',
+                  style: GoogleFonts.plusJakartaSans(
+                    fontSize: 20,
+                    fontWeight: FontWeight.w800,
+                    color: isDark ? Colors.white : AppColors.slate900,
+                  ),
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 0, 20, 10),
+                child: Text(
+                  'Restore a chat if you deleted it by mistake.',
+                  style: GoogleFonts.plusJakartaSans(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: const Color(0xFF94A3B8),
+                  ),
+                ),
+              ),
+              Expanded(
+                child: StreamBuilder<List<Conversation>>(
+                  stream: state.hiddenConversationsStream,
+                  builder: (context, snapshot) {
+                    final hidden = snapshot.data ?? const <Conversation>[];
+                    if (hidden.isEmpty) {
+                      return Center(
+                        child: Text(
+                          'No hidden chats.',
+                          style: GoogleFonts.plusJakartaSans(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                            color: const Color(0xFF94A3B8),
+                          ),
+                        ),
+                      );
+                    }
+                    return ListView.separated(
+                      padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                      itemCount: hidden.length,
+                      separatorBuilder: (_, _) => const SizedBox(height: 8),
+                      itemBuilder: (context, index) {
+                        final conv = hidden[index];
+                        return Container(
+                          decoration: BoxDecoration(
+                            color: isDark ? const Color(0xFF1E293B) : Colors.white,
+                            borderRadius: BorderRadius.circular(14),
+                            border: Border.all(
+                              color: isDark
+                                  ? const Color(0xFF334155)
+                                  : AppColors.slate200,
+                            ),
+                          ),
+                          child: ListTile(
+                            title: Text(
+                              conv.otherUserName,
+                              style: GoogleFonts.plusJakartaSans(
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                            subtitle: Text(
+                              conv.lastMessagePreview,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: GoogleFonts.plusJakartaSans(
+                                fontSize: 12,
+                                color: const Color(0xFF94A3B8),
+                              ),
+                            ),
+                            trailing: TextButton(
+                              onPressed: () async {
+                                final messenger =
+                                    ScaffoldMessenger.of(this.context);
+                                await state.restoreConversation(conv.id);
+                                if (!mounted) return;
+                                messenger.showSnackBar(
+                                  const SnackBar(
+                                    content: Text('Conversation restored.'),
+                                    behavior: SnackBarBehavior.floating,
+                                  ),
+                                );
+                              },
+                              child: const Text('Restore'),
+                            ),
+                          ),
+                        );
+                      },
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 
   void _queueLoginRedirectIfNeeded(AppState state) {
     if (_loginRedirectQueued || state.isLoggedIn) return;
@@ -40,9 +153,7 @@ class _ConversationsScreenState extends State<ConversationsScreen> {
     final authState = context.watch<AppState>();
     _queueLoginRedirectIfNeeded(authState);
     if (!authState.isLoggedIn) {
-      return const Scaffold(
-        body: Center(child: CircularProgressIndicator()),
-      );
+      return const Scaffold(body: WalkingDogLoader(label: 'Walking the dog...'));
     }
 
     return Scaffold(
@@ -84,69 +195,81 @@ class _ConversationsScreenState extends State<ConversationsScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-              Padding(
-                padding: const EdgeInsets.fromLTRB(24, 24, 24, 8),
-                child: Text(
-                  'Messages',
-                  style: GoogleFonts.plusJakartaSans(
-                    fontSize: 32,
-                    fontWeight: FontWeight.w800,
-                    letterSpacing: -0.5,
-                    color: isDark ? Colors.white : AppColors.slate900,
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(24, 24, 24, 8),
+                  child: Text(
+                    'Messages',
+                    style: GoogleFonts.plusJakartaSans(
+                      fontSize: 32,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: -0.5,
+                      color: isDark ? Colors.white : AppColors.slate900,
+                    ),
                   ),
                 ),
-              ),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(24, 0, 24, 16),
-                child: Text(
-                  '${convos.length} conversation${convos.length == 1 ? '' : 's'}',
-                  style: GoogleFonts.plusJakartaSans(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w500,
-                    color: const Color(0xFF94A3B8),
-                  ),
-                ),
-              ),
-              Expanded(
-                child: convos.isEmpty
-                    ? _EmptyMessages(isDark: isDark)
-                    : ListView.separated(
-                        padding: const EdgeInsets.symmetric(horizontal: 24),
-                        itemCount: convos.length,
-                        separatorBuilder: (_, _) => const SizedBox(height: 8),
-                        itemBuilder: (context, index) {
-                          final conv = convos[index];
-                          return _ConversationTile(
-                            conversationId: conv.id,
-                            name: conv.otherUserName,
-                            context: conv.contextLabel,
-                            preview: conv.lastMessagePreview,
-                            time: conv.lastMessageTime,
-                            lastSeenAt: conv.lastSeenBy[authState.currentUserId] ??
-                                conv.lastMessageTime,
-                            isDark: isDark,
-                            onDelete: () => _confirmDeleteConversation(
-                              context,
-                              conversationId: conv.id,
-                              isDark: isDark,
-                            ),
-                            onTap: () => Navigator.of(context).push(
-                              appRoute(
-                                builder: (_) =>
-                                    ChatScreen(
-                                      conversationId: conv.id,
-                                      otherUserName: conv.otherUserName,
-                                      contextLabel: conv.contextLabel,
-                                    ),
-                                requiresAuth: true,
-                              ),
-                            ),
-                          );
-                        },
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(24, 0, 24, 16),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          '${convos.length} active chat${convos.length == 1 ? '' : 's'}',
+                          style: GoogleFonts.plusJakartaSans(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                            color: const Color(0xFF94A3B8),
+                          ),
+                        ),
                       ),
-              ),
-            ],
-          ),
+                      TextButton.icon(
+                        onPressed: _showHiddenConversations,
+                        icon: const Icon(Icons.unarchive_outlined, size: 16),
+                        label: const Text('Hidden chats'),
+                      ),
+                    ],
+                  ),
+                ),
+                Expanded(
+                  child: convos.isEmpty
+                      ? _EmptyMessages(isDark: isDark)
+                      : ListView.separated(
+                          padding: const EdgeInsets.symmetric(horizontal: 24),
+                          itemCount: convos.length,
+                          separatorBuilder: (_, _) => const SizedBox(height: 8),
+                          itemBuilder: (context, index) {
+                            final conv = convos[index];
+                            return _ConversationTile(
+                              conversationId: conv.id,
+                              name: conv.otherUserName,
+                              context: conv.contextLabel,
+                              preview: conv.lastMessagePreview,
+                              time: conv.lastMessageTime,
+                              lastSeenAt:
+                                  conv.lastSeenBy[authState.currentUserId] ??
+                                      conv.lastMessageTime,
+                              suppressUnread: conv.isMutedFor(authState.currentUserId),
+                              isDark: isDark,
+                              onDelete: () => _confirmDeleteConversation(
+                                context,
+                                conversationId: conv.id,
+                                isDark: isDark,
+                              ),
+                              onTap: () => Navigator.of(context).push(
+                                appRoute(
+                                  builder: (_) => ChatScreen(
+                                    conversationId: conv.id,
+                                    otherUserName: conv.otherUserName,
+                                    contextLabel: conv.contextLabel,
+                                  ),
+                                  requiresAuth: true,
+                                ),
+                              ),
+                            );
+                          },
+                        ),
+                ),
+              ],
+            ),
           );
         },
       ),
@@ -172,7 +295,7 @@ Future<void> _confirmDeleteConversation(
         ),
       ),
       content: Text(
-        'This removes the conversation and messages for both people.',
+        'This chat becomes view-only for you. You will stop getting notifications.',
         style: GoogleFonts.plusJakartaSans(
           fontSize: 13,
           fontWeight: FontWeight.w500,
@@ -203,6 +326,7 @@ class _ConversationTile extends StatelessWidget {
   final String preview;
   final DateTime? time;
   final DateTime? lastSeenAt;
+  final bool suppressUnread;
   final bool isDark;
   final VoidCallback onDelete;
   final VoidCallback onTap;
@@ -214,6 +338,7 @@ class _ConversationTile extends StatelessWidget {
     required this.preview,
     this.time,
     this.lastSeenAt,
+    this.suppressUnread = false,
     required this.isDark,
     required this.onDelete,
     required this.onTap,
@@ -246,135 +371,178 @@ class _ConversationTile extends StatelessWidget {
     final initials = name.split(' ').map((w) => w.isEmpty ? '' : w[0]).take(2).join().toUpperCase();
     final state = context_.read<AppState>();
 
+    final surfaceA = isDark ? const Color(0xFF1E293B) : Colors.white;
+    final surfaceB = isDark ? const Color(0xFF0F172A) : const Color(0xFFF8FAFC);
     return Material(
-      color: isDark ? const Color(0xFF1E293B) : Colors.white,
-      borderRadius: BorderRadius.circular(18),
+      color: Colors.transparent,
+      borderRadius: BorderRadius.circular(20),
       elevation: isDark ? 0 : 1,
       shadowColor: Colors.black.withValues(alpha: 0.06),
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(18),
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Row(
-            children: [
-              Container(
-                width: 48,
-                height: 48,
-                decoration: BoxDecoration(
-                  gradient: const LinearGradient(
-                    colors: [AppColors.indigo600, Color(0xFF7C3AED)],
-                  ),
-                  borderRadius: BorderRadius.circular(16),
-                ),
-                child: Center(
-                  child: Text(
-                    initials,
-                    style: GoogleFonts.plusJakartaSans(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w800,
-                      color: Colors.white,
-                    ),
-                  ),
-                ),
-              ),
-              const SizedBox(width: 14),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Expanded(
-                          child: Text(
-                            name,
-                            style: GoogleFonts.plusJakartaSans(
-                              fontSize: 15,
-                              fontWeight: FontWeight.w700,
-                              color: isDark ? Colors.white : AppColors.slate900,
-                            ),
-                          ),
-                        ),
-                        if (time != null)
-                          Text(
-                            _formatTime(time!),
-                            style: GoogleFonts.plusJakartaSans(
-                              fontSize: 11,
-                              fontWeight: FontWeight.w600,
-                              color: const Color(0xFF94A3B8),
-                            ),
-                          ),
-                        const SizedBox(width: 8),
-                        StreamBuilder<int>(
-                          stream: state.unreadCountStream(
-                            conversationId: conversationId,
-                            lastSeenAt: lastSeenAt,
-                          ),
-                          builder: (context, snapshot) {
-                            final unread = snapshot.data ?? 0;
-                            if (unread <= 0) return const SizedBox.shrink();
-                            return Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 7,
-                                vertical: 2,
-                              ),
-                              decoration: BoxDecoration(
-                                color: const Color(0xFFDC2626),
-                                borderRadius: BorderRadius.circular(999),
-                              ),
-                              child: Text(
-                                unread > 99 ? '99+' : '$unread',
-                                style: GoogleFonts.plusJakartaSans(
-                                  fontSize: 10,
-                                  fontWeight: FontWeight.w800,
-                                  color: Colors.white,
-                                ),
-                              ),
-                            );
-                          },
+      child: Ink(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [surfaceA, surfaceB],
+          ),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color: isDark ? const Color(0xFF334155) : AppColors.slate200,
+          ),
+        ),
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(20),
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: LayoutBuilder(
+            builder: (context, constraints) {
+              final ultraCompact = constraints.maxWidth < 380;
+              return Row(
+                children: [
+                  Container(
+                    width: 48,
+                    height: 48,
+                    decoration: BoxDecoration(
+                      gradient: const LinearGradient(
+                        colors: [AppColors.indigo600, Color(0xFF7C3AED)],
+                      ),
+                      borderRadius: BorderRadius.circular(16),
+                      boxShadow: [
+                        BoxShadow(
+                          color: AppColors.indigo600.withValues(alpha: 0.26),
+                          blurRadius: 10,
+                          offset: const Offset(0, 3),
                         ),
                       ],
                     ),
-                    if (context != null) ...[
-                      const SizedBox(height: 2),
-                      Text(
-                        context!,
+                    child: Center(
+                      child: Text(
+                        initials,
                         style: GoogleFonts.plusJakartaSans(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w600,
-                          color: AppColors.indigo600,
+                          fontSize: 16,
+                          fontWeight: FontWeight.w800,
+                          color: Colors.white,
                         ),
                       ),
-                    ],
-                    const SizedBox(height: 4),
-                    Text(
-                      preview,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: GoogleFonts.plusJakartaSans(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w500,
-                        color: const Color(0xFF94A3B8),
-                      ),
                     ),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 8),
-              IconButton(
-                onPressed: onDelete,
-                icon: const Icon(
-                  Icons.delete_outline_rounded,
-                  size: 18,
-                  color: Color(0xFFDC2626),
-                ),
-                tooltip: 'Delete conversation',
-              ),
-              Icon(
-                Icons.chevron_right_rounded,
-                color: isDark ? const Color(0xFF334155) : AppColors.slate200,
-              ),
-            ],
+                  ),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                name,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: GoogleFonts.plusJakartaSans(
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.w700,
+                                  color: isDark ? Colors.white : AppColors.slate900,
+                                ),
+                              ),
+                            ),
+                            if (!ultraCompact && time != null)
+                              Text(
+                                _formatTime(time!),
+                                style: GoogleFonts.plusJakartaSans(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w600,
+                                  color: const Color(0xFF94A3B8),
+                                ),
+                              ),
+                            const SizedBox(width: 8),
+                            StreamBuilder<int>(
+                              stream: state.unreadCountStream(
+                                conversationId: conversationId,
+                                lastSeenAt: lastSeenAt,
+                                suppress: suppressUnread,
+                              ),
+                              builder: (context, snapshot) {
+                                final unread = snapshot.data ?? 0;
+                                if (unread <= 0) return const SizedBox.shrink();
+                                return Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 7,
+                                    vertical: 2,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFFDC2626),
+                                    borderRadius: BorderRadius.circular(999),
+                                  ),
+                                  child: Text(
+                                    unread > 99 ? '99+' : '$unread',
+                                    style: GoogleFonts.plusJakartaSans(
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.w800,
+                                      color: Colors.white,
+                                    ),
+                                  ),
+                                );
+                              },
+                            ),
+                          ],
+                        ),
+                        if (!ultraCompact && this.context != null) ...[
+                          const SizedBox(height: 2),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 3,
+                            ),
+                            decoration: BoxDecoration(
+                              color: AppColors.indigo600.withValues(alpha: 0.14),
+                              borderRadius: BorderRadius.circular(999),
+                            ),
+                            child: Text(
+                              this.context!,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: GoogleFonts.plusJakartaSans(
+                                fontSize: 10,
+                                fontWeight: FontWeight.w700,
+                                color: AppColors.indigo600,
+                              ),
+                            ),
+                          ),
+                        ],
+                        if (!ultraCompact) ...[
+                          const SizedBox(height: 4),
+                          Text(
+                            preview,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: GoogleFonts.plusJakartaSans(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w500,
+                              color: const Color(0xFF94A3B8),
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                  Icon(
+                    Icons.chevron_right_rounded,
+                    color: isDark ? const Color(0xFF475569) : const Color(0xFFCBD5E1),
+                  ),
+                  IconButton(
+                    onPressed: onDelete,
+                    icon: const Icon(
+                      Icons.delete_outline_rounded,
+                      size: 18,
+                      color: Color(0xFFDC2626),
+                    ),
+                    tooltip: 'Delete conversation',
+                  ),
+                ],
+              );
+            },
+          ),
           ),
         ),
       ),

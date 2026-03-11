@@ -7,6 +7,7 @@ import '../state/app_state.dart';
 import '../widgets/app_drawer.dart';
 import '../widgets/tw_app_bar.dart';
 import '../widgets/content_wrap.dart';
+import '../widgets/walking_dog_loader.dart';
 import '../services/moderation.dart';
 import 'home_screen.dart';
 import 'login_screen.dart';
@@ -112,9 +113,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
       builder: (context, state, _) {
         _queueLoginRedirectIfNeeded(state);
         if (!state.isLoggedIn) {
-          return const Scaffold(
-            body: Center(child: CircularProgressIndicator()),
-          );
+          return const Scaffold(body: WalkingDogLoader(label: 'Walking the dog...'));
         }
 
         final p = state.profile;
@@ -144,7 +143,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  const CircularProgressIndicator(),
+                  const WalkingDogLoader(label: 'Loading your profile...'),
                   const SizedBox(height: 12),
                   Text(
                     'Loading your profile...',
@@ -251,6 +250,18 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       }
                     }),
                   ],
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  _isEditing
+                      ? 'Tuning your profile details'
+                      : 'This is the vibe people see first',
+                  textAlign: TextAlign.center,
+                  style: GoogleFonts.plusJakartaSans(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: const Color(0xFF94A3B8),
+                  ),
                 ),
                 const SizedBox(height: 4),
                 Builder(builder: (context) {
@@ -404,7 +415,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                   ),
                                   const SizedBox(height: 2),
                                   Text(
-                                    'Tell us about yourself and we\'ll craft your perfect profile',
+                                    'Tell us about yourself and get a profile draft in seconds',
                                     style: GoogleFonts.plusJakartaSans(
                                       fontSize: 12,
                                       fontWeight: FontWeight.w500,
@@ -431,7 +442,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     child: OutlinedButton.icon(
                       onPressed: () => setState(() => _isEditing = true),
                       icon: const Icon(Icons.edit_rounded, size: 18),
-                      label: const Text('Edit Profile'),
+                      label: const Text('Customize profile'),
                       style: OutlinedButton.styleFrom(
                         padding: const EdgeInsets.symmetric(vertical: 14),
                         shape: RoundedRectangleBorder(
@@ -478,7 +489,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         if (p.bio != null && (p.bio as String).isNotEmpty) ...[
-          _sectionLabel('ABOUT ME'),
+          _sectionLabel('About you'),
           const SizedBox(height: 10),
           Container(
             width: double.infinity,
@@ -509,7 +520,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
           const SizedBox(height: 24),
         ],
         if ((p.skills as Set).isNotEmpty) ...[
-          _sectionLabel('SKILLS'),
+          _sectionLabel('What you are good at'),
           const SizedBox(height: 10),
           Wrap(
             spacing: 8,
@@ -519,7 +530,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
           const SizedBox(height: 24),
         ],
         if ((p.interests as Set).isNotEmpty) ...[
-          _sectionLabel('INTERESTS'),
+          _sectionLabel('Things you like'),
           const SizedBox(height: 10),
           Wrap(
             spacing: 8,
@@ -530,7 +541,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
         ],
         if ((p.school != null && (p.school as String).isNotEmpty) ||
             p.age != null) ...[
-          _sectionLabel('DETAILS'),
+          _sectionLabel('Quick details'),
           const SizedBox(height: 10),
           Container(
             width: double.infinity,
@@ -589,7 +600,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  'Use the AI Profile Builder above or edit manually to get started!',
+                  'Use AI Profile Builder above or edit manually to make it yours.',
                   textAlign: TextAlign.center,
                   style: GoogleFonts.plusJakartaSans(
                     fontSize: 13,
@@ -621,36 +632,57 @@ class _ProfileScreenState extends State<ProfileScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          _formLabel('NAME'),
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: isDark
+                  ? AppColors.indigo600.withValues(alpha: 0.20)
+                  : AppColors.indigo600.withValues(alpha: 0.08),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                color: AppColors.indigo600.withValues(alpha: 0.24),
+              ),
+            ),
+            child: Text(
+              'Quick glow-up: add your real vibe so people trust your profile faster.',
+              style: GoogleFonts.plusJakartaSans(
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+                color: isDark ? Colors.white : AppColors.slate900,
+              ),
+            ),
+          ),
+          const SizedBox(height: 16),
+          _formLabel('Name'),
           const SizedBox(height: 8),
           _formField(_nameCtrl, 'Your name', isDark),
           const SizedBox(height: 20),
-          _formLabel('LOCATION'),
+          _formLabel('Location'),
           const SizedBox(height: 8),
           _formField(_locationCtrl, 'City, Province', isDark),
           const SizedBox(height: 20),
-          _formLabel('SCHOOL'),
+          _formLabel('School'),
           const SizedBox(height: 8),
           _formField(_schoolCtrl, 'Your school name', isDark),
           const SizedBox(height: 20),
-          _formLabel('AGE'),
+          _formLabel('Age'),
           const SizedBox(height: 8),
           _formField(_ageCtrl, '16', isDark,
               keyboardType: TextInputType.number),
           const SizedBox(height: 20),
           if (showVaultFields) ...[
-            _formLabel('VAULT GOAL'),
+            _formLabel('Vault goal'),
             const SizedBox(height: 8),
             _formField(_vaultGoalCtrl, 'e.g. Switzerland trip', isDark),
             const SizedBox(height: 20),
-            _formLabel('TARGET AMOUNT (\$)'),
+            _formLabel('Target amount (\$)'),
             const SizedBox(height: 8),
             _formField(_vaultTargetCtrl, 'e.g. 1200', isDark,
                 keyboardType:
                     const TextInputType.numberWithOptions(decimal: true)),
             const SizedBox(height: 20),
           ],
-          _formLabel('SKILLS'),
+          _formLabel('Skills'),
           const SizedBox(height: 8),
           Wrap(
             spacing: 8,
@@ -666,7 +698,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
             }).toList(),
           ),
           const SizedBox(height: 20),
-          _formLabel('INTERESTS'),
+          _formLabel('Interests'),
           const SizedBox(height: 8),
           Wrap(
             spacing: 8,
@@ -682,9 +714,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
             }).toList(),
           ),
           const SizedBox(height: 20),
-          _formLabel('BIO'),
+          _formLabel('Bio'),
           const SizedBox(height: 8),
-          _formField(_bioCtrl, 'Tell people about yourself...', isDark,
+          _formField(_bioCtrl, 'Tell people what you like doing...', isDark,
               maxLines: 4),
           const SizedBox(height: 28),
           Row(
@@ -698,7 +730,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       borderRadius: BorderRadius.circular(14),
                     ),
                   ),
-                  child: const Text('Cancel'),
+                  child: const Text('Back'),
                 ),
               ),
               const SizedBox(width: 12),
@@ -713,7 +745,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     child: Padding(
                       padding: const EdgeInsets.symmetric(vertical: 16),
                       child: Text(
-                        'Save',
+                        'Save changes',
                         textAlign: TextAlign.center,
                         style: GoogleFonts.plusJakartaSans(
                           fontSize: 15,
@@ -1441,9 +1473,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
   Widget _sectionLabel(String text) => Text(
         text,
         style: GoogleFonts.plusJakartaSans(
-          fontSize: 10,
-          fontWeight: FontWeight.w800,
-          letterSpacing: 2,
+          fontSize: 12,
+          fontWeight: FontWeight.w700,
+          letterSpacing: 0.2,
           color: const Color(0xFF94A3B8),
         ),
       );
@@ -1495,9 +1527,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
   Widget _formLabel(String text) => Text(
         text,
         style: GoogleFonts.plusJakartaSans(
-          fontSize: 10,
-          fontWeight: FontWeight.w800,
-          letterSpacing: 2,
+          fontSize: 12,
+          fontWeight: FontWeight.w700,
+          letterSpacing: 0.2,
           color: const Color(0xFF94A3B8),
         ),
       );

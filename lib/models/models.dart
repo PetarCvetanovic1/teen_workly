@@ -13,6 +13,7 @@ class UserProfile {
   String? school;
   int? age;
   DateTime? ageLastUpdatedAt;
+  DateTime? gpsVerifiedAt;
   String? vaultGoal;
   double? vaultTargetAmount;
   DateTime? termsAcceptedAt;
@@ -38,6 +39,7 @@ class UserProfile {
     this.school,
     this.age,
     this.ageLastUpdatedAt,
+    this.gpsVerifiedAt,
     this.vaultGoal,
     this.vaultTargetAmount,
     this.termsAcceptedAt,
@@ -104,7 +106,7 @@ class Job {
     this.publicLocation,
     this.publicLat,
     this.publicLng,
-    this.publicRadiusMeters = 500,
+    this.publicRadiusMeters = 300,
     List<String>? applicantIds,
     List<String>? applicantNames,
     this.hiredId,
@@ -119,7 +121,7 @@ class Job {
       isMinorPoster
           ? ((publicLocation ?? '').trim().isNotEmpty
               ? publicLocation!.trim()
-              : 'Approx. local area (~500m)')
+              : 'Approx. local area (~300m)')
           : location;
 }
 
@@ -152,7 +154,7 @@ class Service {
     this.publicLocation,
     this.publicLat,
     this.publicLng,
-    this.publicRadiusMeters = 500,
+    this.publicRadiusMeters = 300,
     required this.skills,
     this.otherSkill,
     required this.availableDays,
@@ -176,7 +178,7 @@ class Service {
       isMinorProvider
           ? ((publicLocation ?? '').trim().isNotEmpty
               ? publicLocation!.trim()
-              : 'Approx. local area (~500m)')
+              : 'Approx. local area (~300m)')
           : location;
 }
 
@@ -187,6 +189,8 @@ class ChatMessage {
   final String text;
   final DateTime timestamp;
   final bool isDeleted;
+  final bool isEdited;
+  final DateTime? editedAt;
   final String? deletedById;
   final String? deletedByName;
 
@@ -197,6 +201,8 @@ class ChatMessage {
     required this.text,
     required this.timestamp,
     this.isDeleted = false,
+    this.isEdited = false,
+    this.editedAt,
     this.deletedById,
     this.deletedByName,
   });
@@ -333,7 +339,10 @@ class Conversation {
   final String? lastMessageText;
   final DateTime? lastMessageAt;
   final Map<String, bool> typingBy;
+  final Map<String, DateTime> typingUpdatedAtBy;
   final Map<String, DateTime> lastSeenBy;
+  final Map<String, bool> mutedBy;
+  final Map<String, bool> lockedBy;
   final List<ChatMessage> messages;
 
   Conversation({
@@ -345,10 +354,16 @@ class Conversation {
     this.lastMessageText,
     this.lastMessageAt,
     Map<String, bool>? typingBy,
+    Map<String, DateTime>? typingUpdatedAtBy,
     Map<String, DateTime>? lastSeenBy,
+    Map<String, bool>? mutedBy,
+    Map<String, bool>? lockedBy,
     List<ChatMessage>? messages,
   })  : typingBy = typingBy ?? const {},
+        typingUpdatedAtBy = typingUpdatedAtBy ?? const {},
         lastSeenBy = lastSeenBy ?? const {},
+        mutedBy = mutedBy ?? const {},
+        lockedBy = lockedBy ?? const {},
         messages = messages ?? [];
 
   String get lastMessagePreview {
@@ -363,4 +378,8 @@ class Conversation {
     if (lastMessageAt != null) return lastMessageAt;
     return messages.isEmpty ? null : messages.last.timestamp;
   }
+
+  bool isMutedFor(String userId) => mutedBy[userId] == true;
+
+  bool isReadOnlyFor(String userId) => lockedBy[userId] == true;
 }

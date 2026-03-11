@@ -2,6 +2,8 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart'
     show kIsWeb, defaultTargetPlatform, TargetPlatform;
+import 'package:geolocator/geolocator.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import '../models/models.dart';
@@ -36,7 +38,15 @@ class AppState extends ChangeNotifier {
   );
 
   final _auth = FirebaseAuth.instance;
+  static const String _themeModePrefKey = 'theme_mode';
+  static const String _dismissedHireNoticePrefKeyPrefix =
+      'dismissed_hire_notice_jobs_';
+  static const String _jobsFeedSeenAtPrefKeyPrefix = 'jobs_feed_seen_at_';
+  static const String _huddleFeedSeenAtPrefKeyPrefix = 'huddle_feed_seen_at_';
   ThemeMode _themeMode = ThemeMode.system;
+  Set<String> _dismissedHireSafetyJobIds = {};
+  DateTime? _jobsFeedSeenAt;
+  DateTime? _huddleFeedSeenAt;
 
   UserProfile? _profile;
   bool get isLoggedIn => _auth.currentUser != null;
@@ -44,6 +54,8 @@ class AppState extends ChangeNotifier {
   ThemeMode get themeMode => _themeMode;
   bool get privacyBubbleEnabled => _profile?.privacyBubbleEnabled ?? true;
   bool get isShadowBanned => _profile?.shadowBanned == true;
+  DateTime? get jobsFeedSeenAt => _jobsFeedSeenAt;
+  DateTime? get huddleFeedSeenAt => _huddleFeedSeenAt;
 
   String get currentUserId => _auth.currentUser?.uid ?? 'guest';
   String get currentUserName {
@@ -95,6 +107,7 @@ class AppState extends ChangeNotifier {
   void setThemeMode(ThemeMode mode) {
     if (_themeMode == mode) return;
     _themeMode = mode;
+    unawaited(_persistThemeMode(mode));
     notifyListeners();
   }
 
@@ -112,6 +125,7 @@ class AppState extends ChangeNotifier {
   }
 
   AppState() {
+    unawaited(_loadThemeMode());
     if (kIsWeb) {
       // Keep users signed in across refreshes/restarts on this device.
       unawaited(_auth.setPersistence(Persistence.LOCAL));
@@ -119,9 +133,130 @@ class AppState extends ChangeNotifier {
     _auth.authStateChanges().listen(_onAuthChanged);
   }
 
+  Future<void> _loadThemeMode() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final raw = (prefs.getString(_themeModePrefKey) ?? '').trim();
+      final parsed = switch (raw) {
+        'light' => ThemeMode.light,
+        'dark' => ThemeMode.dark,
+        _ => ThemeMode.system,
+      };
+      if (_themeMode != parsed) {
+        _themeMode = parsed;
+        notifyListeners();
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _persistThemeMode(ThemeMode mode) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final value = switch (mode) {
+        ThemeMode.light => 'light',
+        ThemeMode.dark => 'dark',
+        ThemeMode.system => 'system',
+      };
+      await prefs.setString(_themeModePrefKey, value);
+    } catch (_) {}
+  }
+
+  bool isHireSafetyNoticeDismissed(String jobId) {
+    return _dismissedHireSafetyJobIds.contains(jobId.trim());
+  }
+
+  Future<void> dismissHireSafetyNotice(String jobId) async {
+    final trimmed = jobId.trim();
+    if (trimmed.isEmpty || _auth.currentUser == null) return;
+    if (_dismissedHireSafetyJobIds.contains(trimmed)) return;
+    _dismissedHireSafetyJobIds = {..._dismissedHireSafetyJobIds, trimmed};
+    notifyListeners();
+    await _persistDismissedHireSafetyNotices();
+  }
+
+  Future<void> _loadDismissedHireSafetyNotices(String userId) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final key = '$_dismissedHireNoticePrefKeyPrefix$userId';
+      final raw = prefs.getStringList(key) ?? const <String>[];
+      _dismissedHireSafetyJobIds = raw
+          .map((e) => e.trim())
+          .where((e) => e.isNotEmpty)
+          .toSet();
+    } catch (_) {
+      _dismissedHireSafetyJobIds = {};
+    }
+  }
+
+  Future<void> _persistDismissedHireSafetyNotices() async {
+    final userId = _auth.currentUser?.uid;
+    if (userId == null) return;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final key = '$_dismissedHireNoticePrefKeyPrefix$userId';
+      await prefs.setStringList(
+        key,
+        _dismissedHireSafetyJobIds.toList()..sort(),
+      );
+    } catch (_) {}
+  }
+
+  Future<void> markJobsFeedSeen() async {
+    if (!isLoggedIn) return;
+    _jobsFeedSeenAt = DateTime.now();
+    notifyListeners();
+    await _persistFeedSeenAt();
+  }
+
+  Future<void> markHuddleFeedSeen() async {
+    if (!isLoggedIn) return;
+    _huddleFeedSeenAt = DateTime.now();
+    notifyListeners();
+    await _persistFeedSeenAt();
+  }
+
+  Future<void> _loadFeedSeenAt(String userId) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final jobsMs = prefs.getInt('$_jobsFeedSeenAtPrefKeyPrefix$userId');
+      final huddleMs = prefs.getInt('$_huddleFeedSeenAtPrefKeyPrefix$userId');
+      _jobsFeedSeenAt = jobsMs == null
+          ? null
+          : DateTime.fromMillisecondsSinceEpoch(jobsMs);
+      _huddleFeedSeenAt = huddleMs == null
+          ? null
+          : DateTime.fromMillisecondsSinceEpoch(huddleMs);
+    } catch (_) {
+      _jobsFeedSeenAt = null;
+      _huddleFeedSeenAt = null;
+    }
+  }
+
+  Future<void> _persistFeedSeenAt() async {
+    final userId = _auth.currentUser?.uid;
+    if (userId == null) return;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final jobsKey = '$_jobsFeedSeenAtPrefKeyPrefix$userId';
+      final huddleKey = '$_huddleFeedSeenAtPrefKeyPrefix$userId';
+      if (_jobsFeedSeenAt == null) {
+        await prefs.remove(jobsKey);
+      } else {
+        await prefs.setInt(jobsKey, _jobsFeedSeenAt!.millisecondsSinceEpoch);
+      }
+      if (_huddleFeedSeenAt == null) {
+        await prefs.remove(huddleKey);
+      } else {
+        await prefs.setInt(huddleKey, _huddleFeedSeenAt!.millisecondsSinceEpoch);
+      }
+    } catch (_) {}
+  }
+
   Future<void> _onAuthChanged(User? user) async {
     if (user != null) {
       await _syncProfileForCurrentUser();
+      await _loadDismissedHireSafetyNotices(user.uid);
+      await _loadFeedSeenAt(user.uid);
     } else {
       _profile = null;
       _stopListening();
@@ -139,6 +274,9 @@ class AppState extends ChangeNotifier {
       _hiddenJobIds.clear();
       _hiddenServiceIds.clear();
       _hiddenHuddlePostIds.clear();
+      _dismissedHireSafetyJobIds = {};
+      _jobsFeedSeenAt = null;
+      _huddleFeedSeenAt = null;
     }
     notifyListeners();
   }
@@ -205,6 +343,7 @@ class AppState extends ChangeNotifier {
         }
 
         for (final conv in items) {
+          if (conv.isMutedFor(currentUserId)) continue;
           final last = conv.lastMessageTime;
           if (last == null) continue;
           final prev = _lastConversationSeenAt[conv.id];
@@ -846,6 +985,9 @@ class AppState extends ChangeNotifier {
     if (interests != null) _profile!.interests = interests;
     if (school != null) _profile!.school = school;
     if (age != null) {
+      if (age > 100) {
+        throw Exception('Age must be 100 or less.');
+      }
       final currentAge = _profile!.age;
       if (currentAge != null && age != currentAge) {
         if (age <= currentAge) {
@@ -1209,6 +1351,7 @@ class AppState extends ChangeNotifier {
   }
 
   Future<void> applyToJob(String jobId) async {
+    await _ensureGpsEnabledForRestrictedAction();
     final job = _jobs.firstWhere((j) => j.id == jobId);
     if (!job.applicantIds.contains(currentUserId)) {
       job.applicantIds.add(currentUserId);
@@ -1226,6 +1369,55 @@ class AppState extends ChangeNotifier {
     if (parts.isEmpty) return 'User';
     if (parts.length == 1) return parts.first;
     return '${parts.first} ${parts.last[0]}.';
+  }
+
+  bool _isRestrictedConversationContext({
+    String? scopeKey,
+    String? contextLabel,
+  }) {
+    final scope = (scopeKey ?? '').trim().toLowerCase();
+    if (scope.startsWith('job:') || scope.startsWith('service:')) return true;
+    final label = (contextLabel ?? '').trim().toLowerCase();
+    return label.startsWith('job:') || label.startsWith('service:');
+  }
+
+  Future<void> _ensureGpsEnabledForRestrictedAction() async {
+    final servicesEnabled = await Geolocator.isLocationServiceEnabled();
+    if (!servicesEnabled) {
+      throw Exception(
+        'Turn on GPS/location services to apply or message for jobs/services.',
+      );
+    }
+
+    var permission = await Geolocator.checkPermission();
+    if (permission == LocationPermission.denied) {
+      permission = await Geolocator.requestPermission();
+    }
+    if (permission == LocationPermission.denied ||
+        permission == LocationPermission.deniedForever) {
+      throw Exception(
+        'Location permission is required to apply or message for jobs/services.',
+      );
+    }
+
+    try {
+      await Geolocator.getCurrentPosition();
+    } catch (_) {
+      throw Exception(
+        'Could not verify GPS location. Please enable location and try again.',
+      );
+    }
+
+    final p = _profile;
+    if (p != null) {
+      final now = DateTime.now();
+      final last = p.gpsVerifiedAt;
+      final shouldSave = last == null || now.difference(last) > const Duration(minutes: 10);
+      if (shouldSave) {
+        await FirestoreService.markGpsVerified();
+        p.gpsVerifiedAt = now;
+      }
+    }
   }
 
   Future<void> hireApplicant(
@@ -1509,13 +1701,18 @@ class AppState extends ChangeNotifier {
   Stream<List<Conversation>> get conversationsStream =>
       FirestoreService.conversationsStream(currentUserId);
 
+  Stream<List<Conversation>> get hiddenConversationsStream =>
+      FirestoreService.hiddenConversationsStream(currentUserId);
+
   Stream<List<ChatMessage>> messagesStream(String conversationId) =>
       FirestoreService.messagesStream(conversationId);
 
   Stream<int> unreadCountStream({
     required String conversationId,
     required DateTime? lastSeenAt,
+    bool suppress = false,
   }) {
+    if (suppress) return Stream<int>.value(0);
     return FirestoreService.unreadCountStream(
       conversationId: conversationId,
       myUserId: currentUserId,
@@ -1532,6 +1729,12 @@ class AppState extends ChangeNotifier {
     String? contextLabel,
     String? scopeKey,
   }) async {
+    if (_isRestrictedConversationContext(
+      scopeKey: scopeKey,
+      contextLabel: contextLabel,
+    )) {
+      await _ensureGpsEnabledForRestrictedAction();
+    }
     final conv = await FirestoreService.getOrCreateConversation(
       myId: currentUserId,
       myName: currentUserName,
@@ -1550,10 +1753,23 @@ class AppState extends ChangeNotifier {
   }
 
   Future<void> deleteConversation(String conversationId) async {
-    await FirestoreService.deleteConversation(conversationId);
+    await FirestoreService.softDeleteConversationForUser(
+      conversationId: conversationId,
+      userId: currentUserId,
+    );
+  }
+
+  Future<void> restoreConversation(String conversationId) async {
+    await FirestoreService.restoreConversationForUser(
+      conversationId: conversationId,
+      userId: currentUserId,
+    );
   }
 
   Future<void> setConversationTyping(String conversationId, bool isTyping) async {
+    final existingConv =
+        await FirestoreService.getConversation(conversationId, currentUserId);
+    if (existingConv?.isReadOnlyFor(currentUserId) == true) return;
     await FirestoreService.setConversationTyping(
       conversationId: conversationId,
       userId: currentUserId,
@@ -1562,6 +1778,9 @@ class AppState extends ChangeNotifier {
   }
 
   Future<void> markConversationSeen(String conversationId) async {
+    final existingConv =
+        await FirestoreService.getConversation(conversationId, currentUserId);
+    if (existingConv?.isReadOnlyFor(currentUserId) == true) return;
     final items = await FirestoreService.messagesStream(conversationId).first;
     DateTime seenAt = DateTime.now();
     for (final m in items.reversed) {
@@ -1610,6 +1829,13 @@ class AppState extends ChangeNotifier {
     // for posters and hired workers.
     if (!isApplicant || isPoster || isHired) return;
 
+    // If the poster has replied at least once, unlock normal conversation.
+    final posterReplyCount = await FirestoreService.messageCountBySender(
+      conversationId: conversationId,
+      senderId: resolvedJob.posterId,
+    );
+    if (posterReplyCount > 0) return;
+
     final sentCount = await FirestoreService.messageCountBySender(
       conversationId: conversationId,
       senderId: currentUserId,
@@ -1626,6 +1852,11 @@ class AppState extends ChangeNotifier {
       throw Exception('Messaging is restricted while your account is under review.');
     }
     final trimmed = text.trim();
+    final existingConv =
+        await FirestoreService.getConversation(conversationId, currentUserId);
+    if (existingConv?.isReadOnlyFor(currentUserId) == true) {
+      throw Exception('This conversation is view-only for you.');
+    }
     final moderation = await ModerationService.moderateMessage(trimmed);
     if (!moderation.approved) {
       throw Exception(moderation.reason ?? 'Message blocked by safety checks.');
@@ -1637,6 +1868,22 @@ class AppState extends ChangeNotifier {
         'Keep it in the app! For your safety, sharing personal contact info is disabled.',
       );
     }
+    final seed = _pendingConversationSeeds[conversationId];
+    String? scopeKey = seed?.scopeKey;
+    String? contextLabel = seed?.contextLabel;
+    if (scopeKey == null && contextLabel == null) {
+      final conv =
+          await FirestoreService.getConversation(conversationId, currentUserId);
+      scopeKey = conv?.scopeKey;
+      contextLabel = conv?.contextLabel;
+    }
+    if (_isRestrictedConversationContext(
+      scopeKey: scopeKey,
+      contextLabel: contextLabel,
+    )) {
+      await _ensureGpsEnabledForRestrictedAction();
+    }
+
     await _enforcePreHireApplicantMessageLimit(conversationId);
     _recentOutgoingAt[conversationId] = DateTime.now();
     final message = ChatMessage(
@@ -1646,7 +1893,6 @@ class AppState extends ChangeNotifier {
       text: trimmed,
       timestamp: DateTime.now(),
     );
-    final seed = _pendingConversationSeeds[conversationId];
     await FirestoreService.sendMessage(
       conversationId: conversationId,
       message: message,
@@ -1681,6 +1927,11 @@ class AppState extends ChangeNotifier {
     required ChatMessage message,
     required String newText,
   }) async {
+    final existingConv =
+        await FirestoreService.getConversation(conversationId, currentUserId);
+    if (existingConv?.isReadOnlyFor(currentUserId) == true) {
+      throw Exception('This conversation is view-only for you.');
+    }
     if (message.senderId != currentUserId) {
       throw Exception('You can only edit your own messages.');
     }

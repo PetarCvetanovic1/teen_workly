@@ -10,6 +10,7 @@ import '../state/app_state.dart';
 import '../widgets/app_drawer.dart';
 import '../widgets/tw_app_bar.dart';
 import '../widgets/content_wrap.dart';
+import '../widgets/walking_dog_loader.dart';
 import 'home_screen.dart';
 import 'job_detail_screen.dart';
 import 'chat_screen.dart';
@@ -62,7 +63,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
         builder: (context, state, _) {
           _queueLoginRedirectIfNeeded(state);
           if (!state.isLoggedIn) {
-            return const Center(child: CircularProgressIndicator());
+            return const WalkingDogLoader(label: 'Walking the dog...');
           }
           final posted = _hideCompletedItems
               ? state.myPostedJobs.where((j) => j.status != JobStatus.completed).toList()
@@ -73,9 +74,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
               : applied;
           final current = state.myCurrentJobs;
           final myServices = state.myServices;
+          final isUltraNarrow = MediaQuery.of(context).size.width < 400;
 
           return SingleChildScrollView(
-            padding: const EdgeInsets.symmetric(horizontal: 24),
+            padding: EdgeInsets.symmetric(horizontal: isUltraNarrow ? 8 : 24),
             child: ContentWrap(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -92,7 +94,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  'Your activity at a glance',
+                  'Quick wins, progress, and what is next',
                   style: GoogleFonts.plusJakartaSans(
                     fontSize: 15,
                     fontWeight: FontWeight.w500,
@@ -116,7 +118,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       color: AppColors.indigo600,
                     ),
                     label: Text(
-                      _hideCompletedItems ? 'Show Completed Items' : 'Hide Completed Items',
+                      _hideCompletedItems ? 'Show completed items' : 'Hide completed items',
                       style: GoogleFonts.plusJakartaSans(
                         fontSize: 12,
                         fontWeight: FontWeight.w700,
@@ -873,6 +875,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                               lastSeenAt:
                                   conv.lastSeenBy[state.currentUserId] ??
                                       conv.lastMessageTime,
+                              suppressUnread: conv.isMutedFor(state.currentUserId),
                               isDark: isDark,
                               onDelete: () => _confirmDeleteConversation(
                                 context,
@@ -1171,11 +1174,18 @@ class _StatCard extends StatelessWidget {
     final baseSurface = isDark ? const Color(0xFF1E293B) : Colors.white;
     final subtleTint = color.withValues(alpha: isDark ? 0.08 : 0.035);
     final cardSurface = Color.alphaBlend(subtleTint, baseSurface);
+    final helper = switch (label) {
+      'Earned' => 'Keep stacking wins',
+      'Hired' => 'People trusting your posts',
+      'Completed' => 'Strong follow-through',
+      'Rating' => 'Your reputation score',
+      _ => '',
+    };
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
         color: cardSurface,
-        borderRadius: BorderRadius.circular(20),
+        borderRadius: BorderRadius.circular(22),
         border: Border.all(
           color: color.withValues(alpha: isDark ? 0.14 : 0.07),
         ),
@@ -1219,6 +1229,19 @@ class _StatCard extends StatelessWidget {
               color: const Color(0xFF94A3B8),
             ),
           ),
+          if (helper.isNotEmpty) ...[
+            const SizedBox(height: 4),
+            Text(
+              helper,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: GoogleFonts.plusJakartaSans(
+                fontSize: 11,
+                fontWeight: FontWeight.w600,
+                color: const Color(0xFF94A3B8),
+              ),
+            ),
+          ],
         ],
       ),
     );
@@ -1439,14 +1462,15 @@ class _JobCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final surface = isDark ? const Color(0xFF1E293B) : Colors.white;
-    final tint = badgeColor.withValues(alpha: isDark ? 0.11 : 0.06);
-    final edge = badgeColor.withValues(alpha: isDark ? 0.22 : 0.18);
+    final surfaceA = isDark ? const Color(0xFF1E293B) : Colors.white;
+    final surfaceB = isDark ? const Color(0xFF0F172A) : const Color(0xFFF8FAFC);
+    final tint = badgeColor.withValues(alpha: isDark ? 0.13 : 0.08);
+    final edge = badgeColor.withValues(alpha: isDark ? 0.24 : 0.2);
     return Padding(
       padding: const EdgeInsets.only(bottom: 10),
       child: Material(
         color: Colors.transparent,
-        borderRadius: BorderRadius.circular(18),
+        borderRadius: BorderRadius.circular(20),
         elevation: isDark ? 0 : 1,
         shadowColor: Colors.black.withValues(alpha: 0.06),
         child: Ink(
@@ -1454,10 +1478,12 @@ class _JobCard extends StatelessWidget {
             gradient: LinearGradient(
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
-              colors: [tint, surface],
+              colors: [tint, surfaceA, surfaceB],
             ),
-            borderRadius: BorderRadius.circular(18),
-            border: Border.all(color: edge),
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(
+              color: edge,
+            ),
           ),
           child: InkWell(
             onTap: () => Navigator.of(context).push(
@@ -1466,169 +1492,221 @@ class _JobCard extends StatelessWidget {
                 requiresAuth: true,
               ),
             ),
-            borderRadius: BorderRadius.circular(18),
+            borderRadius: BorderRadius.circular(20),
             child: Padding(
               padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  final compact = constraints.maxWidth < 370;
+                  final ultraCompact = constraints.maxWidth < 320;
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Expanded(
-                        child: Text(
-                          job.title,
-                          style: GoogleFonts.plusJakartaSans(
-                            fontSize: 15,
-                            fontWeight: FontWeight.w700,
-                            color: isDark ? Colors.white : AppColors.slate900,
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              job.title,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: GoogleFonts.plusJakartaSans(
+                                fontSize: 15,
+                                fontWeight: FontWeight.w700,
+                                color: isDark ? Colors.white : AppColors.slate900,
+                              ),
+                            ),
                           ),
-                        ),
+                          if (!compact)
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 10, vertical: 4),
+                              decoration: BoxDecoration(
+                                color: badgeColor.withValues(alpha: 0.12),
+                                borderRadius: BorderRadius.circular(100),
+                              ),
+                              child: Text(
+                                badge,
+                                style: GoogleFonts.plusJakartaSans(
+                                  fontSize: 9,
+                                  fontWeight: FontWeight.w800,
+                                  letterSpacing: 0.5,
+                                  color: badgeColor,
+                                ),
+                              ),
+                            ),
+                        ],
                       ),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 10, vertical: 4),
-                        decoration: BoxDecoration(
-                          color: badgeColor.withValues(alpha: 0.12),
-                          borderRadius: BorderRadius.circular(100),
-                        ),
-                        child: Text(
-                          badge,
-                          style: GoogleFonts.plusJakartaSans(
-                            fontSize: 9,
-                            fontWeight: FontWeight.w800,
-                            letterSpacing: 0.5,
-                            color: badgeColor,
+                      const SizedBox(height: 6),
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.center,
+                        children: [
+                          Expanded(
+                            child: Wrap(
+                              spacing: 12,
+                              runSpacing: 8,
+                              crossAxisAlignment: WrapCrossAlignment.center,
+                              children: [
+                                if (!compact)
+                                  Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(Icons.location_on_outlined,
+                                          size: 14,
+                                          color: const Color(0xFF94A3B8)),
+                                      const SizedBox(width: 4),
+                                      ConstrainedBox(
+                                        constraints:
+                                            const BoxConstraints(maxWidth: 230),
+                                        child: Text(
+                                          job.displayLocation,
+                                          softWrap: true,
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: GoogleFonts.plusJakartaSans(
+                                            fontSize: 12,
+                                            fontWeight: FontWeight.w500,
+                                            color: const Color(0xFF94A3B8),
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                if (!compact)
+                                  Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(Icons.work_outline_rounded,
+                                          size: 14,
+                                          color: const Color(0xFF94A3B8)),
+                                      const SizedBox(width: 4),
+                                      Text(
+                                        job.type,
+                                        style: GoogleFonts.plusJakartaSans(
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.w500,
+                                          color: const Color(0xFF94A3B8),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                              ],
+                            ),
                           ),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 6),
-                  Row(
-                    crossAxisAlignment: CrossAxisAlignment.center,
-                    children: [
-                      Expanded(
-                        child: Wrap(
-                          spacing: 12,
-                          runSpacing: 8,
-                          crossAxisAlignment: WrapCrossAlignment.center,
-                          children: [
+                          if (onAction != null || onSecondaryAction != null) ...[
+                            const SizedBox(width: 10),
                             Row(
                               mainAxisSize: MainAxisSize.min,
                               children: [
-                                Icon(Icons.location_on_outlined,
-                                    size: 14, color: const Color(0xFF94A3B8)),
-                                const SizedBox(width: 4),
-                                ConstrainedBox(
-                                  constraints: const BoxConstraints(maxWidth: 230),
-                                  child: Text(
-                                    job.displayLocation,
-                                    softWrap: true,
-                                    style: GoogleFonts.plusJakartaSans(
-                                      fontSize: 12,
-                                      fontWeight: FontWeight.w500,
-                                      color: const Color(0xFF94A3B8),
+                                if (onAction != null)
+                                  GestureDetector(
+                                    onTap: onAction,
+                                    child: Container(
+                                      padding: compact
+                                          ? const EdgeInsets.all(6)
+                                          : const EdgeInsets.symmetric(
+                                              horizontal: 10,
+                                              vertical: 5,
+                                            ),
+                                      decoration: BoxDecoration(
+                                        color: (actionColor ?? const Color(0xFFDC2626))
+                                            .withValues(alpha: 0.1),
+                                        borderRadius: BorderRadius.circular(8),
+                                      ),
+                                      child: Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          Icon(
+                                            actionIcon ?? Icons.close_rounded,
+                                            size: 13,
+                                            color: actionColor ??
+                                                const Color(0xFFDC2626),
+                                          ),
+                                          if (!compact) ...[
+                                            const SizedBox(width: 4),
+                                            Text(
+                                              actionLabel ?? 'Remove',
+                                              style:
+                                                  GoogleFonts.plusJakartaSans(
+                                                fontSize: 10,
+                                                fontWeight: FontWeight.w800,
+                                                color: actionColor ??
+                                                    const Color(0xFFDC2626),
+                                              ),
+                                            ),
+                                          ],
+                                        ],
+                                      ),
                                     ),
                                   ),
-                                ),
-                              ],
-                            ),
-                            Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Icon(Icons.work_outline_rounded,
-                                    size: 14, color: const Color(0xFF94A3B8)),
-                                const SizedBox(width: 4),
-                                Text(
-                                  job.type,
-                                  style: GoogleFonts.plusJakartaSans(
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.w500,
-                                    color: const Color(0xFF94A3B8),
+                                if (onAction != null && onSecondaryAction != null)
+                                  const SizedBox(width: 8),
+                                if (onSecondaryAction != null)
+                                  GestureDetector(
+                                    onTap: onSecondaryAction,
+                                    child: Container(
+                                      padding: compact
+                                          ? const EdgeInsets.all(6)
+                                          : const EdgeInsets.symmetric(
+                                              horizontal: 10,
+                                              vertical: 5,
+                                            ),
+                                      decoration: BoxDecoration(
+                                        color:
+                                            secondaryActionColor ?? AppColors.indigo600,
+                                        borderRadius: BorderRadius.circular(8),
+                                      ),
+                                      child: Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          Icon(
+                                            secondaryActionIcon ??
+                                                Icons.chat_rounded,
+                                            size: 13,
+                                            color: Colors.white,
+                                          ),
+                                          if (!compact) ...[
+                                            const SizedBox(width: 4),
+                                            Text(
+                                              secondaryActionLabel ?? 'Message',
+                                              style:
+                                                  GoogleFonts.plusJakartaSans(
+                                                fontSize: 10,
+                                                fontWeight: FontWeight.w800,
+                                                color: Colors.white,
+                                              ),
+                                            ),
+                                          ],
+                                        ],
+                                      ),
+                                    ),
                                   ),
-                                ),
                               ],
                             ),
-                          ],
-                        ),
+                          ] else if (compact && !ultraCompact)
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 8, vertical: 4),
+                              decoration: BoxDecoration(
+                                color: badgeColor.withValues(alpha: 0.12),
+                                borderRadius: BorderRadius.circular(100),
+                              ),
+                              child: Text(
+                                badge,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: GoogleFonts.plusJakartaSans(
+                                  fontSize: 9,
+                                  fontWeight: FontWeight.w800,
+                                  letterSpacing: 0.5,
+                                  color: badgeColor,
+                                ),
+                              ),
+                            ),
+                        ],
                       ),
-                      if (onAction != null || onSecondaryAction != null) ...[
-                        const SizedBox(width: 10),
-                        Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            if (onAction != null)
-                              GestureDetector(
-                                onTap: onAction,
-                                child: Container(
-                                  padding: const EdgeInsets.symmetric(
-                                      horizontal: 10, vertical: 5),
-                                  decoration: BoxDecoration(
-                                    color: (actionColor ?? const Color(0xFFDC2626))
-                                        .withValues(alpha: 0.1),
-                                    borderRadius: BorderRadius.circular(8),
-                                  ),
-                                  child: Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      Icon(
-                                        actionIcon ?? Icons.close_rounded,
-                                        size: 13,
-                                        color: actionColor ?? const Color(0xFFDC2626),
-                                      ),
-                                      const SizedBox(width: 4),
-                                      Text(
-                                        actionLabel ?? 'Remove',
-                                        style: GoogleFonts.plusJakartaSans(
-                                          fontSize: 10,
-                                          fontWeight: FontWeight.w800,
-                                          color:
-                                              actionColor ?? const Color(0xFFDC2626),
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ),
-                            if (onAction != null && onSecondaryAction != null)
-                              const SizedBox(width: 8),
-                            if (onSecondaryAction != null)
-                              GestureDetector(
-                                onTap: onSecondaryAction,
-                                child: Container(
-                                  padding: const EdgeInsets.symmetric(
-                                      horizontal: 10, vertical: 5),
-                                  decoration: BoxDecoration(
-                                    color: secondaryActionColor ?? AppColors.indigo600,
-                                    borderRadius: BorderRadius.circular(8),
-                                  ),
-                                  child: Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      Icon(
-                                        secondaryActionIcon ?? Icons.chat_rounded,
-                                        size: 13,
-                                        color: Colors.white,
-                                      ),
-                                      const SizedBox(width: 4),
-                                      Text(
-                                        secondaryActionLabel ?? 'Message',
-                                        style: GoogleFonts.plusJakartaSans(
-                                          fontSize: 10,
-                                          fontWeight: FontWeight.w800,
-                                          color: Colors.white,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ),
-                          ],
-                        ),
-                      ],
                     ],
-                  ),
-                ],
+                  );
+                },
               ),
             ),
           ),
@@ -1656,171 +1734,230 @@ class _ServiceCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     const accent = Color(0xFF7C3AED);
-    final surface = isDark ? const Color(0xFF1E293B) : Colors.white;
-    final tint = accent.withValues(alpha: isDark ? 0.11 : 0.06);
-    final edge = accent.withValues(alpha: isDark ? 0.22 : 0.18);
+    final surfaceA = isDark ? const Color(0xFF1E293B) : Colors.white;
+    final surfaceB = isDark ? const Color(0xFF0F172A) : const Color(0xFFF8FAFC);
+    final tint = accent.withValues(alpha: isDark ? 0.13 : 0.08);
+    final edge = accent.withValues(alpha: isDark ? 0.24 : 0.2);
     return Padding(
       padding: const EdgeInsets.only(bottom: 10),
-      child: Container(
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [tint, surface],
+      child: Material(
+        color: Colors.transparent,
+        borderRadius: BorderRadius.circular(20),
+        elevation: isDark ? 0 : 1,
+        shadowColor: Colors.black.withValues(alpha: 0.06),
+        child: Ink(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [tint, surfaceA, surfaceB],
+            ),
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(
+              color: edge,
+            ),
           ),
-          borderRadius: BorderRadius.circular(18),
-          border: Border.all(color: edge),
-          boxShadow: isDark
-              ? null
-              : [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.04),
-                    blurRadius: 12,
-                    offset: const Offset(0, 2),
-                  ),
-                ],
-        ),
-        child: Row(
-          children: [
-            Container(
-              width: 40,
-              height: 40,
-              decoration: BoxDecoration(
-                color: const Color(0xFF7C3AED).withValues(alpha: 0.12),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: const Icon(Icons.handyman_rounded,
-                  color: Color(0xFF7C3AED), size: 20),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    service.skills.join(', '),
-                    style: GoogleFonts.plusJakartaSans(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w700,
-                      color: isDark ? Colors.white : AppColors.slate900,
-                    ),
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    '${service.displayLocation} · ${service.workRadiusKm.toStringAsFixed(0)} km',
-                    style: GoogleFonts.plusJakartaSans(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w500,
-                      color: const Color(0xFF94A3B8),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-              decoration: BoxDecoration(
-                color: const Color(0xFF7C3AED).withValues(alpha: 0.12),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Icon(Icons.chat_bubble_rounded,
-                      size: 13, color: Color(0xFF7C3AED)),
-                  const SizedBox(width: 4),
-                  Text(
-                    '$messageCount',
-                    style: GoogleFonts.plusJakartaSans(
-                      fontSize: 10,
-                      fontWeight: FontWeight.w800,
-                      color: const Color(0xFF7C3AED),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(width: 8),
-            if (onEdit != null)
-              Tooltip(
-                message: 'Edit your service',
-                child: Material(
-                  color: Colors.transparent,
-                  child: InkWell(
-                    onTap: onEdit,
-                    mouseCursor: SystemMouseCursors.click,
-                    borderRadius: BorderRadius.circular(8),
-                    hoverColor: AppColors.indigo600.withValues(alpha: 0.14),
-                    highlightColor: AppColors.indigo600.withValues(alpha: 0.18),
-                    child: Container(
-                      padding:
-                          const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                      decoration: BoxDecoration(
-                        color: AppColors.indigo600.withValues(alpha: 0.1),
-                        borderRadius: BorderRadius.circular(8),
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: LayoutBuilder(
+          builder: (context, constraints) {
+            final compact = constraints.maxWidth < 370;
+            final skills = service.skills.toList();
+            final shortSkills = skills.take(2).join(' / ');
+            final overflowTitle =
+                skills.length > 2 ? '$shortSkills +_' : shortSkills;
+            return Row(
+              children: [
+                Container(
+                  width: 40,
+                  height: 40,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF7C3AED).withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(12),
+                    boxShadow: [
+                      BoxShadow(
+                        color: accent.withValues(alpha: 0.22),
+                        blurRadius: 10,
+                        offset: const Offset(0, 3),
                       ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          const Icon(Icons.edit_outlined,
-                              size: 13, color: AppColors.indigo600),
-                          const SizedBox(width: 4),
-                          Text(
-                            'Edit',
-                            style: GoogleFonts.plusJakartaSans(
-                              fontSize: 10,
-                              fontWeight: FontWeight.w800,
-                              color: AppColors.indigo600,
-                            ),
+                    ],
+                  ),
+                  child: const Icon(Icons.handyman_rounded,
+                      color: Color(0xFF7C3AED), size: 20),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      LayoutBuilder(
+                        builder: (context, titleConstraints) {
+                          final titleStyle = GoogleFonts.plusJakartaSans(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w700,
+                            color: isDark ? Colors.white : AppColors.slate900,
+                          );
+                          final fullTitle = skills.join(' · ');
+                          String resolvedTitle = fullTitle;
+                          if (!compact) {
+                            final painter = TextPainter(
+                              text: TextSpan(text: fullTitle, style: titleStyle),
+                              maxLines: 1,
+                              textDirection: Directionality.of(context),
+                            )..layout(maxWidth: titleConstraints.maxWidth);
+                            if (painter.didExceedMaxLines) {
+                              resolvedTitle = overflowTitle;
+                            }
+                          } else {
+                            resolvedTitle = overflowTitle;
+                          }
+                          return Text(
+                            resolvedTitle,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: titleStyle,
+                          );
+                        },
+                      ),
+                      if (!compact) ...[
+                        const SizedBox(height: 2),
+                        Text(
+                          '${service.displayLocation} · ${service.workRadiusKm.toStringAsFixed(0)} km',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: GoogleFonts.plusJakartaSans(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w500,
+                            color: const Color(0xFF94A3B8),
                           ),
-                        ],
-                      ),
-                    ),
+                        ),
+                      ],
+                    ],
                   ),
                 ),
-              ),
-            if (onEdit != null && onDelete != null) const SizedBox(width: 6),
-            if (onDelete != null)
-              Tooltip(
-                message: 'Delete this service',
-                child: Material(
-                  color: Colors.transparent,
-                  child: InkWell(
-                    onTap: onDelete,
-                    mouseCursor: SystemMouseCursors.click,
+                Container(
+                  padding: compact
+                      ? const EdgeInsets.all(6)
+                      : const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF7C3AED).withValues(alpha: 0.12),
                     borderRadius: BorderRadius.circular(8),
-                    hoverColor: const Color(0xFFDC2626).withValues(alpha: 0.14),
-                    highlightColor:
-                        const Color(0xFFDC2626).withValues(alpha: 0.18),
-                    child: Container(
-                      padding:
-                          const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFDC2626).withValues(alpha: 0.1),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          const Icon(Icons.delete_outline_rounded,
-                              size: 13, color: Color(0xFFDC2626)),
-                          const SizedBox(width: 4),
-                          Text(
-                            'Delete',
-                            style: GoogleFonts.plusJakartaSans(
-                              fontSize: 10,
-                              fontWeight: FontWeight.w800,
-                              color: const Color(0xFFDC2626),
-                            ),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(Icons.chat_bubble_rounded,
+                          size: 13, color: Color(0xFF7C3AED)),
+                      if (!compact) ...[
+                        const SizedBox(width: 4),
+                        Text(
+                          '$messageCount',
+                          style: GoogleFonts.plusJakartaSans(
+                            fontSize: 10,
+                            fontWeight: FontWeight.w800,
+                            color: const Color(0xFF7C3AED),
                           ),
-                        ],
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 8),
+                if (onEdit != null)
+                  Tooltip(
+                    message: 'Edit your service',
+                    child: Material(
+                      color: Colors.transparent,
+                      child: InkWell(
+                        onTap: onEdit,
+                        mouseCursor: SystemMouseCursors.click,
+                        borderRadius: BorderRadius.circular(8),
+                        hoverColor: AppColors.indigo600.withValues(alpha: 0.14),
+                        highlightColor: AppColors.indigo600.withValues(alpha: 0.18),
+                        child: Container(
+                          padding: compact
+                              ? const EdgeInsets.all(6)
+                              : const EdgeInsets.symmetric(
+                                  horizontal: 10,
+                                  vertical: 5,
+                                ),
+                          decoration: BoxDecoration(
+                            color: AppColors.indigo600.withValues(alpha: 0.1),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Icon(Icons.edit_outlined,
+                                  size: 13, color: AppColors.indigo600),
+                              if (!compact) ...[
+                                const SizedBox(width: 4),
+                                Text(
+                                  'Edit',
+                                  style: GoogleFonts.plusJakartaSans(
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.w800,
+                                    color: AppColors.indigo600,
+                                  ),
+                                ),
+                              ],
+                            ],
+                          ),
+                        ),
                       ),
                     ),
                   ),
-                ),
-              ),
-          ],
+                if (onEdit != null && onDelete != null) const SizedBox(width: 6),
+                if (onDelete != null)
+                  Tooltip(
+                    message: 'Delete this service',
+                    child: Material(
+                      color: Colors.transparent,
+                      child: InkWell(
+                        onTap: onDelete,
+                        mouseCursor: SystemMouseCursors.click,
+                        borderRadius: BorderRadius.circular(8),
+                        hoverColor: const Color(0xFFDC2626).withValues(alpha: 0.14),
+                        highlightColor:
+                            const Color(0xFFDC2626).withValues(alpha: 0.18),
+                        child: Container(
+                          padding: compact
+                              ? const EdgeInsets.all(6)
+                              : const EdgeInsets.symmetric(
+                                  horizontal: 10,
+                                  vertical: 5,
+                                ),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFDC2626).withValues(alpha: 0.1),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Icon(Icons.delete_outline_rounded,
+                                  size: 13, color: Color(0xFFDC2626)),
+                              if (!compact) ...[
+                                const SizedBox(width: 4),
+                                Text(
+                                  'Delete',
+                                  style: GoogleFonts.plusJakartaSans(
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.w800,
+                                    color: const Color(0xFFDC2626),
+                                  ),
+                                ),
+                              ],
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
+            );
+          },
+            ),
+          ),
         ),
       ),
     );
@@ -2704,6 +2841,7 @@ class _ConvoCard extends StatelessWidget {
   final String preview;
   final DateTime? time;
   final DateTime? lastSeenAt;
+  final bool suppressUnread;
   final bool isDark;
   final VoidCallback? onDelete;
   final VoidCallback onTap;
@@ -2715,6 +2853,7 @@ class _ConvoCard extends StatelessWidget {
     required this.preview,
     this.time,
     this.lastSeenAt,
+    this.suppressUnread = false,
     required this.isDark,
     this.onDelete,
     required this.onTap,
@@ -2729,145 +2868,189 @@ class _ConvoCard extends StatelessWidget {
         .join()
         .toUpperCase();
     final state = context.read<AppState>();
+    final surfaceA = isDark ? const Color(0xFF1E293B) : Colors.white;
+    final surfaceB = isDark ? const Color(0xFF0F172A) : const Color(0xFFF8FAFC);
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 10),
       child: Material(
-        color: isDark ? const Color(0xFF1E293B) : Colors.white,
-        borderRadius: BorderRadius.circular(18),
+        color: Colors.transparent,
+        borderRadius: BorderRadius.circular(20),
         elevation: isDark ? 0 : 1,
         shadowColor: Colors.black.withValues(alpha: 0.06),
-        child: InkWell(
-          onTap: onTap,
-          borderRadius: BorderRadius.circular(18),
-          child: Padding(
-            padding: const EdgeInsets.all(14),
-            child: Row(
-              children: [
-                Container(
-                  width: 44,
-                  height: 44,
-                  decoration: BoxDecoration(
-                    gradient: const LinearGradient(
-                      colors: [AppColors.indigo600, Color(0xFF7C3AED)],
-                    ),
-                    borderRadius: BorderRadius.circular(14),
-                  ),
-                  child: Center(
-                    child: Text(
-                      initials,
-                      style: GoogleFonts.plusJakartaSans(
-                        fontSize: 15,
-                        fontWeight: FontWeight.w800,
-                        color: Colors.white,
-                      ),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 14),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          Expanded(
-                            child: Text(
-                              name,
-                              style: GoogleFonts.plusJakartaSans(
-                                fontSize: 15,
-                                fontWeight: FontWeight.w700,
-                                color: isDark
-                                    ? Colors.white
-                                    : AppColors.slate900,
-                              ),
-                            ),
-                          ),
-                          if (time != null)
-                            Text(
-                              _formatTime(time!),
-                              style: GoogleFonts.plusJakartaSans(
-                                fontSize: 11,
-                                fontWeight: FontWeight.w600,
-                                color: const Color(0xFF94A3B8),
-                              ),
-                            ),
-                          const SizedBox(width: 8),
-                          StreamBuilder<int>(
-                            stream: state.unreadCountStream(
-                              conversationId: conversationId,
-                              lastSeenAt: lastSeenAt,
-                            ),
-                            builder: (context, snapshot) {
-                              final unread = snapshot.data ?? 0;
-                              if (unread <= 0) return const SizedBox.shrink();
-                              return Container(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 7,
-                                  vertical: 2,
-                                ),
-                                decoration: BoxDecoration(
-                                  color: const Color(0xFFDC2626),
-                                  borderRadius: BorderRadius.circular(999),
-                                ),
-                                child: Text(
-                                  unread > 99 ? '99+' : '$unread',
-                                  style: GoogleFonts.plusJakartaSans(
-                                    fontSize: 10,
-                                    fontWeight: FontWeight.w800,
-                                    color: Colors.white,
-                                  ),
-                                ),
-                              );
-                            },
+        child: Ink(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [surfaceA, surfaceB],
+            ),
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(
+              color: isDark ? const Color(0xFF334155) : AppColors.slate200,
+            ),
+          ),
+          child: InkWell(
+            onTap: onTap,
+            borderRadius: BorderRadius.circular(20),
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: LayoutBuilder(
+              builder: (context, constraints) {
+                final ultraCompact = constraints.maxWidth < 380;
+                return Row(
+                  children: [
+                    Container(
+                      width: 48,
+                      height: 48,
+                      decoration: BoxDecoration(
+                        gradient: const LinearGradient(
+                          colors: [AppColors.indigo600, Color(0xFF7C3AED)],
+                        ),
+                        borderRadius: BorderRadius.circular(16),
+                        boxShadow: [
+                          BoxShadow(
+                            color: AppColors.indigo600.withValues(alpha: 0.26),
+                            blurRadius: 10,
+                            offset: const Offset(0, 3),
                           ),
                         ],
                       ),
-                      if (contextLabel != null) ...[
-                        const SizedBox(height: 2),
-                        Text(
-                          contextLabel!,
+                      child: Center(
+                        child: Text(
+                          initials,
                           style: GoogleFonts.plusJakartaSans(
-                            fontSize: 11,
-                            fontWeight: FontWeight.w600,
-                            color: AppColors.indigo600,
+                            fontSize: 16,
+                            fontWeight: FontWeight.w800,
+                            color: Colors.white,
                           ),
                         ),
-                      ],
-                      const SizedBox(height: 3),
-                      Text(
-                        preview,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: GoogleFonts.plusJakartaSans(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w500,
-                          color: const Color(0xFF94A3B8),
-                        ),
                       ),
-                    ],
-                  ),
-                ),
-                const SizedBox(width: 8),
-                if (onDelete != null)
-                  IconButton(
-                    onPressed: onDelete,
-                    icon: const Icon(
-                      Icons.delete_outline_rounded,
-                      size: 18,
-                      color: Color(0xFFDC2626),
                     ),
-                    tooltip: 'Delete conversation',
-                  ),
-                Icon(
-                  Icons.chevron_right_rounded,
-                  color: isDark
-                      ? const Color(0xFF334155)
-                      : AppColors.slate200,
-                ),
-              ],
+                    const SizedBox(width: 14),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  name,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: GoogleFonts.plusJakartaSans(
+                                    fontSize: 15,
+                                    fontWeight: FontWeight.w700,
+                                    color: isDark
+                                        ? Colors.white
+                                        : AppColors.slate900,
+                                  ),
+                                ),
+                              ),
+                              if (!ultraCompact && time != null)
+                                Text(
+                                  _formatTime(time!),
+                                  style: GoogleFonts.plusJakartaSans(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w600,
+                                    color: const Color(0xFF94A3B8),
+                                  ),
+                                ),
+                              const SizedBox(width: 8),
+                              StreamBuilder<int>(
+                                stream: state.unreadCountStream(
+                                  conversationId: conversationId,
+                                  lastSeenAt: lastSeenAt,
+                                  suppress: suppressUnread,
+                                ),
+                                builder: (context, snapshot) {
+                                  final unread = snapshot.data ?? 0;
+                                  if (unread <= 0) return const SizedBox.shrink();
+                                  return Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 7,
+                                      vertical: 2,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: const Color(0xFFDC2626),
+                                      borderRadius: BorderRadius.circular(999),
+                                    ),
+                                    child: Text(
+                                      unread > 99 ? '99+' : '$unread',
+                                      style: GoogleFonts.plusJakartaSans(
+                                        fontSize: 10,
+                                        fontWeight: FontWeight.w800,
+                                        color: Colors.white,
+                                      ),
+                                    ),
+                                  );
+                                },
+                              ),
+                            ],
+                          ),
+                          if (!ultraCompact && contextLabel != null) ...[
+                            const SizedBox(height: 2),
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 8,
+                                vertical: 3,
+                              ),
+                              decoration: BoxDecoration(
+                                color: AppColors.indigo600.withValues(alpha: 0.14),
+                                borderRadius: BorderRadius.circular(999),
+                              ),
+                              child: Text(
+                                contextLabel!,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: GoogleFonts.plusJakartaSans(
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w700,
+                                  color: AppColors.indigo600,
+                                ),
+                              ),
+                            ),
+                          ],
+                          if (!ultraCompact) ...[
+                            const SizedBox(height: 4),
+                            Text(
+                              preview,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: GoogleFonts.plusJakartaSans(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w500,
+                                color: const Color(0xFF94A3B8),
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    if (onDelete != null)
+                      IconButton(
+                        onPressed: onDelete,
+                        icon: const Icon(
+                          Icons.delete_outline_rounded,
+                          size: 18,
+                          color: Color(0xFFDC2626),
+                        ),
+                        tooltip: 'Delete conversation',
+                      ),
+                    Icon(
+                      Icons.chevron_right_rounded,
+                      color: isDark
+                          ? const Color(0xFF475569)
+                          : const Color(0xFFCBD5E1),
+                    ),
+                  ],
+                );
+              },
             ),
           ),
+        ),
         ),
       ),
     );
@@ -2915,7 +3098,7 @@ void _confirmDeleteConversation(
         ),
       ),
       content: Text(
-        'This removes the conversation and messages for both people.',
+        'This chat becomes view-only for you. You will stop getting notifications.',
         style: GoogleFonts.plusJakartaSans(
           fontSize: 13,
           fontWeight: FontWeight.w500,
@@ -3041,6 +3224,9 @@ class _JobHistoryScreenState extends State<JobHistoryScreen> {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final state = context.watch<AppState>();
     final myId = state.currentUserId;
+    final screenWidth = MediaQuery.of(context).size.width;
+    final contentWidthFactor =
+        screenWidth < 400 ? 1.0 : (screenWidth < 900 ? 1.0 : 0.8);
     final completed = state.jobs
         .where((j) =>
             j.status == JobStatus.completed &&
@@ -3064,7 +3250,7 @@ class _JobHistoryScreenState extends State<JobHistoryScreen> {
       body: completed.isEmpty
           ? Center(
               child: FractionallySizedBox(
-                widthFactor: 0.8,
+                widthFactor: contentWidthFactor,
                 child: Padding(
                   padding: const EdgeInsets.all(24),
                   child: Text(
@@ -3081,7 +3267,7 @@ class _JobHistoryScreenState extends State<JobHistoryScreen> {
             )
           : Center(
               child: FractionallySizedBox(
-                widthFactor: 0.8,
+                widthFactor: contentWidthFactor,
                 child: Column(
                   children: [
                     Padding(

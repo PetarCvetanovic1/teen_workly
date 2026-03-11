@@ -10,6 +10,7 @@ import '../services/moderation.dart';
 import '../widgets/app_drawer.dart';
 import '../widgets/tw_app_bar.dart';
 import '../widgets/content_wrap.dart';
+import '../widgets/walking_dog_loader.dart';
 import 'home_screen.dart';
 import 'login_screen.dart';
 import 'contact_screen.dart';
@@ -154,9 +155,7 @@ class _PostServiceScreenState extends State<PostServiceScreen> {
     _queueLoginRedirectIfNeeded(state);
 
     if (!state.isLoggedIn) {
-      return const Scaffold(
-        body: Center(child: CircularProgressIndicator()),
-      );
+      return const Scaffold(body: WalkingDogLoader(label: 'Walking the dog...'));
     }
 
     return Scaffold(
@@ -270,10 +269,11 @@ class _PostServiceScreenState extends State<PostServiceScreen> {
                         controller: _locationCtrl,
                         hint: 'e.g. Waterloo, ON',
                         isDark: isDark,
+                        readOnly: true,
                       ),
                       const SizedBox(height: 6),
                       Text(
-                        'You can offer service at nearby places (like a library), up to 10 km from your map home location.',
+                        'Location is locked to your map home location. You can still offer service at nearby places (up to 10 km).',
                         style: GoogleFonts.plusJakartaSans(
                           fontSize: 11,
                           fontWeight: FontWeight.w600,
@@ -893,7 +893,7 @@ class _PostServiceScreenState extends State<PostServiceScreen> {
     final rawLocation = _locationCtrl.text.trim();
     final publicLocation = isMinorProvider
         ? LocationService.approximatePublicLocation(rawLocation,
-            radiusMeters: 500)
+            radiusMeters: 300)
         : null;
     final service = Service(
       id: _editingServiceId ?? DateTime.now().microsecondsSinceEpoch.toString(),

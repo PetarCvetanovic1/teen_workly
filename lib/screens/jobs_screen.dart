@@ -196,6 +196,7 @@ class _JobsScreenState extends State<JobsScreen> {
   final Set<String> _resolvingJobIds = {};
   final MapController _mapController = MapController();
   bool _focusedJobCentered = false;
+  bool _jobsFeedSeenMarked = false;
 
   bool _isGenericLocationText(String value) {
     final v = _normalizeSearchQuery(value).toLowerCase();
@@ -579,6 +580,13 @@ class _JobsScreenState extends State<JobsScreen> {
       ),
       body: Consumer<AppState>(
         builder: (context, state, _) {
+          if (state.isLoggedIn && !_jobsFeedSeenMarked) {
+            _jobsFeedSeenMarked = true;
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (!mounted) return;
+              unawaited(context.read<AppState>().markJobsFeedSeen());
+            });
+          }
           final filter = _categories[_selectedCategory];
           final isAll = filter == 'All';
 
@@ -652,55 +660,90 @@ class _JobsScreenState extends State<JobsScreen> {
           if (_isMapView) {
             Future.microtask(() => _syncJobMarkers(visibleJobs));
           }
+          final screenWidth = MediaQuery.of(context).size.width;
+          final isNarrow = screenWidth < 700;
+          final contentWidthFactor =
+              screenWidth < 400 ? 1.0 : (screenWidth < 900 ? 1.0 : 0.8);
+          final listBody = (visibleJobs.isEmpty && visibleServices.isEmpty)
+              ? const _EmptyState()
+              : _ListingsView(
+                  jobs: visibleJobs,
+                  services: visibleServices,
+                  isDark: isDark,
+                  currentUserId: myId,
+                  shrinkWrap: isNarrow,
+                  physics: isNarrow
+                      ? const NeverScrollableScrollPhysics()
+                      : const AlwaysScrollableScrollPhysics(),
+                  horizontalPadding: isNarrow ? 8 : 24,
+                );
           return Center(
             child: FractionallySizedBox(
-              widthFactor: 0.8,
-              child: Column(
-                children: [
-                  _buildControls(
-                    theme,
-                    isDark,
-                    totalCount,
-                    workLocation: workLocation,
-                    contentType: _contentType,
-                    onContentTypeChanged: (next) {
-                      setState(() {
-                        _contentType = next;
-                        if (_contentType == _BrowseContentType.services) {
-                          _isMapView = false;
-                        }
-                      });
-                    },
-                  ),
-                  Expanded(
-                    child: _isMapView
-                        ? _MapView(
-                            isDark: isDark,
-                            radiusKm: _radiusKm,
-                            userLocation: _userLocation,
-                            jobs: visibleJobs,
-                            jobMarkers: _jobMarkers,
-                            focusedJobId: widget.focusJobId,
-                            mapController: _mapController,
-                            showPrivacyBubble:
-                                context.read<AppState>().privacyBubbleEnabled,
-                            currentUserId: myId,
-                            onRadiusChanged: (v) => setState(() => _radiusKm = v),
-                            onDetectLocation: _detectGPS,
-                            locationLoading: _locationLoading,
-                            initialFocusCenter: initialFocusCenter,
-                          )
-                        : (visibleJobs.isEmpty && visibleServices.isEmpty)
-                            ? const _EmptyState()
-                            : _ListingsView(
-                                jobs: visibleJobs,
-                                services: visibleServices,
-                                isDark: isDark,
-                                currentUserId: myId,
-                              ),
-                  ),
-                ],
-              ),
+              widthFactor: contentWidthFactor,
+              child: (_isMapView || !isNarrow)
+                  ? Column(
+                      children: [
+                        _buildControls(
+                          theme,
+                          isDark,
+                          totalCount,
+                          workLocation: workLocation,
+                          contentType: _contentType,
+                          onContentTypeChanged: (next) {
+                            setState(() {
+                              _contentType = next;
+                              if (_contentType == _BrowseContentType.services) {
+                                _isMapView = false;
+                              }
+                            });
+                          },
+                        ),
+                        Expanded(
+                          child: _isMapView
+                              ? _MapView(
+                                  isDark: isDark,
+                                  radiusKm: _radiusKm,
+                                  userLocation: _userLocation,
+                                  jobs: visibleJobs,
+                                  jobMarkers: _jobMarkers,
+                                  focusedJobId: widget.focusJobId,
+                                  mapController: _mapController,
+                                  showPrivacyBubble:
+                                      context.read<AppState>().privacyBubbleEnabled,
+                                  currentUserId: myId,
+                                  onRadiusChanged: (v) =>
+                                      setState(() => _radiusKm = v),
+                                  onDetectLocation: _detectGPS,
+                                  locationLoading: _locationLoading,
+                                  initialFocusCenter: initialFocusCenter,
+                                )
+                              : listBody,
+                        ),
+                      ],
+                    )
+                  : SingleChildScrollView(
+                      child: Column(
+                        children: [
+                          _buildControls(
+                            theme,
+                            isDark,
+                            totalCount,
+                            workLocation: workLocation,
+                            contentType: _contentType,
+                            onContentTypeChanged: (next) {
+                              setState(() {
+                                _contentType = next;
+                                if (_contentType == _BrowseContentType.services) {
+                                  _isMapView = false;
+                                }
+                              });
+                            },
+                          ),
+                          listBody,
+                          const SizedBox(height: 12),
+                        ],
+                      ),
+                    ),
             ),
           );
         },
@@ -716,126 +759,135 @@ class _JobsScreenState extends State<JobsScreen> {
     required _BrowseContentType contentType,
     required ValueChanged<_BrowseContentType> onContentTypeChanged,
   }) {
+    final isNarrow = MediaQuery.of(context).size.width < 700;
+    final padH = isNarrow ? 12.0 : 24.0;
     return Container(
       color: isDark ? AppColors.slate950 : Colors.white,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Padding(
-            padding: const EdgeInsets.fromLTRB(24, 16, 24, 8),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text(
-                  'Browse Jobs',
-                  style: GoogleFonts.plusJakartaSans(
-                    fontSize: 22,
-                    fontWeight: FontWeight.w800,
-                    color: isDark ? Colors.white : AppColors.slate900,
-                  ),
-                ),
-                Container(
-                  padding: const EdgeInsets.all(4),
-                  decoration: BoxDecoration(
-                    color: isDark ? AppColors.slate900 : AppColors.slate100,
-                    borderRadius: BorderRadius.circular(14),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
+            padding: EdgeInsets.fromLTRB(padH, 16, padH, 8),
+            child: isNarrow
+                ? Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      _ViewToggle(
-                        icon: Icons.view_list_rounded,
-                        label: 'List',
-                        selected: !_isMapView,
-                        isDark: isDark,
-                        onTap: () => setState(() => _isMapView = false),
+                      Text(
+                        'Browse Jobs',
+                        style: GoogleFonts.plusJakartaSans(
+                          fontSize: 22,
+                          fontWeight: FontWeight.w800,
+                          color: isDark ? Colors.white : AppColors.slate900,
+                        ),
                       ),
-                      const SizedBox(width: 3),
-                      _ViewToggle(
-                        icon: Icons.map_rounded,
-                        label: 'Map',
-                        selected: _isMapView,
-                        isDark: isDark,
-                        onTap: () => setState(() => _isMapView = true),
+                      const SizedBox(height: 8),
+                      Container(
+                        padding: const EdgeInsets.all(4),
+                        decoration: BoxDecoration(
+                          color: isDark ? AppColors.slate900 : AppColors.slate100,
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            _ViewToggle(
+                              icon: Icons.view_list_rounded,
+                              label: 'List',
+                              selected: !_isMapView,
+                              isDark: isDark,
+                              onTap: () => setState(() => _isMapView = false),
+                            ),
+                            const SizedBox(width: 3),
+                            _ViewToggle(
+                              icon: Icons.map_rounded,
+                              label: 'Map',
+                              selected: _isMapView,
+                              isDark: isDark,
+                              onTap: () => setState(() => _isMapView = true),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  )
+                : Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        'Browse Jobs',
+                        style: GoogleFonts.plusJakartaSans(
+                          fontSize: 22,
+                          fontWeight: FontWeight.w800,
+                          color: isDark ? Colors.white : AppColors.slate900,
+                        ),
+                      ),
+                      Container(
+                        padding: const EdgeInsets.all(4),
+                        decoration: BoxDecoration(
+                          color: isDark ? AppColors.slate900 : AppColors.slate100,
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            _ViewToggle(
+                              icon: Icons.view_list_rounded,
+                              label: 'List',
+                              selected: !_isMapView,
+                              isDark: isDark,
+                              onTap: () => setState(() => _isMapView = false),
+                            ),
+                            const SizedBox(width: 3),
+                            _ViewToggle(
+                              icon: Icons.map_rounded,
+                              label: 'Map',
+                              selected: _isMapView,
+                              isDark: isDark,
+                              onTap: () => setState(() => _isMapView = true),
+                            ),
+                          ],
+                        ),
                       ),
                     ],
                   ),
-                ),
-              ],
-            ),
           ),
           Padding(
-            padding: const EdgeInsets.fromLTRB(24, 0, 24, 8),
-            child: Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    '$totalCount opportunit${totalCount == 1 ? 'y' : 'ies'} available',
-                    style: theme.textTheme.bodyMedium?.copyWith(
-                      color: theme.colorScheme.onSurface.withValues(alpha: 0.65),
-                    ),
-                  ),
-                ),
-                if (workLocation.isNotEmpty)
-                  Tooltip(
-                    message: 'Tap to edit location',
-                    child: Material(
-                      color: Colors.transparent,
-                      borderRadius: BorderRadius.circular(999),
-                      child: InkWell(
-                        borderRadius: BorderRadius.circular(999),
-                        onTap: _editLocationByTyping,
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 10, vertical: 6),
-                          decoration: BoxDecoration(
-                            color: isDark
-                                ? AppColors.slate900
-                                : AppColors.indigo600.withValues(alpha: 0.08),
-                            borderRadius: BorderRadius.circular(999),
-                            border: Border.all(
-                              color: isDark
-                                  ? const Color(0xFF334155)
-                                  : AppColors.indigo600.withValues(alpha: 0.25),
-                            ),
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(
-                                Icons.place_rounded,
-                                size: 13,
-                                color: AppColors.indigo600,
-                              ),
-                              const SizedBox(width: 6),
-                              Text(
-                                workLocation,
-                                style: GoogleFonts.plusJakartaSans(
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.w700,
-                                  color:
-                                      isDark ? Colors.white : AppColors.slate900,
-                                ),
-                              ),
-                              const SizedBox(width: 6),
-                              Icon(
-                                Icons.edit_rounded,
-                                size: 12,
-                                color: isDark
-                                    ? const Color(0xFF94A3B8)
-                                    : const Color(0xFF64748B),
-                              ),
-                            ],
+            padding: EdgeInsets.fromLTRB(padH, 0, padH, 8),
+            child: isNarrow
+                ? Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    children: [
+                      Text(
+                        '$totalCount opportunit${totalCount == 1 ? 'y' : 'ies'} available',
+                        style: theme.textTheme.bodyMedium?.copyWith(
+                          color:
+                              theme.colorScheme.onSurface.withValues(alpha: 0.65),
+                        ),
+                      ),
+                      if (workLocation.isNotEmpty)
+                        _locationChip(isDark: isDark, workLocation: workLocation),
+                    ],
+                  )
+                : Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          '$totalCount opportunit${totalCount == 1 ? 'y' : 'ies'} available',
+                          style: theme.textTheme.bodyMedium?.copyWith(
+                            color:
+                                theme.colorScheme.onSurface.withValues(alpha: 0.65),
                           ),
                         ),
                       ),
-                    ),
+                      if (workLocation.isNotEmpty)
+                        _locationChip(isDark: isDark, workLocation: workLocation),
+                    ],
                   ),
-              ],
             ),
-          ),
           Padding(
-            padding: const EdgeInsets.fromLTRB(24, 0, 24, 8),
+            padding: EdgeInsets.fromLTRB(padH, 0, padH, 8),
             child: Wrap(
               spacing: 10,
               runSpacing: 8,
@@ -889,6 +941,61 @@ class _JobsScreenState extends State<JobsScreen> {
           ),
           const SizedBox(height: 8),
         ],
+      ),
+    );
+  }
+
+  Widget _locationChip({required bool isDark, required String workLocation}) {
+    return Tooltip(
+      message: 'Tap to edit location',
+      child: Material(
+        color: Colors.transparent,
+        borderRadius: BorderRadius.circular(999),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(999),
+          onTap: _editLocationByTyping,
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+            decoration: BoxDecoration(
+              color: isDark
+                  ? AppColors.slate900
+                  : AppColors.indigo600.withValues(alpha: 0.08),
+              borderRadius: BorderRadius.circular(999),
+              border: Border.all(
+                color: isDark
+                    ? const Color(0xFF334155)
+                    : AppColors.indigo600.withValues(alpha: 0.25),
+              ),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  Icons.place_rounded,
+                  size: 13,
+                  color: AppColors.indigo600,
+                ),
+                const SizedBox(width: 6),
+                Text(
+                  workLocation,
+                  style: GoogleFonts.plusJakartaSans(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                    color: isDark ? Colors.white : AppColors.slate900,
+                  ),
+                ),
+                const SizedBox(width: 6),
+                Icon(
+                  Icons.edit_rounded,
+                  size: 12,
+                  color: isDark
+                      ? const Color(0xFF94A3B8)
+                      : const Color(0xFF64748B),
+                ),
+              ],
+            ),
+          ),
+        ),
       ),
     );
   }
@@ -1115,7 +1222,7 @@ class _MapView extends StatelessWidget {
                       final baseColor = _jobMapColor(job);
                       final double radius = job.publicRadiusMeters > 0
                           ? job.publicRadiusMeters
-                          : 500.0;
+                          : 300.0;
                       return CircleMarker(
                         point: point,
                         radius: radius,
@@ -1816,18 +1923,26 @@ class _ListingsView extends StatelessWidget {
   final List<Service> services;
   final bool isDark;
   final String currentUserId;
+  final bool shrinkWrap;
+  final ScrollPhysics? physics;
+  final double horizontalPadding;
 
   const _ListingsView({
     required this.jobs,
     required this.services,
     required this.isDark,
     required this.currentUserId,
+    this.shrinkWrap = false,
+    this.physics,
+    this.horizontalPadding = 24,
   });
 
   @override
   Widget build(BuildContext context) {
     return ListView(
-      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
+      padding: EdgeInsets.symmetric(horizontal: horizontalPadding, vertical: 8),
+      shrinkWrap: shrinkWrap,
+      physics: physics,
       children: [
         if (services.isNotEmpty) ...[
           Text(
@@ -1884,14 +1999,15 @@ class _ServiceListTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     const accent = Color(0xFF7C3AED);
-    final surface = isDark ? const Color(0xFF1E293B) : Colors.white;
-    final tint = accent.withValues(alpha: isDark ? 0.11 : 0.06);
-    final edge = accent.withValues(alpha: isDark ? 0.22 : 0.18);
+    final surfaceA = isDark ? const Color(0xFF1E293B) : Colors.white;
+    final surfaceB = isDark ? const Color(0xFF0F172A) : const Color(0xFFF8FAFC);
+    final tint = accent.withValues(alpha: isDark ? 0.13 : 0.08);
+    final edge = accent.withValues(alpha: isDark ? 0.24 : 0.2);
     return Padding(
       padding: const EdgeInsets.only(bottom: 10),
       child: Material(
         color: Colors.transparent,
-        borderRadius: BorderRadius.circular(18),
+        borderRadius: BorderRadius.circular(20),
         elevation: isDark ? 0 : 1,
         shadowColor: Colors.black.withValues(alpha: 0.06),
         child: Ink(
@@ -1899,10 +2015,12 @@ class _ServiceListTile extends StatelessWidget {
             gradient: LinearGradient(
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
-              colors: [tint, surface],
+              colors: [tint, surfaceA, surfaceB],
             ),
-            borderRadius: BorderRadius.circular(18),
-            border: Border.all(color: edge),
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(
+              color: edge,
+            ),
           ),
           child: InkWell(
             onTap: () => Navigator.of(context).push(
@@ -1930,148 +2048,178 @@ class _ServiceListTile extends StatelessWidget {
                       userName: service.providerName,
                       onHide: () => context.read<AppState>().hideService(service.id),
                     ),
-            borderRadius: BorderRadius.circular(18),
+            borderRadius: BorderRadius.circular(20),
             child: Padding(
               padding: const EdgeInsets.all(16),
-              child: Row(
-                children: [
-                  Container(
-                    width: 44,
-                    height: 44,
-                    decoration: BoxDecoration(
-                      gradient: const LinearGradient(
-                        colors: [Color(0xFF7C3AED), AppColors.indigo600],
-                      ),
-                      borderRadius: BorderRadius.circular(14),
-                    ),
-                    child: Center(
-                      child: Text(
-                        service.providerName
-                            .split(' ')
-                            .map((w) => w.isEmpty ? '' : w[0])
-                            .take(2)
-                            .join()
-                            .toUpperCase(),
-                        style: GoogleFonts.plusJakartaSans(
-                          fontSize: 15,
-                          fontWeight: FontWeight.w800,
-                          color: Colors.white,
-                        ),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 14),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          service.providerName,
-                          style: GoogleFonts.plusJakartaSans(
-                            fontSize: 15,
-                            fontWeight: FontWeight.w700,
-                            color: isDark ? Colors.white : AppColors.slate900,
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  final cardWidth = constraints.maxWidth;
+                  final isCompact =
+                      MediaQuery.of(context).size.width < 700 || cardWidth < 420;
+                  final skills = service.skills.toList();
+                  final shortSkills = skills.take(2).join(' · ');
+                  final moreCount = skills.length > 2 ? ' +${skills.length - 2}' : '';
+                  return Row(
+                    children: [
+                      Container(
+                        width: 44,
+                        height: 44,
+                        decoration: BoxDecoration(
+                          gradient: const LinearGradient(
+                            colors: [Color(0xFF7C3AED), AppColors.indigo600],
                           ),
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          service.skills.join(' · '),
-                          style: GoogleFonts.plusJakartaSans(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w600,
-                            color: const Color(0xFF7C3AED),
-                          ),
-                        ),
-                        const SizedBox(height: 2),
-                        Wrap(
-                          spacing: 8,
-                          runSpacing: 6,
-                          crossAxisAlignment: WrapCrossAlignment.center,
-                          children: [
-                            Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                const Icon(Icons.location_on_outlined,
-                                    size: 12, color: Color(0xFF94A3B8)),
-                                const SizedBox(width: 3),
-                                ConstrainedBox(
-                                  constraints: BoxConstraints(
-                                    maxWidth:
-                                        MediaQuery.of(context).size.width * 0.45,
-                                  ),
-                                  child: Text(
-                                    service.displayLocation,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: GoogleFonts.plusJakartaSans(
-                                      fontSize: 11,
-                                      fontWeight: FontWeight.w500,
-                                      color: const Color(0xFF94A3B8),
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ),
-                            if (service.priceRangeLabel.isNotEmpty)
-                              Container(
-                                padding: const EdgeInsets.symmetric(
-                                    horizontal: 8, vertical: 2),
-                                decoration: BoxDecoration(
-                                  color: const Color(0xFF059669)
-                                      .withValues(alpha: 0.1),
-                                  borderRadius: BorderRadius.circular(6),
-                                ),
-                                child: Text(
-                                  service.priceRangeLabel,
-                                  style: GoogleFonts.plusJakartaSans(
-                                    fontSize: 10,
-                                    fontWeight: FontWeight.w700,
-                                    color: const Color(0xFF059669),
-                                  ),
-                                ),
-                              ),
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 8, vertical: 2),
-                              decoration: BoxDecoration(
-                                color:
-                                    const Color(0xFF2563EB).withValues(alpha: 0.1),
-                                borderRadius: BorderRadius.circular(6),
-                              ),
-                              child: Text(
-                                '${service.workRadiusKm.toStringAsFixed(0)} km radius',
-                                style: GoogleFonts.plusJakartaSans(
-                                  fontSize: 10,
-                                  fontWeight: FontWeight.w700,
-                                  color: const Color(0xFF2563EB),
-                                ),
-                              ),
+                          borderRadius: BorderRadius.circular(16),
+                          boxShadow: [
+                            BoxShadow(
+                              color: accent.withValues(alpha: 0.22),
+                              blurRadius: 10,
+                              offset: const Offset(0, 3),
                             ),
                           ],
                         ),
-                      ],
-                    ),
-                  ),
-                  if (service.providerId == currentUserId)
-                    Icon(
-                      Icons.chevron_right_rounded,
-                      color:
-                          isDark ? const Color(0xFF334155) : AppColors.slate200,
-                    )
-                  else
-                    IconButton(
-                      tooltip: 'Safety actions',
-                      icon: const Icon(Icons.shield_outlined,
-                          color: Color(0xFFDC2626)),
-                      onPressed: () => showSafetyActionsSheet(
-                        context,
-                        targetType: 'Service',
-                        targetId: service.id,
-                        userId: service.providerId,
-                        userName: service.providerName,
-                        onHide: () => context.read<AppState>().hideService(service.id),
+                        child: Center(
+                          child: Text(
+                            service.providerName
+                                .split(' ')
+                                .map((w) => w.isEmpty ? '' : w[0])
+                                .take(2)
+                                .join()
+                                .toUpperCase(),
+                            style: GoogleFonts.plusJakartaSans(
+                              fontSize: 15,
+                              fontWeight: FontWeight.w800,
+                              color: Colors.white,
+                            ),
+                          ),
+                        ),
                       ),
-                    ),
-                ],
+                      const SizedBox(width: 14),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              service.providerName,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: GoogleFonts.plusJakartaSans(
+                                fontSize: 15,
+                                fontWeight: FontWeight.w700,
+                                color: isDark ? Colors.white : AppColors.slate900,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              '$shortSkills$moreCount',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: GoogleFonts.plusJakartaSans(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                                color: const Color(0xFF7C3AED),
+                              ),
+                            ),
+                            const SizedBox(height: 2),
+                            Wrap(
+                              spacing: 8,
+                              runSpacing: 6,
+                              crossAxisAlignment: WrapCrossAlignment.center,
+                              children: [
+                                Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    const Icon(Icons.location_on_outlined,
+                                        size: 12, color: Color(0xFF94A3B8)),
+                                    const SizedBox(width: 3),
+                                    ConstrainedBox(
+                                      constraints: BoxConstraints(
+                                        maxWidth: cardWidth * 0.48,
+                                      ),
+                                      child: Text(
+                                        service.displayLocation,
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: GoogleFonts.plusJakartaSans(
+                                          fontSize: 11,
+                                          fontWeight: FontWeight.w500,
+                                          color: const Color(0xFF94A3B8),
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                if (service.priceRangeLabel.isNotEmpty)
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 8, vertical: 2),
+                                    decoration: BoxDecoration(
+                                      color: const Color(0xFF059669)
+                                          .withValues(alpha: 0.1),
+                                      borderRadius: BorderRadius.circular(6),
+                                    ),
+                                    child: Text(
+                                      service.priceRangeLabel,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: GoogleFonts.plusJakartaSans(
+                                        fontSize: 10,
+                                        fontWeight: FontWeight.w700,
+                                        color: const Color(0xFF059669),
+                                      ),
+                                    ),
+                                  ),
+                                if (!isCompact)
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 8, vertical: 2),
+                                    decoration: BoxDecoration(
+                                      color: const Color(0xFF2563EB)
+                                          .withValues(alpha: 0.1),
+                                      borderRadius: BorderRadius.circular(6),
+                                    ),
+                                    child: Text(
+                                      '${service.workRadiusKm.toStringAsFixed(0)} km radius',
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: GoogleFonts.plusJakartaSans(
+                                        fontSize: 10,
+                                        fontWeight: FontWeight.w700,
+                                        color: const Color(0xFF2563EB),
+                                      ),
+                                    ),
+                                  ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                      if (service.providerId == currentUserId)
+                        Icon(
+                          Icons.chevron_right_rounded,
+                          color:
+                              isDark ? const Color(0xFF334155) : AppColors.slate200,
+                        )
+                      else
+                        IconButton(
+                          tooltip: 'Safety actions',
+                          visualDensity: VisualDensity.compact,
+                          constraints:
+                              const BoxConstraints(minWidth: 32, minHeight: 32),
+                          icon: const Icon(Icons.shield_outlined,
+                              size: 18, color: Color(0xFFDC2626)),
+                          onPressed: () => showSafetyActionsSheet(
+                            context,
+                            targetType: 'Service',
+                            targetId: service.id,
+                            userId: service.providerId,
+                            userName: service.providerName,
+                            onHide: () =>
+                                context.read<AppState>().hideService(service.id),
+                          ),
+                        ),
+                    ],
+                  );
+                },
               ),
             ),
           ),
@@ -2111,14 +2259,15 @@ class _JobListTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final accent = _statusColor();
-    final surface = isDark ? const Color(0xFF1E293B) : Colors.white;
-    final tint = accent.withValues(alpha: isDark ? 0.11 : 0.06);
-    final edge = accent.withValues(alpha: isDark ? 0.22 : 0.18);
+    final surfaceA = isDark ? const Color(0xFF1E293B) : Colors.white;
+    final surfaceB = isDark ? const Color(0xFF0F172A) : const Color(0xFFF8FAFC);
+    final tint = accent.withValues(alpha: isDark ? 0.13 : 0.08);
+    final edge = accent.withValues(alpha: isDark ? 0.24 : 0.2);
     return Padding(
       padding: const EdgeInsets.only(bottom: 10),
       child: Material(
         color: Colors.transparent,
-        borderRadius: BorderRadius.circular(18),
+        borderRadius: BorderRadius.circular(20),
         elevation: isDark ? 0 : 1,
         shadowColor: Colors.black.withValues(alpha: 0.06),
         child: Ink(
@@ -2126,10 +2275,12 @@ class _JobListTile extends StatelessWidget {
             gradient: LinearGradient(
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
-              colors: [tint, surface],
+              colors: [tint, surfaceA, surfaceB],
             ),
-            borderRadius: BorderRadius.circular(18),
-            border: Border.all(color: edge),
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(
+              color: edge,
+            ),
           ),
           child: InkWell(
             onTap: () => Navigator.of(context).push(
@@ -2157,81 +2308,58 @@ class _JobListTile extends StatelessWidget {
                       userName: job.posterName,
                       onHide: () => context.read<AppState>().hideJob(job.id),
                     ),
-            borderRadius: BorderRadius.circular(18),
+            borderRadius: BorderRadius.circular(20),
             child: Padding(
               padding: const EdgeInsets.all(16),
-              child: Row(
-                children: [
-                  Container(
-                    width: 44,
-                    height: 44,
-                    decoration: BoxDecoration(
-                      color: AppColors.indigo600.withValues(alpha: 0.12),
-                      borderRadius: BorderRadius.circular(14),
-                    ),
-                    child: const Icon(Icons.work_outline_rounded,
-                        color: AppColors.indigo600, size: 22),
-                  ),
-                  const SizedBox(width: 14),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          job.title,
-                          style: GoogleFonts.plusJakartaSans(
-                            fontSize: 15,
-                            fontWeight: FontWeight.w700,
-                            color: isDark ? Colors.white : AppColors.slate900,
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  final cardWidth = constraints.maxWidth;
+                  final isCompact =
+                      MediaQuery.of(context).size.width < 700 || cardWidth < 420;
+                  final isSuperCompact =
+                      MediaQuery.of(context).size.width < 430 || cardWidth < 350;
+                  return Row(
+                    children: [
+                      if (!isSuperCompact)
+                        Container(
+                          width: 44,
+                          height: 44,
+                          decoration: BoxDecoration(
+                            gradient: const LinearGradient(
+                              colors: [AppColors.indigo600, Color(0xFF7C3AED)],
+                            ),
+                            borderRadius: BorderRadius.circular(16),
+                            boxShadow: [
+                              BoxShadow(
+                                color: AppColors.indigo600.withValues(alpha: 0.24),
+                                blurRadius: 10,
+                                offset: const Offset(0, 3),
+                              ),
+                            ],
+                          ),
+                          child: const Icon(
+                            Icons.work_outline_rounded,
+                            color: Colors.white,
+                            size: 22,
                           ),
                         ),
-                        const SizedBox(height: 4),
-                        Row(
+                      if (!isSuperCompact) const SizedBox(width: 14),
+                      Expanded(
+                        child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Expanded(
-                              child: Wrap(
-                                spacing: 8,
-                                runSpacing: 6,
-                                crossAxisAlignment: WrapCrossAlignment.center,
+                            if (isSuperCompact)
+                              Row(
                                 children: [
-                                  Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      const Icon(Icons.location_on_outlined,
-                                          size: 12, color: Color(0xFF94A3B8)),
-                                      const SizedBox(width: 3),
-                                      ConstrainedBox(
-                                        constraints: BoxConstraints(
-                                          maxWidth:
-                                              MediaQuery.of(context).size.width * 0.45,
-                                        ),
-                                        child: Text(
-                                          job.displayLocation,
-                                          overflow: TextOverflow.ellipsis,
-                                          style: GoogleFonts.plusJakartaSans(
-                                            fontSize: 11,
-                                            fontWeight: FontWeight.w500,
-                                            color: const Color(0xFF94A3B8),
-                                          ),
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(
-                                        horizontal: 8, vertical: 2),
-                                    decoration: BoxDecoration(
-                                      color:
-                                          AppColors.indigo600.withValues(alpha: 0.1),
-                                      borderRadius: BorderRadius.circular(6),
-                                    ),
+                                  Expanded(
                                     child: Text(
-                                      job.type,
+                                      job.title,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
                                       style: GoogleFonts.plusJakartaSans(
-                                        fontSize: 10,
+                                        fontSize: 15,
                                         fontWeight: FontWeight.w700,
-                                        color: AppColors.indigo600,
+                                        color: isDark ? Colors.white : AppColors.slate900,
                                       ),
                                     ),
                                   ),
@@ -2253,102 +2381,202 @@ class _JobListTile extends StatelessWidget {
                                         ),
                                       ),
                                     ),
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(
-                                        horizontal: 8, vertical: 2),
-                                    decoration: BoxDecoration(
-                                      color: _statusColor().withValues(alpha: 0.12),
-                                      borderRadius: BorderRadius.circular(6),
-                                    ),
-                                    child: Text(
-                                      _statusLabel(),
-                                      style: GoogleFonts.plusJakartaSans(
-                                        fontSize: 10,
-                                        fontWeight: FontWeight.w700,
-                                        color: _statusColor(),
+                                ],
+                              )
+                            else
+                              Text(
+                                job.title,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: GoogleFonts.plusJakartaSans(
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.w700,
+                                  color: isDark ? Colors.white : AppColors.slate900,
+                                ),
+                              ),
+                            const SizedBox(height: 4),
+                            Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Expanded(
+                                  child: Wrap(
+                                    spacing: 8,
+                                    runSpacing: 6,
+                                    crossAxisAlignment: WrapCrossAlignment.center,
+                                    children: [
+                                      Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          const Icon(Icons.location_on_outlined,
+                                              size: 12, color: Color(0xFF94A3B8)),
+                                          const SizedBox(width: 3),
+                                          ConstrainedBox(
+                                            constraints: BoxConstraints(
+                                              maxWidth:
+                                                  cardWidth * (isSuperCompact ? 0.42 : 0.48),
+                                            ),
+                                            child: Text(
+                                              job.displayLocation,
+                                              maxLines: 1,
+                                              overflow: TextOverflow.ellipsis,
+                                              style: GoogleFonts.plusJakartaSans(
+                                                fontSize: 11,
+                                                fontWeight: FontWeight.w500,
+                                                color: const Color(0xFF94A3B8),
+                                              ),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                      if (!isCompact)
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(
+                                              horizontal: 8, vertical: 2),
+                                          decoration: BoxDecoration(
+                                            color: AppColors.indigo600
+                                                .withValues(alpha: 0.1),
+                                            borderRadius: BorderRadius.circular(6),
+                                          ),
+                                          child: Text(
+                                            job.type,
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: GoogleFonts.plusJakartaSans(
+                                              fontSize: 10,
+                                              fontWeight: FontWeight.w700,
+                                              color: AppColors.indigo600,
+                                            ),
+                                          ),
+                                        ),
+                                      if (job.payment > 0 && !isSuperCompact)
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(
+                                              horizontal: 8, vertical: 2),
+                                          decoration: BoxDecoration(
+                                            color: const Color(0xFF059669)
+                                                .withValues(alpha: 0.1),
+                                            borderRadius: BorderRadius.circular(6),
+                                          ),
+                                          child: Text(
+                                            '\$${job.payment.toStringAsFixed(0)}',
+                                            style: GoogleFonts.plusJakartaSans(
+                                              fontSize: 10,
+                                              fontWeight: FontWeight.w700,
+                                              color: const Color(0xFF059669),
+                                            ),
+                                          ),
+                                        ),
+                                      if (!isCompact)
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(
+                                              horizontal: 8, vertical: 2),
+                                          decoration: BoxDecoration(
+                                            color: _statusColor()
+                                                .withValues(alpha: 0.12),
+                                            borderRadius: BorderRadius.circular(6),
+                                          ),
+                                          child: Text(
+                                            _statusLabel(),
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: GoogleFonts.plusJakartaSans(
+                                              fontSize: 10,
+                                              fontWeight: FontWeight.w700,
+                                              color: _statusColor(),
+                                            ),
+                                          ),
+                                        ),
+                                    ],
+                                  ),
+                                ),
+                                if (job.applicantIds.contains(currentUserId)) ...[
+                                  const SizedBox(width: 8),
+                                  GestureDetector(
+                                    onTap: () async {
+                                      final state = context.read<AppState>();
+                                      final conv = await state.getOrCreateConversation(
+                                        otherUserId: job.posterId,
+                                        otherUserName: job.posterName,
+                                        contextLabel: 'Job: ${job.title}',
+                                        scopeKey: 'job:${job.id}',
+                                      );
+                                      if (!context.mounted) return;
+                                      Navigator.of(context).push(
+                                        SmoothPageRoute(
+                                          builder: (_) => ChatScreen(
+                                            conversationId: conv.id,
+                                            otherUserName: conv.otherUserName,
+                                            contextLabel: conv.contextLabel,
+                                          ),
+                                        ),
+                                      );
+                                    },
+                                    child: Container(
+                                      padding: isCompact
+                                          ? const EdgeInsets.all(6)
+                                          : const EdgeInsets.symmetric(
+                                              horizontal: 10,
+                                              vertical: 5,
+                                            ),
+                                      decoration: BoxDecoration(
+                                        color: AppColors.indigo600,
+                                        borderRadius: BorderRadius.circular(8),
+                                      ),
+                                      child: Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          const Icon(
+                                            Icons.chat_rounded,
+                                            size: 12,
+                                            color: Colors.white,
+                                          ),
+                                          if (!isCompact) ...[
+                                            const SizedBox(width: 4),
+                                            Text(
+                                              'Message',
+                                              style: GoogleFonts.plusJakartaSans(
+                                                fontSize: 10,
+                                                fontWeight: FontWeight.w700,
+                                                color: Colors.white,
+                                              ),
+                                            ),
+                                          ],
+                                        ],
                                       ),
                                     ),
                                   ),
                                 ],
-                              ),
+                              ],
                             ),
-                            if (job.applicantIds.contains(currentUserId)) ...[
-                              const SizedBox(width: 8),
-                              GestureDetector(
-                                onTap: () async {
-                                  final state = context.read<AppState>();
-                                  final conv = await state.getOrCreateConversation(
-                                    otherUserId: job.posterId,
-                                    otherUserName: job.posterName,
-                                    contextLabel: 'Job: ${job.title}',
-                                    scopeKey: 'job:${job.id}',
-                                  );
-                                  if (!context.mounted) return;
-                                  Navigator.of(context).push(
-                                    SmoothPageRoute(
-                                      builder: (_) => ChatScreen(
-                                        conversationId: conv.id,
-                                        otherUserName: conv.otherUserName,
-                                        contextLabel: conv.contextLabel,
-                                      ),
-                                    ),
-                                  );
-                                },
-                                child: Container(
-                                  padding: const EdgeInsets.symmetric(
-                                      horizontal: 10, vertical: 5),
-                                  decoration: BoxDecoration(
-                                    color: AppColors.indigo600,
-                                    borderRadius: BorderRadius.circular(8),
-                                  ),
-                                  child: Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      const Icon(
-                                        Icons.chat_rounded,
-                                        size: 12,
-                                        color: Colors.white,
-                                      ),
-                                      const SizedBox(width: 4),
-                                      Text(
-                                        'Message',
-                                        style: GoogleFonts.plusJakartaSans(
-                                          fontSize: 10,
-                                          fontWeight: FontWeight.w700,
-                                          color: Colors.white,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ),
-                            ],
                           ],
                         ),
-                      ],
-                    ),
-                  ),
-                  if (job.posterId == currentUserId)
-                    Icon(
-                      Icons.chevron_right_rounded,
-                      color:
-                          isDark ? const Color(0xFF334155) : AppColors.slate200,
-                    )
-                  else
-                    IconButton(
-                      tooltip: 'Safety actions',
-                      icon: const Icon(Icons.shield_outlined,
-                          color: Color(0xFFDC2626)),
-                      onPressed: () => showSafetyActionsSheet(
-                        context,
-                        targetType: 'Job',
-                        targetId: job.id,
-                        userId: job.posterId,
-                        userName: job.posterName,
-                        onHide: () => context.read<AppState>().hideJob(job.id),
                       ),
-                    ),
-                ],
+                      if (job.posterId == currentUserId)
+                        Icon(
+                          Icons.chevron_right_rounded,
+                          color:
+                              isDark ? const Color(0xFF334155) : AppColors.slate200,
+                        )
+                      else
+                        IconButton(
+                          tooltip: 'Safety actions',
+                          visualDensity: VisualDensity.compact,
+                          constraints:
+                              const BoxConstraints(minWidth: 32, minHeight: 32),
+                          icon: const Icon(Icons.shield_outlined,
+                              size: 18, color: Color(0xFFDC2626)),
+                          onPressed: () => showSafetyActionsSheet(
+                            context,
+                            targetType: 'Job',
+                            targetId: job.id,
+                            userId: job.posterId,
+                            userName: job.posterName,
+                            onHide: () => context.read<AppState>().hideJob(job.id),
+                          ),
+                        ),
+                    ],
+                  );
+                },
               ),
             ),
           ),

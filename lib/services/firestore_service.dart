@@ -31,6 +31,13 @@ class FirestoreService {
     return fallbackCodes.contains(error.code);
   }
 
+  static bool _isPubliclyVisible(Map<String, dynamic> data) {
+    if (data['isVisible'] == false) return false;
+    final moderation = (data['moderationStatus'] ?? '').toString().toLowerCase();
+    if (moderation == 'flagged') return false;
+    return true;
+  }
+
   // ── Users ──
 
   static Future<void> createOrUpdateUser(
@@ -99,6 +106,7 @@ class FirestoreService {
       school: d['school'],
       age: d['age'],
       ageLastUpdatedAt: (d['ageLastUpdatedAt'] as Timestamp?)?.toDate(),
+      gpsVerifiedAt: (d['gpsVerifiedAt'] as Timestamp?)?.toDate(),
       vaultGoal: d['vaultGoal'],
       vaultTargetAmount: (d['vaultTargetAmount'] as num?)?.toDouble(),
       termsAcceptedAt: (d['termsAcceptedAt'] as Timestamp?)?.toDate(),
@@ -135,13 +143,35 @@ class FirestoreService {
     };
   }
 
+  static Future<void> markGpsVerified() async {
+    final callable = _functions.httpsCallable('markGpsVerified');
+    try {
+      await callable.call(<String, dynamic>{});
+    } catch (e) {
+      if (_isFunctionsUnavailable(e)) {
+        throw Exception(
+          'GPS verification service is unavailable. Please try again shortly.',
+        );
+      }
+      rethrow;
+    }
+  }
+
   // ── Jobs ──
 
   static Stream<List<Job>> jobsStream() {
     return _jobsCol
-        .orderBy('createdAt', descending: true)
         .snapshots()
-        .map((snap) => snap.docs.map(_jobFromDoc).toList());
+        .map(
+          (snap) {
+            final jobs = snap.docs
+              .where((doc) => _isPubliclyVisible(doc.data()))
+              .map(_jobFromDoc)
+              .toList();
+            jobs.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+            return jobs;
+          },
+        );
   }
 
   static Future<void> addJob(Job job) async {
@@ -204,6 +234,8 @@ class FirestoreService {
         'hiredName': job.hiredName,
         'status': job.status.name,
         'payment': job.payment,
+        'isVisible': true,
+        'moderationStatus': 'pending',
         'completedAt':
             job.completedAt != null ? Timestamp.fromDate(job.completedAt!) : null,
       };
@@ -224,7 +256,7 @@ class FirestoreService {
       publicLocation: d['publicLocation'],
       publicLat: (d['publicLat'] as num?)?.toDouble(),
       publicLng: (d['publicLng'] as num?)?.toDouble(),
-      publicRadiusMeters: (d['publicRadiusMeters'] as num?)?.toDouble() ?? 500,
+      publicRadiusMeters: (d['publicRadiusMeters'] as num?)?.toDouble() ?? 300,
       createdAt: (d['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
       applicantIds: List<String>.from(d['applicantIds'] ?? []),
       applicantNames: List<String>.from(d['applicantNames'] ?? []),
@@ -243,9 +275,17 @@ class FirestoreService {
 
   static Stream<List<Service>> servicesStream() {
     return _servicesCol
-        .orderBy('createdAt', descending: true)
         .snapshots()
-        .map((snap) => snap.docs.map(_serviceFromDoc).toList());
+        .map(
+          (snap) {
+            final services = snap.docs
+              .where((doc) => _isPubliclyVisible(doc.data()))
+              .map(_serviceFromDoc)
+              .toList();
+            services.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+            return services;
+          },
+        );
   }
 
   static Future<void> addService(Service service) async {
@@ -305,6 +345,8 @@ class FirestoreService {
       'workRadiusKm': service.workRadiusKm,
       'minPrice': service.minPrice,
       'maxPrice': service.maxPrice,
+      'isVisible': true,
+      'moderationStatus': 'pending',
     });
   }
 
@@ -373,7 +415,7 @@ class FirestoreService {
       publicLocation: d['publicLocation'],
       publicLat: (d['publicLat'] as num?)?.toDouble(),
       publicLng: (d['publicLng'] as num?)?.toDouble(),
-      publicRadiusMeters: (d['publicRadiusMeters'] as num?)?.toDouble() ?? 500,
+      publicRadiusMeters: (d['publicRadiusMeters'] as num?)?.toDouble() ?? 300,
       skills: Set<String>.from(d['skills'] ?? []),
       otherSkill: d['otherSkill'],
       availableDays: Set<String>.from(d['availableDays'] ?? []),
@@ -488,6 +530,17 @@ class FirestoreService {
     return out;
   }
 
+  static Map<String, bool> _boolByUserFromMap(dynamic raw) {
+    if (raw is! Map) return const {};
+    final out = <String, bool>{};
+    for (final entry in raw.entries) {
+      final key = entry.key?.toString();
+      if (key == null || key.isEmpty) continue;
+      out[key] = entry.value == true;
+    }
+    return out;
+  }
+
   static Map<String, DateTime> _lastSeenByFromMap(dynamic raw) {
     if (raw is! Map) return const {};
     final out = <String, DateTime>{};
@@ -527,9 +580,54 @@ class FirestoreService {
                 lastMessageText: d['lastMessageText'],
                 lastMessageAt: ts?.toDate(),
                 typingBy: _typingByFromMap(d['typingBy']),
+                typingUpdatedAtBy: _lastSeenByFromMap(d['typingUpdatedAtBy']),
                 lastSeenBy: _lastSeenByFromMap(d['lastSeenBy']),
+                mutedBy: _boolByUserFromMap(d['mutedBy']),
+                lockedBy: _boolByUserFromMap(d['lockedBy']),
               );
             }).toList();
+          items.removeWhere((c) => c.mutedBy[userId] == true && c.lockedBy[userId] == true);
+          items.sort((a, b) {
+            final aMs = a.lastMessageTime?.millisecondsSinceEpoch ?? 0;
+            final bMs = b.lastMessageTime?.millisecondsSinceEpoch ?? 0;
+            return bMs.compareTo(aMs);
+          });
+          return items;
+        });
+  }
+
+  static Stream<List<Conversation>> hiddenConversationsStream(String userId) {
+    return _conversationsCol
+        .where('participants', arrayContains: userId)
+        .snapshots()
+        .map((snap) {
+          final items = snap.docs.map((doc) {
+              final d = doc.data();
+              final participants = List<String>.from(d['participants'] ?? []);
+              final names = Map<String, String>.from(d['participantNames'] ?? {});
+              final otherId = participants.firstWhere(
+                (id) => id != userId,
+                orElse: () => '',
+              );
+              final ts = d['lastMessageAt'] as Timestamp?;
+              return Conversation(
+                id: doc.id,
+                otherUserId: otherId,
+                otherUserName: names[otherId] ?? 'Unknown',
+                contextLabel: d['contextLabel'],
+                scopeKey: d['scopeKey'],
+                lastMessageText: d['lastMessageText'],
+                lastMessageAt: ts?.toDate(),
+                typingBy: _typingByFromMap(d['typingBy']),
+                typingUpdatedAtBy: _lastSeenByFromMap(d['typingUpdatedAtBy']),
+                lastSeenBy: _lastSeenByFromMap(d['lastSeenBy']),
+                mutedBy: _boolByUserFromMap(d['mutedBy']),
+                lockedBy: _boolByUserFromMap(d['lockedBy']),
+              );
+            }).toList();
+          items.removeWhere(
+            (c) => !(c.mutedBy[userId] == true && c.lockedBy[userId] == true),
+          );
           items.sort((a, b) {
             final aMs = a.lastMessageTime?.millisecondsSinceEpoch ?? 0;
             final bMs = b.lastMessageTime?.millisecondsSinceEpoch ?? 0;
@@ -567,6 +665,7 @@ class FirestoreService {
           contextLabel: d['contextLabel'],
           scopeKey: d['scopeKey'],
           typingBy: _typingByFromMap(d['typingBy']),
+          typingUpdatedAtBy: _lastSeenByFromMap(d['typingUpdatedAtBy']),
           lastSeenBy: _lastSeenByFromMap(d['lastSeenBy']),
         );
       }
@@ -581,7 +680,10 @@ class FirestoreService {
       contextLabel: contextLabel,
       scopeKey: scopeKey,
       typingBy: const {},
+      typingUpdatedAtBy: const {},
       lastSeenBy: const {},
+      mutedBy: const {},
+      lockedBy: const {},
     );
   }
 
@@ -608,7 +710,10 @@ class FirestoreService {
         lastMessageText: d['lastMessageText'],
         lastMessageAt: ts?.toDate(),
         typingBy: _typingByFromMap(d['typingBy']),
+        typingUpdatedAtBy: _lastSeenByFromMap(d['typingUpdatedAtBy']),
         lastSeenBy: _lastSeenByFromMap(d['lastSeenBy']),
+        mutedBy: _boolByUserFromMap(d['mutedBy']),
+        lockedBy: _boolByUserFromMap(d['lockedBy']),
       );
     });
   }
@@ -636,7 +741,10 @@ class FirestoreService {
       lastMessageText: d['lastMessageText'],
       lastMessageAt: ts?.toDate(),
       typingBy: _typingByFromMap(d['typingBy']),
+      typingUpdatedAtBy: _lastSeenByFromMap(d['typingUpdatedAtBy']),
       lastSeenBy: _lastSeenByFromMap(d['lastSeenBy']),
+      mutedBy: _boolByUserFromMap(d['mutedBy']),
+      lockedBy: _boolByUserFromMap(d['lockedBy']),
     );
   }
 
@@ -656,6 +764,8 @@ class FirestoreService {
                 timestamp:
                     (d['timestamp'] as Timestamp?)?.toDate() ?? DateTime.now(),
                 isDeleted: d['isDeleted'] == true || d['deletedAt'] != null,
+                isEdited: d['isEdited'] == true,
+                editedAt: (d['editedAt'] as Timestamp?)?.toDate(),
                 deletedById: d['deletedById'],
                 deletedByName: d['deletedByName'],
               );
@@ -716,6 +826,15 @@ class FirestoreService {
     String? contextLabel,
     String? scopeKey,
   }) async {
+    final convRef = _conversationsCol.doc(conversationId);
+    final convSnap = await convRef.get();
+    if (convSnap.exists) {
+      final convData = convSnap.data() ?? const <String, dynamic>{};
+      final lockedBy = _boolByUserFromMap(convData['lockedBy']);
+      if (lockedBy[message.senderId] == true) {
+        throw Exception('This conversation is view-only for you.');
+      }
+    }
     if (_useCallableBackend) {
       final callable = _functions.httpsCallable('sendConversationMessage');
       try {
@@ -744,12 +863,14 @@ class FirestoreService {
       'senderName': message.senderName,
       'text': message.text,
       'timestamp': Timestamp.fromDate(message.timestamp),
+      'isEdited': false,
+      'editedAt': null,
       'isDeleted': false,
       'deletedById': null,
       'deletedByName': null,
       'deletedAt': null,
     });
-    batch.set(_conversationsCol.doc(conversationId), {
+    batch.set(convRef, {
       if ((myUserId ?? '').trim().isNotEmpty &&
           (otherUserId ?? '').trim().isNotEmpty)
         'participants': [myUserId!.trim(), otherUserId!.trim()],
@@ -766,6 +887,7 @@ class FirestoreService {
       'lastMessageAt': Timestamp.fromDate(message.timestamp),
       'lastMessageText': message.text,
       'typingBy': {message.senderId: false},
+      'typingUpdatedAtBy': {message.senderId: Timestamp.fromDate(message.timestamp)},
       'lastSeenBy': {message.senderId: Timestamp.fromDate(message.timestamp)},
     }, SetOptions(merge: true));
     await batch.commit();
@@ -854,6 +976,7 @@ class FirestoreService {
     try {
       await ref.update({
         'typingBy.$userId': isTyping,
+        'typingUpdatedAtBy.$userId': FieldValue.serverTimestamp(),
       });
     } on FirebaseException catch (e) {
       if (e.code != 'not-found') rethrow;
@@ -880,6 +1003,48 @@ class FirestoreService {
     }
   }
 
+  static Future<void> softDeleteConversationForUser({
+    required String conversationId,
+    required String userId,
+  }) async {
+    final uid = userId.trim();
+    if (uid.isEmpty) return;
+    await _conversationsCol.doc(conversationId).set({
+      'mutedBy.$uid': true,
+      'lockedBy.$uid': true,
+      'typingBy.$uid': false,
+      'lastSeenBy.$uid': FieldValue.serverTimestamp(),
+      'deletedFor.$uid': FieldValue.serverTimestamp(),
+    }, SetOptions(merge: true));
+  }
+
+  static Future<void> restoreConversationForUser({
+    required String conversationId,
+    required String userId,
+  }) async {
+    final uid = userId.trim();
+    if (uid.isEmpty) return;
+    await _conversationsCol.doc(conversationId).set({
+      'mutedBy.$uid': false,
+      'lockedBy.$uid': false,
+      'typingBy.$uid': false,
+      'deletedFor.$uid': FieldValue.delete(),
+    }, SetOptions(merge: true));
+  }
+
+  static Future<bool> isConversationReadOnlyForUser({
+    required String conversationId,
+    required String userId,
+  }) async {
+    final uid = userId.trim();
+    if (uid.isEmpty) return false;
+    final snap = await _conversationsCol.doc(conversationId).get();
+    if (!snap.exists) return false;
+    final data = snap.data() ?? const <String, dynamic>{};
+    final lockedBy = _boolByUserFromMap(data['lockedBy']);
+    return lockedBy[uid] == true;
+  }
+
   static Future<void> deleteConversation(String conversationId) async {
     final messagesRef = _conversationsCol.doc(conversationId).collection('messages');
     final messagesSnap = await messagesRef.get();
@@ -898,7 +1063,9 @@ class FirestoreService {
         .where('ageGroup', isEqualTo: ageGroup.name)
         .snapshots()
         .map((snap) {
-          final posts = snap.docs.map((doc) {
+          final posts = snap.docs
+              .where((doc) => _isPubliclyVisible(doc.data()))
+              .map((doc) {
               final d = doc.data();
               return HuddlePost(
                 id: doc.id,
@@ -952,6 +1119,8 @@ class FirestoreService {
       'lastReplyAt': null,
       'lastReplyAuthorId': null,
       'replyCount': 0,
+      'isVisible': true,
+      'moderationStatus': 'pending',
     });
   }
 

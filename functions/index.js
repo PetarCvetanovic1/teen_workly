@@ -1,7 +1,9 @@
 const admin = require("firebase-admin");
 const {onCall, HttpsError} = require("firebase-functions/v2/https");
+const {onDocumentCreated, onDocumentUpdated} = require("firebase-functions/v2/firestore");
+const {onSchedule} = require("firebase-functions/v2/scheduler");
 const {onObjectFinalized} = require("firebase-functions/v2/storage");
-const {defineSecret} = require("firebase-functions/params");
+const {defineSecret, defineString} = require("firebase-functions/params");
 const crypto = require("crypto");
 const os = require("os");
 const path = require("path");
@@ -12,6 +14,8 @@ admin.initializeApp();
 const db = admin.firestore();
 const openAiApiKey = defineSecret("OPENAI_API_KEY");
 const geminiApiKey = defineSecret("GEMINI_API_KEY");
+const moderationAlertEmail = defineString("MODERATION_ALERT_EMAIL");
+const ownerUid = defineString("OWNER_UID");
 const CONTACT_INFO_RE = /(?:\+?\d[\d\s().-]{7,}\d)|(?:[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,})|(?:^|\s)(@[\w._]{2,}|snap(?:chat)?|instagram|insta|ig|tiktok|discord|telegram|whatsapp)\b/i;
 
 function containsContactInfo(text) {
@@ -40,11 +44,11 @@ function approximateLabelFromLocation(location) {
       parts[0] ||
       "local area";
   }
-  return `Near ${city} (~500m)`;
+  return `Near ${city} (~300m)`;
 }
 
 function fuzzCoordinates(lat, lng, seed) {
-  const radiusM = 500;
+  const radiusM = 300;
   const hash = crypto.createHash("sha256").update(String(seed)).digest();
   const theta = (hash.readUInt32BE(0) / 0xffffffff) * 2 * Math.PI;
   const distanceM = (hash.readUInt32BE(4) / 0xffffffff) * radiusM;
@@ -146,6 +150,50 @@ async function runOpenAiModeration(text, apiKey) {
   };
 }
 
+async function runOpenAiModerationFlagged(text, apiKey) {
+  const res = await fetch("https://api.openai.com/v1/moderations", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "Authorization": `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify({
+      model: "omni-moderation-latest",
+      input: text,
+    }),
+  });
+  if (!res.ok) {
+    const body = await res.text();
+    const err = new Error(`OpenAI moderation failed (${res.status}): ${body}`);
+    err.status = res.status;
+    throw err;
+  }
+  const data = await res.json();
+  const result = data?.results?.[0] || {};
+  return {
+    flagged: result.flagged === true,
+    categories: result.categories || {},
+  };
+}
+
+async function sendModerationRateLimitAlert(info) {
+  const to = String(moderationAlertEmail.value() || "").trim();
+  if (!to) return;
+  const whenIso = new Date().toISOString();
+  await db.collection("mail").add({
+    to: [to],
+    message: {
+      subject: "TeenWorkly moderation rate limit alert",
+      text:
+        `OpenAI moderation hit rate limits at ${whenIso}.\n\n` +
+        `Collection: ${info.collectionId}\n` +
+        `Doc ID: ${info.docId}\n` +
+        `Source field: ${info.sourceField}\n` +
+        `Snippet: ${String(info.snippet || "").slice(0, 500)}\n`,
+    },
+  });
+}
+
 async function runGeminiSafetyCheck(text, apiKey) {
   const prompt = [
     "You are a safety bot for TeenWorkly.",
@@ -222,6 +270,176 @@ async function validateSafetyOrThrow(text) {
   }
 }
 
+function assertAdmin(request) {
+  if (!request.auth) {
+    throw new HttpsError("unauthenticated", "Sign in required.");
+  }
+  if (request.auth.token?.admin === true) return;
+  throw new HttpsError("permission-denied", "Admin access required.");
+}
+
+exports.validateContent = onDocumentCreated(
+    {
+      document: "{collectionId}/{docId}",
+      secrets: [openAiApiKey],
+    },
+    async (event) => {
+      const collectionId = String(event.params?.collectionId || "");
+      const docId = String(event.params?.docId || "");
+      if (!["jobs", "services", "huddle_posts"].includes(collectionId)) {
+        return;
+      }
+      const snap = event.data;
+      if (!snap?.exists) return;
+      const data = snap.data() || {};
+
+      let sourceField = "description";
+      let content = "";
+      if (collectionId === "jobs") {
+        sourceField = "description";
+        content = String(data.description || "");
+      } else if (collectionId === "services") {
+        sourceField = "bio";
+        content = String(data.bio || data.description || "");
+      } else {
+        sourceField = "text";
+        content = String(data.text || data.description || "");
+      }
+      const normalized = content.trim();
+      if (!normalized) {
+        await snap.ref.set({
+          isVisible: true,
+          moderationStatus: "clean",
+          moderatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        }, {merge: true});
+        return;
+      }
+
+      const apiKey = openAiApiKey.value();
+      if (!apiKey) {
+        await snap.ref.set({
+          moderationStatus: "error",
+          moderationError: "OPENAI_API_KEY missing",
+          moderatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        }, {merge: true});
+        return;
+      }
+
+      try {
+        const result = await runOpenAiModerationFlagged(normalized, apiKey);
+        if (result.flagged) {
+          await snap.ref.set({
+            isVisible: false,
+            moderationStatus: "flagged",
+            moderationCategories: result.categories,
+            moderatedAt: admin.firestore.FieldValue.serverTimestamp(),
+          }, {merge: true});
+          return;
+        }
+        await snap.ref.set({
+          isVisible: true,
+          moderationStatus: "clean",
+          moderatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        }, {merge: true});
+      } catch (e) {
+        if (e?.status === 429) {
+          await sendModerationRateLimitAlert({
+            collectionId,
+            docId,
+            sourceField,
+            snippet: normalized,
+          });
+          await snap.ref.set({
+            isVisible: true,
+            moderationStatus: "rate_limited",
+            moderatedAt: admin.firestore.FieldValue.serverTimestamp(),
+          }, {merge: true});
+          return;
+        }
+        await snap.ref.set({
+          moderationStatus: "error",
+          moderationError: String(e?.message || e || "unknown moderation error"),
+          moderatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        }, {merge: true});
+      }
+    },
+);
+
+exports.backfillLegacyVisibilityFields = onCall(async (request) => {
+  if (!request.auth) {
+    throw new HttpsError("unauthenticated", "Sign in required.");
+  }
+  const owner = String(ownerUid.value() || "").trim();
+  const isOwner = owner && request.auth.uid === owner;
+  const isAdmin = request.auth.token?.admin === true;
+  if (!isOwner && !isAdmin) {
+    throw new HttpsError("permission-denied", "Owner access required.");
+  }
+
+  const now = admin.firestore.Timestamp.now();
+  const collections = ["jobs", "services", "huddle_posts"];
+  const results = {};
+
+  for (const colName of collections) {
+    const snap = await db.collection(colName).get();
+    let touched = 0;
+    let unchanged = 0;
+    for (const doc of snap.docs) {
+      const d = doc.data() || {};
+      const patch = {};
+      if (d.isVisible === undefined) patch.isVisible = true;
+      if (!String(d.moderationStatus || "").trim()) patch.moderationStatus = "pending";
+      if (!d.createdAt) patch.createdAt = now;
+      if (Object.keys(patch).length === 0) {
+        unchanged++;
+        continue;
+      }
+      touched++;
+      await doc.ref.set(patch, {merge: true});
+    }
+    results[colName] = {
+      scanned: snap.size,
+      updated: touched,
+      unchanged,
+    };
+  }
+  return {ok: true, results};
+});
+
+exports.cleanupExpiredHuddlePosts = onSchedule(
+    {schedule: "every 24 hours", timeZone: "UTC"},
+    async () => {
+      const cutoffMs = Date.now() - (5 * 24 * 60 * 60 * 1000);
+      const cutoff = admin.firestore.Timestamp.fromMillis(cutoffMs);
+      const oldPostsSnap = await db
+          .collection("huddle_posts")
+          .where("createdAt", "<", cutoff)
+          .get();
+
+      for (const postDoc of oldPostsSnap.docs) {
+        await db.recursiveDelete(postDoc.ref);
+      }
+      return null;
+    },
+);
+
+exports.deleteConversationWhenBothSoftDeleted = onDocumentUpdated(
+    "conversations/{conversationId}",
+    async (event) => {
+      const afterSnap = event.data?.after;
+      if (!afterSnap?.exists) return;
+      const data = afterSnap.data() || {};
+      const participants = Array.isArray(data.participants) ?
+        data.participants.map((p) => String(p || "").trim()).filter(Boolean) : [];
+      if (participants.length < 2) return;
+      const lockedBy = data.lockedBy && typeof data.lockedBy === "object" ?
+        data.lockedBy : {};
+      const allSoftDeleted = participants.every((uid) => lockedBy[uid] === true);
+      if (!allSoftDeleted) return;
+      await db.recursiveDelete(afterSnap.ref);
+    },
+);
+
 exports.validatePost = onCall(
     {secrets: [openAiApiKey, geminiApiKey]},
     async (request) => {
@@ -272,6 +490,18 @@ exports.validatePost = onCall(
       }
     },
 );
+
+exports.markGpsVerified = onCall(async (request) => {
+  if (!request.auth) {
+    throw new HttpsError("unauthenticated", "Sign in required.");
+  }
+  const uid = request.auth.uid;
+  await db.collection("users").doc(uid).set({
+    gpsVerifiedAt: admin.firestore.FieldValue.serverTimestamp(),
+    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+  }, {merge: true});
+  return {ok: true};
+});
 
 exports.createJob = onCall(
     {secrets: [openAiApiKey, geminiApiKey]},
@@ -338,7 +568,7 @@ exports.createJob = onCall(
         isMinorPoster,
         publicLat: fuzzy?.lat ?? null,
         publicLng: fuzzy?.lng ?? null,
-        publicRadiusMeters: fuzzy?.radiusMeters ?? 500,
+        publicRadiusMeters: fuzzy?.radiusMeters ?? 300,
         description,
         services: services.map((s) => String(s)),
         otherService,
@@ -351,6 +581,8 @@ exports.createJob = onCall(
         hiredName: null,
         status: "open",
         payment,
+        isVisible: true,
+        moderationStatus: "pending",
       }, {merge: false});
 
       return {ok: true};
@@ -430,7 +662,7 @@ exports.createService = onCall(
         isMinorProvider,
         publicLat: fuzzy?.lat ?? null,
         publicLng: fuzzy?.lng ?? null,
-        publicRadiusMeters: fuzzy?.radiusMeters ?? 500,
+        publicRadiusMeters: fuzzy?.radiusMeters ?? 300,
         skills: skills.map((s) => String(s)),
         otherSkill,
         availableDays: availableDays.map((d) => String(d)),
@@ -444,6 +676,8 @@ exports.createService = onCall(
         workRadiusKm,
         minPrice,
         maxPrice,
+        isVisible: true,
+        moderationStatus: "pending",
       }, {merge: false});
 
       return {ok: true};
@@ -522,7 +756,7 @@ exports.updateServiceSecure = onCall(
         isMinorProvider,
         publicLat: fuzzy?.lat ?? null,
         publicLng: fuzzy?.lng ?? null,
-        publicRadiusMeters: fuzzy?.radiusMeters ?? 500,
+        publicRadiusMeters: fuzzy?.radiusMeters ?? 300,
         skills: skills.map((s) => String(s)),
         otherSkill,
         availableDays: availableDays.map((d) => String(d)),
@@ -582,6 +816,12 @@ exports.sendConversationMessage = onCall(
       if (!participants.includes(uid)) {
         throw new HttpsError("permission-denied", "Not a participant.");
       }
+      if (conv.lockedBy && conv.lockedBy[uid] === true) {
+        throw new HttpsError(
+            "permission-denied",
+            "This conversation is view-only for you.",
+        );
+      }
 
       const ts = admin.firestore.Timestamp.fromMillis(timestampMs);
       const batch = db.batch();
@@ -637,6 +877,8 @@ exports.createHuddlePost = onCall(
         lastReplyAt: null,
         lastReplyAuthorId: null,
         replyCount: 0,
+        isVisible: true,
+        moderationStatus: "pending",
       }, {merge: false});
       return {ok: true};
     },

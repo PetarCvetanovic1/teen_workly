@@ -8,6 +8,7 @@ import '../utils/smooth_route.dart';
 import '../widgets/app_drawer.dart';
 import '../widgets/content_wrap.dart';
 import '../widgets/tw_app_bar.dart';
+import '../widgets/walking_dog_loader.dart';
 import 'home_screen.dart';
 
 const _presetSkills = <String>[
@@ -208,7 +209,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  const CircularProgressIndicator(),
+                  const WalkingDogLoader(label: 'Loading your profile...'),
                   const SizedBox(height: 12),
                   Text(
                     'Loading your profile...',
@@ -237,6 +238,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
         final postedCount = state.myPostedJobs.length;
         final appliedCount = state.myAppliedJobs.length;
         final locationLocked = (p.location ?? '').trim().isNotEmpty;
+        final completion = _profileCompletion(
+          name: _nameCtrl.text,
+          location: _locationCtrl.text,
+          bio: _bioCtrl.text,
+          ageText: _ageCtrl.text,
+          skills: _skills,
+          interests: _interests,
+        );
 
         return Scaffold(
           appBar: TwAppBar(
@@ -263,7 +272,16 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         children: [
                           const SizedBox(height: 20),
                           Text(
-                            'Edit Profile',
+                            'Welcome back, ${_nameCtrl.text.trim().isEmpty ? p.name : _nameCtrl.text.trim()}',
+                            style: GoogleFonts.plusJakartaSans(
+                              fontSize: 18,
+                              fontWeight: FontWeight.w800,
+                              color: isDark ? Colors.white : AppColors.slate900,
+                            ),
+                          ),
+                          const SizedBox(height: 6),
+                          Text(
+                            'Profile glow-up',
                             style: GoogleFonts.plusJakartaSans(
                               fontSize: 30,
                               fontWeight: FontWeight.w800,
@@ -273,54 +291,154 @@ class _ProfileScreenState extends State<ProfileScreen> {
                           const SizedBox(height: 8),
                           Text(
                             isUnder16
-                                ? 'Under 16 profile: focus on skills, interests, and community.'
-                                : '16+ profile: focus on work, hiring, and building trust.',
+                                ? 'Keep it real: show your strengths, interests, and personality.'
+                                : 'Build trust fast with clear info and a strong bio.',
                             style: GoogleFonts.plusJakartaSans(
                               fontSize: 13,
                               fontWeight: FontWeight.w500,
                               color: const Color(0xFF94A3B8),
                             ),
                           ),
-                          const SizedBox(height: 20),
-                          _field(_nameCtrl, 'Full Name', validator: (v) {
-                            if (v == null || v.trim().isEmpty) return 'Required';
-                            if (v.trim().split(RegExp(r'\s+')).length < 2) return 'Enter first + last name';
-                            return null;
-                          }),
-                          _field(
-                            _locationCtrl,
-                            'Location',
-                            readOnly: locationLocked,
-                            helperText: locationLocked
-                                ? 'Locked after map location is set. Change it from the map.'
-                                : null,
-                          ),
-                          _field(_ageCtrl, 'Age', keyboardType: TextInputType.number),
-                          Padding(
-                            padding: const EdgeInsets.only(bottom: 10),
+                          const SizedBox(height: 14),
+                          Container(
+                            width: double.infinity,
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              color: isDark
+                                  ? AppColors.indigo600.withValues(alpha: 0.20)
+                                  : AppColors.indigo600.withValues(alpha: 0.08),
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(
+                                color: AppColors.indigo600.withValues(alpha: 0.24),
+                              ),
+                            ),
                             child: Text(
-                              'Age can only go up by 1, once every 12 months.',
+                              'Tip: keep it simple and real. A friendly profile gets more replies.',
                               style: GoogleFonts.plusJakartaSans(
-                                fontSize: 11,
-                                fontWeight: FontWeight.w600,
-                                color: const Color(0xFF94A3B8),
+                                fontSize: 12,
+                                fontWeight: FontWeight.w700,
+                                color: isDark ? Colors.white : AppColors.slate900,
                               ),
                             ),
                           ),
-                          _field(_bioCtrl, 'Bio / About you', maxLines: 3),
                           const SizedBox(height: 12),
-                          _chipSection(
-                            title: 'Skills',
-                            options: _presetSkills,
-                            selected: _skills,
-                            customController: _customSkillCtrl,
+                          _profileStrengthCard(
+                            isDark: isDark,
+                            completion: completion,
+                          ),
+                          const SizedBox(height: 12),
+                          _firstImpressionCard(
+                            isDark: isDark,
+                            name: _nameCtrl.text.trim(),
+                            location: _locationCtrl.text.trim(),
+                            bio: _bioCtrl.text.trim(),
+                            skills: _skills,
+                          ),
+                          const SizedBox(height: 20),
+                          _editSectionHeader(
+                            isDark: isDark,
+                            icon: Icons.person_outline_rounded,
+                            title: 'Basics',
+                            subtitle: 'Core info people see first',
+                            accent: AppColors.indigo600,
+                          ),
+                          const SizedBox(height: 8),
+                          _editSectionCard(
+                            isDark: isDark,
+                            accent: AppColors.indigo600,
+                            child: Column(
+                              children: [
+                                _field(_nameCtrl, 'Name', validator: (v) {
+                                  if (v == null || v.trim().isEmpty) return 'Required';
+                                  if (v.trim().split(RegExp(r'\s+')).length < 2) return 'Enter first + last name';
+                                  return null;
+                                }, readOnly: true, helperText: 'Name is locked for account safety.'),
+                                _field(
+                                  _locationCtrl,
+                                  'Area',
+                                  readOnly: locationLocked,
+                                  helperText: locationLocked
+                                      ? 'Locked after map location is set. Change it from the map.'
+                                      : null,
+                                ),
+                                _field(_ageCtrl, 'Age', keyboardType: TextInputType.number),
+                                Padding(
+                                  padding: const EdgeInsets.only(bottom: 4),
+                                  child: Text(
+                                    'Age can only increase by 1, once every 12 months.',
+                                    style: GoogleFonts.plusJakartaSans(
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w600,
+                                      color: const Color(0xFF94A3B8),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
                           ),
                           const SizedBox(height: 14),
-                          _chipSection(
-                            title: 'What you like doing',
-                            options: _presetInterests,
-                            selected: _interests,
-                            customController: _customInterestCtrl,
+                          _editSectionHeader(
+                            isDark: isDark,
+                            icon: Icons.notes_rounded,
+                            title: 'About You',
+                            subtitle: 'Keep this short and friendly',
+                            accent: const Color(0xFF7C3AED),
+                          ),
+                          const SizedBox(height: 8),
+                          _editSectionCard(
+                            isDark: isDark,
+                            accent: const Color(0xFF7C3AED),
+                            child: Column(
+                              children: [
+                                _field(
+                                  _bioCtrl,
+                                  'Bio',
+                                  minLines: 1,
+                                  maxLines: 4,
+                                ),
+                                Padding(
+                                  padding: const EdgeInsets.only(bottom: 4),
+                                  child: Text(
+                                    'Try: "I can help with ___. I am usually free on ___."',
+                                    style: GoogleFonts.plusJakartaSans(
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w600,
+                                      color: const Color(0xFF94A3B8),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(height: 14),
+                          _editSectionHeader(
+                            isDark: isDark,
+                            icon: Icons.bolt_rounded,
+                            title: 'Skills & Interests',
+                            subtitle: 'Pick a few so your profile feels real',
+                            accent: const Color(0xFF0EA5A4),
+                          ),
+                          const SizedBox(height: 8),
+                          _editSectionCard(
+                            isDark: isDark,
+                            accent: const Color(0xFF0EA5A4),
+                            child: Column(
+                              children: [
+                                _chipSection(
+                                  title: 'What you can help with',
+                                  options: _presetSkills,
+                                  selected: _skills,
+                                  customController: _customSkillCtrl,
+                                ),
+                                const SizedBox(height: 14),
+                                _chipSection(
+                                  title: 'Stuff you are into',
+                                  options: _presetInterests,
+                                  selected: _interests,
+                                  customController: _customInterestCtrl,
+                                ),
+                              ],
+                            ),
                           ),
                           const SizedBox(height: 24),
                           SizedBox(
@@ -333,7 +451,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                       width: 16,
                                       child: CircularProgressIndicator(strokeWidth: 2),
                                     )
-                                  : const Text('Save Profile'),
+                                  : const Text('Save my profile'),
                             ),
                           ),
                           const SizedBox(height: 12),
@@ -341,7 +459,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                             width: double.infinity,
                             child: OutlinedButton(
                               onPressed: _saving ? null : () => setState(() => _editing = false),
-                              child: const Text('Cancel'),
+                              child: const Text('Done for now'),
                             ),
                           ),
                           const SizedBox(height: 40),
@@ -353,7 +471,16 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       children: [
                         const SizedBox(height: 20),
                         Text(
-                          'Your Profile',
+                          'Welcome back, ${_nameCtrl.text.trim().isEmpty ? p.name : _nameCtrl.text.trim()}',
+                          style: GoogleFonts.plusJakartaSans(
+                            fontSize: 18,
+                            fontWeight: FontWeight.w800,
+                            color: isDark ? Colors.white : AppColors.slate900,
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          'Your profile vibes',
                           style: GoogleFonts.plusJakartaSans(
                             fontSize: 30,
                             fontWeight: FontWeight.w800,
@@ -362,38 +489,81 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         ),
                         const SizedBox(height: 8),
                         Text(
-                          'Clean summary of your saved profile.',
+                          'This is what people see first.',
                           style: GoogleFonts.plusJakartaSans(
                             fontSize: 13,
                             fontWeight: FontWeight.w500,
                             color: const Color(0xFF94A3B8),
                           ),
                         ),
-                        const SizedBox(height: 20),
-                        _profileTypeCard(
+                        const SizedBox(height: 4),
+                        Text(
+                          'Tap any section to edit it (except location).',
+                          style: GoogleFonts.plusJakartaSans(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
+                            color: const Color(0xFF94A3B8),
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        _profileStrengthCard(
                           isDark: isDark,
-                          under16: isUnder16,
-                          postedCount: postedCount,
-                          appliedCount: appliedCount,
+                          completion: completion,
+                        ),
+                        const SizedBox(height: 20),
+                        InkWell(
+                          borderRadius: BorderRadius.circular(14),
+                          onTap: () => setState(() => _editing = true),
+                          child: _profileTypeCard(
+                            isDark: isDark,
+                            under16: isUnder16,
+                            postedCount: postedCount,
+                            appliedCount: appliedCount,
+                          ),
                         ),
                         const SizedBox(height: 12),
                         _profileCard(
                           'Full Name',
                           _nameCtrl.text.trim(),
                           isDark,
+                          onTap: () => setState(() => _editing = true),
                         ),
-                        _profileCard('Location', _locationCtrl.text.trim(), isDark),
-                        _profileCard('Age', _ageCtrl.text.trim(), isDark),
-                        _profileCard('About', _bioCtrl.text.trim(), isDark),
-                        _chipsPreview('Skills', _skills, isDark),
+                        _profileCard(
+                          'Location',
+                          _cityOnlyLocation(_locationCtrl.text.trim()),
+                          isDark,
+                        ),
+                        _profileCard(
+                          'Age',
+                          _ageCtrl.text.trim(),
+                          isDark,
+                          onTap: () => setState(() => _editing = true),
+                        ),
+                        _profileCard(
+                          'About',
+                          _bioCtrl.text.trim(),
+                          isDark,
+                          onTap: () => setState(() => _editing = true),
+                        ),
+                        _chipsPreview(
+                          'Skills',
+                          _skills,
+                          isDark,
+                          onTap: () => setState(() => _editing = true),
+                        ),
                         const SizedBox(height: 10),
-                        _chipsPreview('What you like doing', _interests, isDark),
+                        _chipsPreview(
+                          'What you like doing',
+                          _interests,
+                          isDark,
+                          onTap: () => setState(() => _editing = true),
+                        ),
                         const SizedBox(height: 24),
                         SizedBox(
                           width: double.infinity,
                           child: FilledButton(
                             onPressed: () => setState(() => _editing = true),
-                            child: const Text('Edit Profile'),
+                            child: const Text('Customize profile'),
                           ),
                         ),
                         const SizedBox(height: 40),
@@ -406,43 +576,61 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
-  Widget _profileCard(String label, String value, bool isDark) {
+  Widget _profileCard(
+    String label,
+    String value,
+    bool isDark, {
+    VoidCallback? onTap,
+  }) {
     final display = value.trim().isEmpty ? 'Not set' : value.trim();
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 10),
-      child: Container(
-        width: double.infinity,
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-        decoration: BoxDecoration(
-          color: isDark ? const Color(0xFF1E293B) : Colors.white,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(
-            color: isDark ? const Color(0xFF334155) : AppColors.slate200,
-          ),
+    final base = isDark ? const Color(0xFF1E293B) : Colors.white;
+    final tint = AppColors.indigo600.withValues(alpha: isDark ? 0.10 : 0.04);
+    final card = Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [tint, base],
         ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              label,
-              style: GoogleFonts.plusJakartaSans(
-                fontSize: 11,
-                fontWeight: FontWeight.w700,
-                color: const Color(0xFF94A3B8),
-              ),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              display,
-              style: GoogleFonts.plusJakartaSans(
-                fontSize: 14,
-                fontWeight: FontWeight.w600,
-                color: isDark ? Colors.white : AppColors.slate900,
-              ),
-            ),
-          ],
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+          color: isDark ? const Color(0xFF334155) : AppColors.slate200,
         ),
       ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            label,
+            style: GoogleFonts.plusJakartaSans(
+              fontSize: 11,
+              fontWeight: FontWeight.w700,
+              color: const Color(0xFF94A3B8),
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            display,
+            style: GoogleFonts.plusJakartaSans(
+              fontSize: 14,
+              fontWeight: FontWeight.w600,
+              color: isDark ? Colors.white : AppColors.slate900,
+            ),
+          ),
+        ],
+      ),
+    );
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: onTap == null
+          ? card
+          : InkWell(
+              borderRadius: BorderRadius.circular(14),
+              onTap: onTap,
+              child: card,
+            ),
     );
   }
 
@@ -452,10 +640,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
     required int postedCount,
     required int appliedCount,
   }) {
-    final title = under16 ? 'Under 16 Profile' : '16+ Work Profile';
+    final title = under16 ? 'Under 16 profile' : '16+ work profile';
     final subtitle = under16
-        ? 'Community-first mode. You can build skills and apply for jobs.'
-        : 'Work-and-hiring mode. You can post jobs and manage applicants.';
+        ? 'Community-first mode. Keep growing your skills and applying.'
+        : 'Work mode. You can post jobs and manage applicants.';
     final stat = under16
         ? 'Applied jobs: $appliedCount'
         : 'Posted jobs: $postedCount';
@@ -463,8 +651,15 @@ class _ProfileScreenState extends State<ProfileScreen> {
       width: double.infinity,
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: isDark ? const Color(0xFF1E293B) : Colors.white,
-        borderRadius: BorderRadius.circular(12),
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            AppColors.indigo600.withValues(alpha: isDark ? 0.12 : 0.06),
+            isDark ? const Color(0xFF1E293B) : Colors.white,
+          ],
+        ),
+        borderRadius: BorderRadius.circular(14),
         border: Border.all(
           color: isDark ? const Color(0xFF334155) : AppColors.slate200,
         ),
@@ -503,18 +698,187 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
-  Widget _chipsPreview(String title, Set<String> values, bool isDark) {
-    return Column(
+  double _profileCompletion({
+    required String name,
+    required String location,
+    required String bio,
+    required String ageText,
+    required Set<String> skills,
+    required Set<String> interests,
+  }) {
+    var score = 0;
+    if (name.trim().split(RegExp(r'\s+')).length >= 2) score++;
+    if (location.trim().isNotEmpty) score++;
+    if (bio.trim().length >= 20) score++;
+    if (int.tryParse(ageText.trim()) != null) score++;
+    if (skills.isNotEmpty) score++;
+    if (interests.isNotEmpty) score++;
+    return score / 6.0;
+  }
+
+  Widget _profileStrengthCard({
+    required bool isDark,
+    required double completion,
+  }) {
+    final pct = (completion * 100).round().clamp(0, 100);
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: isDark ? const Color(0xFF1E293B) : Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: isDark ? const Color(0xFF334155) : AppColors.slate200,
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Profile strength: $pct%',
+            style: GoogleFonts.plusJakartaSans(
+              fontSize: 12,
+              fontWeight: FontWeight.w800,
+              color: isDark ? Colors.white : AppColors.slate900,
+            ),
+          ),
+          const SizedBox(height: 8),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(999),
+            child: LinearProgressIndicator(
+              value: completion,
+              minHeight: 7,
+              backgroundColor: isDark ? const Color(0xFF334155) : AppColors.slate200,
+              color: AppColors.indigo600,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            pct >= 85
+                ? 'Looking strong. People will trust this profile.'
+                : 'Add a little more detail to boost trust.',
+            style: GoogleFonts.plusJakartaSans(
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+              color: const Color(0xFF94A3B8),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _firstImpressionCard({
+    required bool isDark,
+    required String name,
+    required String location,
+    required String bio,
+    required Set<String> skills,
+  }) {
+    final previewName = name.isEmpty ? 'Your name' : name;
+    final previewLocation = _cityOnlyLocation(location);
+    final previewBio = bio.isEmpty
+        ? 'Add a short bio so people know what you are about.'
+        : bio;
+    final skillLine = skills.isEmpty
+        ? 'No skills selected yet'
+        : skills.take(3).join(' · ');
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: isDark ? const Color(0xFF1E293B) : Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: isDark ? const Color(0xFF334155) : AppColors.slate200,
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'First impression preview',
+            style: GoogleFonts.plusJakartaSans(
+              fontSize: 12,
+              fontWeight: FontWeight.w800,
+              color: isDark ? Colors.white : AppColors.slate900,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            previewName,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: GoogleFonts.plusJakartaSans(
+              fontSize: 14,
+              fontWeight: FontWeight.w800,
+              color: isDark ? Colors.white : AppColors.slate900,
+            ),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            previewLocation,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: GoogleFonts.plusJakartaSans(
+              fontSize: 11,
+              fontWeight: FontWeight.w700,
+              color: const Color(0xFF94A3B8),
+            ),
+          ),
+          const SizedBox(height: 3),
+          Text(
+            previewBio,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: GoogleFonts.plusJakartaSans(
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+              color: const Color(0xFF94A3B8),
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            skillLine,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: GoogleFonts.plusJakartaSans(
+              fontSize: 11,
+              fontWeight: FontWeight.w700,
+              color: AppColors.indigo600,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _chipsPreview(
+    String title,
+    Set<String> values,
+    bool isDark, {
+    VoidCallback? onTap,
+  }) {
+    final content = Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
           title,
           style: GoogleFonts.plusJakartaSans(fontSize: 14, fontWeight: FontWeight.w700),
         ),
+        const SizedBox(height: 2),
+        Text(
+          'Tap to pick, or add your own',
+          style: GoogleFonts.plusJakartaSans(
+            fontSize: 11,
+            fontWeight: FontWeight.w600,
+            color: const Color(0xFF94A3B8),
+          ),
+        ),
         const SizedBox(height: 8),
         if (values.isEmpty)
           Text(
-            'None added yet',
+            'Nothing here yet',
             style: GoogleFonts.plusJakartaSans(
               fontSize: 12,
               fontWeight: FontWeight.w500,
@@ -550,12 +914,93 @@ class _ProfileScreenState extends State<ProfileScreen> {
           ),
       ],
     );
+    if (onTap == null) return content;
+    return InkWell(
+      borderRadius: BorderRadius.circular(12),
+      onTap: onTap,
+      child: content,
+    );
+  }
+
+  Widget _editSectionHeader({
+    required bool isDark,
+    required IconData icon,
+    required String title,
+    required String subtitle,
+    required Color accent,
+  }) {
+    return Row(
+      children: [
+        Container(
+          width: 28,
+          height: 28,
+          decoration: BoxDecoration(
+            color: accent.withValues(alpha: isDark ? 0.24 : 0.12),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Icon(icon, size: 16, color: accent),
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                title,
+                style: GoogleFonts.plusJakartaSans(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w800,
+                  color: isDark ? Colors.white : AppColors.slate900,
+                ),
+              ),
+              Text(
+                subtitle,
+                style: GoogleFonts.plusJakartaSans(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                  color: const Color(0xFF94A3B8),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _editSectionCard({
+    required bool isDark,
+    required Color accent,
+    required Widget child,
+  }) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            accent.withValues(alpha: isDark ? 0.14 : 0.07),
+            isDark ? const Color(0xFF1E293B) : Colors.white,
+          ],
+        ),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+          color: isDark
+              ? accent.withValues(alpha: 0.34)
+              : accent.withValues(alpha: 0.22),
+        ),
+      ),
+      child: child,
+    );
   }
 
   Widget _field(
     TextEditingController ctrl,
     String label, {
-    int maxLines = 1,
+    int minLines = 1,
+    int? maxLines = 1,
     TextInputType? keyboardType,
     String? Function(String?)? validator,
     bool readOnly = false,
@@ -565,6 +1010,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
       padding: const EdgeInsets.only(bottom: 12),
       child: TextFormField(
         controller: ctrl,
+        minLines: minLines,
         maxLines: maxLines,
         readOnly: readOnly,
         keyboardType: keyboardType,
@@ -578,6 +1024,22 @@ class _ProfileScreenState extends State<ProfileScreen> {
         ),
       ),
     );
+  }
+
+  String _cityOnlyLocation(String raw) {
+    final value = raw.trim();
+    if (value.isEmpty) return 'Local area';
+    final parts = value
+        .split(',')
+        .map((e) => e.trim())
+        .where((e) => e.isNotEmpty)
+        .toList();
+    final first = parts.isEmpty ? value : parts.first;
+    if (RegExp(r'\d').hasMatch(first) && parts.length > 1) {
+      return parts[1];
+    }
+    if (RegExp(r'\d').hasMatch(first)) return 'Local area';
+    return first;
   }
 
   Widget _chipSection({
@@ -617,7 +1079,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
             Expanded(
               child: TextField(
                 controller: customController,
-                decoration: const InputDecoration(hintText: 'Add custom item'),
+                decoration: const InputDecoration(hintText: 'Add your own'),
               ),
             ),
             const SizedBox(width: 8),
@@ -643,7 +1105,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 setState(() => selected.add(text));
                 customController.clear();
               },
-              child: const Text('Add'),
+              child: const Text('Add tag'),
             ),
           ],
         ),

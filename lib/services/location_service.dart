@@ -20,7 +20,7 @@ class LocationService {
 
   static String approximatePublicLocation(
     String raw, {
-    int radiusMeters = 500,
+    int radiusMeters = 300,
   }) {
     final input = raw.trim();
     if (input.isEmpty) return 'Approx. local area (~${radiusMeters}m)';

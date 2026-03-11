@@ -777,6 +777,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
                         final age = int.tryParse(v.trim());
                         if (age == null) return 'Enter a number';
                         if (age < 10) return 'You must be at least 10';
+                        if (age > 100) return 'Age must be 100 or less';
                         return null;
                       },
                     ),

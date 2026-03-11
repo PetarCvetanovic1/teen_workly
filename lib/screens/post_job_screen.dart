@@ -9,6 +9,7 @@ import '../state/app_state.dart';
 import '../widgets/app_drawer.dart';
 import '../widgets/tw_app_bar.dart';
 import '../widgets/content_wrap.dart';
+import '../widgets/walking_dog_loader.dart';
 import '../services/location_service.dart';
 import '../services/moderation.dart';
 import 'home_screen.dart';
@@ -105,9 +106,7 @@ class _PostJobScreenState extends State<PostJobScreen> {
     _queueLoginRedirectIfNeeded(state);
 
     if (!state.isLoggedIn) {
-      return const Scaffold(
-        body: Center(child: CircularProgressIndicator()),
-      );
+      return const Scaffold(body: WalkingDogLoader(label: 'Walking the dog...'));
     }
 
     return Scaffold(
@@ -693,7 +692,7 @@ class _PostJobScreenState extends State<PostJobScreen> {
       final rawLocation = _locationCtrl.text.trim();
       final publicLocation = isMinorPoster
           ? LocationService.approximatePublicLocation(rawLocation,
-              radiusMeters: 500)
+              radiusMeters: 300)
           : null;
       final job = Job(
         id: DateTime.now().microsecondsSinceEpoch.toString(),

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
@@ -10,6 +12,7 @@ import '../widgets/content_wrap.dart';
 import '../widgets/report_sheet.dart';
 import '../widgets/app_drawer.dart';
 import '../widgets/tw_app_bar.dart';
+import '../widgets/walking_dog_loader.dart';
 import '../utils/smooth_route.dart';
 import 'home_screen.dart';
 import 'login_screen.dart';
@@ -26,6 +29,7 @@ class _HuddleScreenState extends State<HuddleScreen> {
   HuddleTag? _filterTag;
   bool _newPostSheetOpen = false;
   bool _loginRedirectQueued = false;
+  bool _huddleFeedSeenMarked = false;
 
   void _queueLoginRedirectIfNeeded(AppState state) {
     if (_loginRedirectQueued || state.isLoggedIn) return;
@@ -47,9 +51,14 @@ class _HuddleScreenState extends State<HuddleScreen> {
     final state = context.watch<AppState>();
     _queueLoginRedirectIfNeeded(state);
     if (!state.isLoggedIn) {
-      return const Scaffold(
-        body: Center(child: CircularProgressIndicator()),
-      );
+      return const Scaffold(body: WalkingDogLoader(label: 'Walking the dog...'));
+    }
+    if (!_huddleFeedSeenMarked) {
+      _huddleFeedSeenMarked = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        unawaited(context.read<AppState>().markHuddleFeedSeen());
+      });
     }
 
     return Scaffold(
@@ -529,168 +538,179 @@ class _HuddlePostCardState extends State<_HuddlePostCard> {
               ),
             ],
           ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Header
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 14, 12, 0),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: GestureDetector(
-                        onLongPress: isOwner
-                            ? null
-                            : () => showSafetyActionsSheet(
-                                  context,
-                                  targetType: 'Huddle',
-                                  targetId: post.id,
-                                  userId: post.authorId,
-                                  userName: post.authorName,
-                                  onHide: () =>
-                                      context.read<AppState>().hideHuddlePost(post.id),
-                                ),
-                        onSecondaryTapUp: isOwner
-                            ? null
-                            : (_) => showSafetyActionsSheet(
-                                  context,
-                                  targetType: 'Huddle',
-                                  targetId: post.id,
-                                  userId: post.authorId,
-                                  userName: post.authorName,
-                                  onHide: () =>
-                                      context.read<AppState>().hideHuddlePost(post.id),
-                                ),
-                        child: Row(
-                          children: [
-                            CircleAvatar(
-                              radius: 18,
-                              backgroundColor: _tagColor.withValues(alpha: 0.15),
-                              child: Text(
-                                initials,
-                                style: GoogleFonts.plusJakartaSans(
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w800,
-                                  color: _tagColor,
-                                ),
-                              ),
-                            ),
-                            const SizedBox(width: 10),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    post.authorName,
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final compactMeta = constraints.maxWidth < 380;
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Header
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 14, 12, 0),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: GestureDetector(
+                            onLongPress: isOwner
+                                ? null
+                                : () => showSafetyActionsSheet(
+                                      context,
+                                      targetType: 'Huddle',
+                                      targetId: post.id,
+                                      userId: post.authorId,
+                                      userName: post.authorName,
+                                      onHide: () => context
+                                          .read<AppState>()
+                                          .hideHuddlePost(post.id),
+                                    ),
+                            onSecondaryTapUp: isOwner
+                                ? null
+                                : (_) => showSafetyActionsSheet(
+                                      context,
+                                      targetType: 'Huddle',
+                                      targetId: post.id,
+                                      userId: post.authorId,
+                                      userName: post.authorName,
+                                      onHide: () => context
+                                          .read<AppState>()
+                                          .hideHuddlePost(post.id),
+                                    ),
+                            child: Row(
+                              children: [
+                                CircleAvatar(
+                                  radius: 18,
+                                  backgroundColor:
+                                      _tagColor.withValues(alpha: 0.15),
+                                  child: Text(
+                                    initials,
                                     style: GoogleFonts.plusJakartaSans(
-                                      fontSize: 13,
-                                      fontWeight: FontWeight.w700,
-                                      color: isDark
-                                          ? Colors.white
-                                          : AppColors.slate900,
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w800,
+                                      color: _tagColor,
                                     ),
                                   ),
-                                  Text(
-                                    _timeAgo(post.createdAt),
-                                    style: GoogleFonts.plusJakartaSans(
-                                      fontSize: 11,
-                                      color: const Color(0xFF94A3B8),
+                                ),
+                                if (!compactMeta) ...[
+                                  const SizedBox(width: 10),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          post.authorName,
+                                          style: GoogleFonts.plusJakartaSans(
+                                            fontSize: 13,
+                                            fontWeight: FontWeight.w700,
+                                            color: isDark
+                                                ? Colors.white
+                                                : AppColors.slate900,
+                                          ),
+                                        ),
+                                        Text(
+                                          _timeAgo(post.createdAt),
+                                          style: GoogleFonts.plusJakartaSans(
+                                            fontSize: 11,
+                                            color: const Color(0xFF94A3B8),
+                                          ),
+                                        ),
+                                      ],
                                     ),
                                   ),
                                 ],
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 10, vertical: 4),
-                      decoration: BoxDecoration(
-                        color: _tagColor.withValues(alpha: 0.12),
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Text(post.tag.emoji,
-                              style: const TextStyle(fontSize: 12)),
-                          const SizedBox(width: 4),
-                          Text(
-                            post.tag.label,
-                            style: GoogleFonts.plusJakartaSans(
-                              fontSize: 10,
-                              fontWeight: FontWeight.w700,
-                              color: _tagColor,
+                              ],
                             ),
                           ),
-                        ],
+                        ),
+                        if (!compactMeta)
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 10, vertical: 4),
+                            decoration: BoxDecoration(
+                              color: _tagColor.withValues(alpha: 0.12),
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text(post.tag.emoji,
+                                    style: const TextStyle(fontSize: 12)),
+                                const SizedBox(width: 4),
+                                Text(
+                                  post.tag.label,
+                                  style: GoogleFonts.plusJakartaSans(
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.w700,
+                                    color: _tagColor,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        if (!isOwner)
+                          IconButton(
+                            tooltip: 'Message privately',
+                            icon: _openingDm
+                                ? const SizedBox(
+                                    width: 18,
+                                    height: 18,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                    ),
+                                  )
+                                : const Icon(
+                                    Icons.mail_outline_rounded,
+                                    size: 18,
+                                    color: AppColors.indigo600,
+                                  ),
+                            onPressed: () => _openPrivateChat(state),
+                            visualDensity: VisualDensity.compact,
+                          ),
+                        if (!isOwner)
+                          IconButton(
+                            tooltip: 'Safety actions',
+                            icon: const Icon(Icons.shield_outlined,
+                                size: 18, color: Color(0xFFDC2626)),
+                            onPressed: () => showSafetyActionsSheet(
+                              context,
+                              targetType: 'Huddle',
+                              targetId: post.id,
+                              userId: post.authorId,
+                              userName: post.authorName,
+                              onHide: () =>
+                                  context.read<AppState>().hideHuddlePost(post.id),
+                            ),
+                            visualDensity: VisualDensity.compact,
+                          ),
+                        if (isOwner)
+                          IconButton(
+                            icon: Icon(Icons.delete_outline_rounded,
+                                size: 18,
+                                color: Colors.red.withValues(alpha: 0.6)),
+                            onPressed: () async {
+                              await state.deleteHuddlePost(post.id);
+                              if (!mounted) return;
+                            },
+                            visualDensity: VisualDensity.compact,
+                            tooltip: 'Delete post',
+                          ),
+                      ],
+                    ),
+                  ),
+                  // Body
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+                    child: Text(
+                      post.text,
+                      style: GoogleFonts.plusJakartaSans(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w500,
+                        height: 1.5,
+                        color:
+                            isDark ? const Color(0xFFCBD5E1) : const Color(0xFF475569),
                       ),
                     ),
-                    if (!isOwner)
-                      IconButton(
-                        tooltip: 'Message privately',
-                        icon: _openingDm
-                            ? const SizedBox(
-                                width: 18,
-                                height: 18,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                ),
-                              )
-                            : const Icon(
-                                Icons.mail_outline_rounded,
-                                size: 18,
-                                color: AppColors.indigo600,
-                              ),
-                        onPressed: () => _openPrivateChat(state),
-                        visualDensity: VisualDensity.compact,
-                      ),
-                    if (!isOwner)
-                      IconButton(
-                        tooltip: 'Safety actions',
-                        icon: const Icon(Icons.shield_outlined,
-                            size: 18, color: Color(0xFFDC2626)),
-                        onPressed: () => showSafetyActionsSheet(
-                          context,
-                          targetType: 'Huddle',
-                          targetId: post.id,
-                          userId: post.authorId,
-                          userName: post.authorName,
-                          onHide: () =>
-                              context.read<AppState>().hideHuddlePost(post.id),
-                        ),
-                        visualDensity: VisualDensity.compact,
-                      ),
-                    if (isOwner)
-                      IconButton(
-                        icon: Icon(Icons.delete_outline_rounded,
-                            size: 18,
-                            color: Colors.red.withValues(alpha: 0.6)),
-                        onPressed: () async {
-                          await state.deleteHuddlePost(post.id);
-                          if (!mounted) return;
-                        },
-                        visualDensity: VisualDensity.compact,
-                        tooltip: 'Delete post',
-                      ),
-                  ],
-                ),
-              ),
-              // Body
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
-                child: Text(
-                  post.text,
-                  style: GoogleFonts.plusJakartaSans(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w500,
-                    height: 1.5,
-                    color: isDark ? const Color(0xFFCBD5E1) : const Color(0xFF475569),
                   ),
-                ),
-              ),
               // Reply toggle + count and replies section (from stream)
               StreamBuilder<List<HuddleReply>>(
                 stream: FirestoreService.huddleRepliesStream(post.id),
@@ -852,7 +872,9 @@ class _HuddlePostCardState extends State<_HuddlePostCard> {
                   );
                 },
               ),
-            ],
+                ],
+              );
+            },
           ),
         ),
       ),

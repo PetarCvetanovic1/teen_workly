@@ -29,6 +29,7 @@ class ModerationService {
     'racist', 'slavery',
     'femboy', 'femboys', 'furry', 'furries', 'hentai', 'ahegao',
     'milf', 'dilf', 'dildo', 'vibrator', 'orgasm', 'cum', 'cumming',
+    'intercourse',
     'jerk off', 'jerking', 'wank', 'wanker', 'masturbat',
     'onlyfan', 'skibidi', 'rizz', 'sx', 'seggs', 'prn', 'pron',
     'dady', 'daddy', 'gon', 'gons', 'goon', 'goons',
@@ -40,6 +41,7 @@ class ModerationService {
     'suck', 'sucks', 'sucking', 'tuch',
     'jackass', 'prick', 'pussy', 'cock',
     'chink', 'kike', 'spic', 'dih', 'puh', 'bih', 'fuh', 'buh',
+    'kkk', 'triple k',
     'femboy', 'femboys', 'furry', 'furries', 'futa', 'trap',
     'simp', 'incel', 'cuck', 'gooner', 'coomer',
     'anal', 'blowjob', 'bj', 'handjob', 'rimjob', 'deepthroat',
@@ -66,10 +68,15 @@ class ModerationService {
     r'\b(g+[\W_]*o{1,20}[\W_]*n+s*)\b',
     r'\b(your|ur|my|his|her|their)\s*(but|butt|booty|ass)\b',
     r'\b(c+[\W_]*u+[\W_]*n+[\W_]*t+)\b',
+    // Block any word containing "ass" (requested strict rule).
+    r'\b[a-z]*a[\W_]*s[\W_]*s[a-z]*\b',
     r'\b(a+[\W_]*s+[\W_]*s+[\W_]*h+[\W_]*o+[\W_]*l+[\W_]*e+)\b',
     r'\b(n+[\W_]*i+[\W_]*g+[\W_]*g+[\W_]*a+)\b',
     r'\b(n+[\W_]*i+[\W_]*g+[\W_]*g+[\W_]*e+[\W_]*r+)\b',
     r'\b(f+[\W_]*a+[\W_]*g+[\W_]*g*[\W_]*o+[\W_]*t*)\b',
+    r'\b(k+[\W_]*k+[\W_]*k+)\b',
+    r'\b(triple[\W_]*k+)\b',
+    r'\b(ku[\W_]*klux[\W_]*klan)\b',
     r'\b(r+[\W_]*e+[\W_]*t+[\W_]*a+[\W_]*r+[\W_]*d+)\b',
 
     // Sexual / explicit
@@ -78,7 +85,12 @@ class ModerationService {
     r'\b(p[\W_]*r[\W_]*n|p[\W_]*r[\W_]*o[\W_]*n)\b',
     r'\b(dick|penis|vagina|boob|boobs|tits|titty|titties|cock|pussy)\b',
     r'\b(blow[\W_]*job|hand[\W_]*job|rim[\W_]*job|deep[\W_]*throat)\b',
-    r'\b(orgasm|cum+|cumming|ejaculat(e|ion)|masturbat(e|ion|ing))\b',
+    r'\b(orgasm|cum+|cumming|ejaculat(e|ion)|masturbat(e|ion|ing)|intercourse)\b',
+    r'\b(i+[\W_]*n+[\W_]*t+[\W_]*e+[\W_]*r+[\W_]*c+[\W_]*o+[\W_]*u+[\W_]*r+[\W_]*s+[\W_]*e+)\b',
+    r'\b(in[\W_]*me)\b',
+    r"\b(i[\W_]*(?:['`]?m)?[\W_]*in[\W_]*(u|ur|you))\b",
+    r"\b(i[\W_]*like[\W_]*it[\W_]*(?:when[\W_]*)?(u|ur|you)[\W_]*in[\W_]*me)\b",
+    r'\b(b+[\W_]*e+[\W_]*a+[\W_]*t+|b+[\W_]*e+[\W_]*e+[\W_]*t+)[\W_]*(my|me|ur|your|his|her|their)[\W_]*m+[\W_]*e+[\W_]*a+[\W_]*t+\b',
     r'\b(femboy|femboys|furry|furries|hentai|ahegao|milf|dilf)\b',
 
     // Predatory / unsafe meetup
@@ -106,12 +118,14 @@ class ModerationService {
     'fk', 'fkn', 'sht', 'btch', 'sex', 'sx', 'seggs', 'prn', 'pron',
     'dady', 'daddy', 'gon', 'gons', 'goon', 'goons',
     'nigga', 'nigger', 'whore', 'slut', 'motherfucker',
+    'kkk', 'triplek', 'kukluxklan',
     'dick', 'cock', 'pussy', 'penis', 'vagina',
     'porn', 'nude', 'nudes', 'nsfw', 'sex', 'sexual',
     'rape', 'rapist', 'molest', 'pedo', 'pedophile',
     'dih', 'puh', 'bih', 'fuh', 'buh', 'nethnyaho',
     'kys', 'kms', 'selfharm', 'suicide',
-    'femboy', 'furry', 'hentai', 'suck', 'tuch',
+    'femboy', 'furry', 'hentai', 'suck', 'tuch', 'intercourse', 'interc',
+    'deadas',
   ];
 
   // Common shorthand/abbreviations used to bypass filters.
@@ -121,6 +135,44 @@ class ModerationService {
     'sht', 'shyt', 'btch', 'bich',
     'dih', 'puh', 'bih', 'fuh', 'buh', 'dady', 'daddy', 'gon', 'gons', 'goon', 'goons',
   };
+
+  // Prefix guard for "interc*":
+  // block unknown/risky variants while allowing common safe words.
+  static const _intercAllowedPrefixes = <String>[
+    'interact',
+    'interaction',
+    'interactive',
+    'intercede',
+    'intercession',
+    'intercess',
+    'intercept',
+    'interception',
+    'interceptor',
+    'intercell',
+    'interchain',
+    'intercity',
+    'intercom',
+    'intercoastal',
+    'intercollege',
+    'intercolleg',
+    'intercompany',
+    'interconnect',
+    'interconnection',
+    'intercontinental',
+    'intercomm',
+    'intercommun',
+    'intercompare',
+    'intercomp',
+    'intercool',
+    'intercost',
+    'intercounty',
+    'intercorr',
+    'intercrop',
+    'intercultural',
+    'intercut',
+    'interconvert',
+    'interconversion',
+  ];
 
   static const _suspiciousPatterns = [
     'send nudes', 'come to my house alone', 'no parents',
@@ -323,6 +375,21 @@ class ModerationService {
       final t = token.trim();
       if (t.isEmpty) continue;
       if (_abbrevToxicTokens.contains(t)) {
+        return const ModerationResult(
+          approved: false,
+          reason:
+              'Your post contains inappropriate language and has been blocked. '
+              'Please keep all content family-friendly and professional.',
+        );
+      }
+    }
+
+    // Special-case block: "interc*" unless it matches known safe prefixes.
+    for (final token in tokens) {
+      final plain = token.replaceAll(RegExp(r'[^a-z]'), '');
+      if (!plain.startsWith('interc')) continue;
+      final allowed = _intercAllowedPrefixes.any(plain.startsWith);
+      if (!allowed) {
         return const ModerationResult(
           approved: false,
           reason:
@@ -716,6 +783,12 @@ class ModerationService {
     if (age == null) {
       return const ModerationResult(
           approved: false, reason: 'Age must be a number.');
+    }
+    if (age > 100) {
+      return const ModerationResult(
+        approved: false,
+        reason: 'Age must be 100 or less.',
+      );
     }
     if (age < 13 || age > 19) {
       return const ModerationResult(
