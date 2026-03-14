@@ -1,17 +1,28 @@
-# teen_workly
+# 🛠️ TeenWorkly
+> **Empowering the next generation of workers through safe, local opportunities.**
 
-A new Flutter project.
+TeenWorkly is a secure marketplace designed specifically for teenagers to find neighborhood jobs (lawn mowing, tutoring, pet sitting) while helping parents and neighbors find trusted help.
 
-## Getting Started
+---
 
-This project is a starting point for a Flutter application.
+## 🚀 The Vision
+To bridge the gap between ambitious teens and their communities, providing a safe platform to build a professional resume before age 18.
 
-A few resources to get you started if this is your first Flutter project:
+## 🛡️ Key Features
+* **Hyper-Local Feed:** Discover opportunities within your own neighborhood.
+* **Safety First:** Integrated OpenAI Moderation for content filtering and robust user reporting/blocking.
+* **EU Compliance:** Built-in tools for the June 2026 Withdrawal Directive.
+* **Resume Builder:** Automatically track completed jobs to showcase experience.
 
-- [Learn Flutter](https://docs.flutter.dev/get-started/learn-flutter)
-- [Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Flutter learning resources](https://docs.flutter.dev/reference/learning-resources)
+## 💻 Tech Stack
+* **Frontend:** [Flutter](https://flutter.dev) (Web & Mobile)
+* **Backend:** [Firebase](https://firebase.google.com) (Firestore, Auth, Cloud Functions)
+* **AI:** OpenAI Moderation API & Gemini 3 Flash for automated safety.
 
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+## 📈 2026 Roadmap
+- [x] Phase 1: Core Marketplace & Authentication
+- [ ] Phase 2: AI-Powered Job Matching
+- [ ] Phase 3: Global Expansion (EU Compliance Suite)
+
+---
+© 2026 TeenWorkly. Built with ☕ and Code.
